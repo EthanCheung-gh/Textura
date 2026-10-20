@@ -26,11 +26,14 @@ export function childrenOf(ws: Workspace, parentId: string | null): Item[] {
   return sortByOrder(ws.items.filter((item) => item.parentId === parentId));
 }
 
-/** 全部子孙（不含自身），深度优先、按 order。 */
+/** 全部子孙（不含自身），深度优先、按 order。带 visited 保护，允许脏数据中存在环。 */
 export function descendantsOf(ws: Workspace, id: string): Item[] {
   const result: Item[] = [];
+  const visited = new Set<string>([id]);
   const walk = (parentId: string) => {
     for (const child of childrenOf(ws, parentId)) {
+      if (visited.has(child.id)) continue;
+      visited.add(child.id);
       result.push(child);
       walk(child.id);
     }
@@ -53,6 +56,40 @@ export function ancestorsOf(ws: Workspace, id: string): Item[] {
     current = parent.parentId;
   }
   return result;
+}
+
+/**
+ * 找出所有父子环，返回形如 ['a','b','a'] 的 id 路径（首尾为同一节点）。
+ * 自环返回 ['a','a']；无环返回空数组。纯函数，不修改工作区。
+ */
+export function findParentCycles(ws: Workspace): string[][] {
+  const map = itemMap(ws);
+  const finished = new Set<string>();
+  const cycles: string[][] = [];
+
+  for (const item of ws.items) {
+    if (finished.has(item.id)) continue;
+    const path: string[] = [];
+    const index = new Map<string, number>();
+    let current: string | null = item.id;
+
+    while (current) {
+      if (finished.has(current)) break;
+      const previous = index.get(current);
+      if (previous !== undefined) {
+        cycles.push([...path.slice(previous), current]);
+        break;
+      }
+      const node = map.get(current);
+      if (!node) break;
+      index.set(current, path.length);
+      path.push(current);
+      current = node.parentId;
+    }
+    for (const id of path) finished.add(id);
+  }
+
+  return cycles;
 }
 
 export function itemsOfKind(ws: Workspace, kind: ItemKind): Item[] {

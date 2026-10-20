@@ -44,6 +44,19 @@ describe('createHistory', () => {
     expect(history.undo(3)).toBeNull();
   });
 
+  it('clearRedo drops redo history while keeping undo history', () => {
+    const history = createHistory<number>();
+    history.record(1);
+    history.record(2);
+    expect(history.undo(3)).toBe(2);
+    expect(history.canRedo()).toBe(true);
+
+    history.clearRedo();
+    expect(history.canRedo()).toBe(false);
+    expect(history.canUndo()).toBe(true);
+    expect(history.undo(2)).toBe(1);
+  });
+
   it('clear resets both stacks', () => {
     const history = createHistory<number>();
     history.record(1);

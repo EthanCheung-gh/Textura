@@ -1,0 +1,519 @@
+/* 今日总览 —— 只使用 tokens.css 的变量，类名统一 dash- 前缀 */
+.dash-page {
+  gap: var(--space-4);
+}
+
+.dash-header {
+  align-items: flex-end;
+}
+
+.dash-header .page-header-titles {
+  gap: var(--space-1);
+}
+
+.dash-header h1 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.dash-eyebrow {
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.dash-summary {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.dash-kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  background: var(--surface-2);
+}
+
+/* ---------- 统计卡 ---------- */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dash-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: var(--space-4);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+
+.dash-stat:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.dash-stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-faint);
+}
+
+.dash-stat-label {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
+
+.dash-stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.dash-stat-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.dash-stat-meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-stat[data-tone='accent'] .dash-stat-value {
+  color: var(--accent);
+}
+
+.dash-stat[data-tone='ok'] .dash-stat-value {
+  color: var(--ok);
+}
+
+.dash-stat[data-tone='warn'] .dash-stat-value {
+  color: var(--warn);
+}
+
+.dash-stat[data-tone='danger'] .dash-stat-value {
+  color: var(--danger);
+}
+
+.dash-stat[data-tone='info'] .dash-stat-value {
+  color: var(--info);
+}
+
+/* ---------- 主栅格 ---------- */
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.dash-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.dash-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+.dash-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.dash-card-title svg {
+  color: var(--text-faint);
+}
+
+.dash-card-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.dash-card-count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dash-link {
+  flex: none;
+  font-size: 12px;
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+}
+
+.dash-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 今日聚焦 ---------- */
+.dash-focus-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.dash-focus-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: 8px var(--space-2);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.dash-focus-row:last-child {
+  border-bottom: none;
+}
+
+.dash-focus-row:hover {
+  background: var(--surface-2);
+}
+
+.dash-focus-row[data-bucket='overdue'] .dash-focus-title {
+  color: var(--text);
+}
+
+.dash-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: transparent;
+  background: var(--surface);
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.dash-check:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dash-focus-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dash-focus-title {
+  width: 100%;
+  text-align: left;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-focus-title:hover {
+  color: var(--accent);
+}
+
+.dash-focus-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.dash-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-crumb-sep {
+  color: var(--border-strong);
+}
+
+.dash-focus-side {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dash-due {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- OKR 迷你概览 ---------- */
+.dash-okr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+}
+
+.dash-okr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 9px var(--space-2);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.dash-okr-row:hover {
+  background: var(--surface-2);
+}
+
+.dash-okr-title {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-okr-row:hover .dash-okr-title {
+  color: var(--accent);
+}
+
+.dash-okr-value {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 34px;
+}
+
+/* ---------- SOP 快速启动 ---------- */
+.dash-sop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+}
+
+.dash-sop-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 8px var(--space-2);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.dash-sop-row:hover {
+  background: var(--surface-2);
+}
+
+.dash-sop-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.dash-sop-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.dash-sop-title {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-sop-row:hover .dash-sop-title {
+  color: var(--accent);
+}
+
+.dash-sop-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 最近活动 ---------- */
+.dash-activity-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.dash-activity-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: 8px var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-activity-row:last-child {
+  border-bottom: none;
+}
+
+.dash-activity-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.dash-activity-row[data-kind='completed'] .dash-activity-icon {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.dash-activity-row[data-result='pass'] .dash-activity-icon {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 32%, transparent);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.dash-activity-row[data-result='fail'] .dash-activity-icon {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.dash-activity-row[data-result='skip'] .dash-activity-icon {
+  color: var(--warn);
+}
+
+.dash-activity-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dash-activity-title {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-activity-detail {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dash-activity-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 空工作区引导 ---------- */
+.dash-onboarding {
+  padding: var(--space-4);
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.dash-onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+}
+
+@media (max-width: 1280px) {
+  .dash-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

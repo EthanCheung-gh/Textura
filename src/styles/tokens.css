@@ -13,9 +13,25 @@
   --border-strong: #cfc3b3;
   --text: #24201c;
   --text-muted: #6a6057;
-  --text-faint: #93897e;
+  /* 5.50:1 on surface, 4.88:1 on surface-2, 4.66:1 on bg-subtle */
+  --text-faint: #6f665c;
   --accent: #c0663a;
   --accent-soft: #f4e2d6;
+  /* 实心强调底专用：白字 4.65:1；--accent 保持品牌色用于描边/图标/焦点 */
+  --accent-strong: #b05a32;
+  --accent-strong-hover: #a8542c;
+  --accent-strong-active: #9e4a25;
+  --accent-strong-disabled: #807065;
+  --danger-strong: #a8453a;
+  --danger-strong-hover: #923a30;
+  --danger-strong-active: #7f322a;
+  --danger-strong-disabled: #8a6b64;
+  --text-on-strong: #fffaf5;
+  --accent-ink: #8f4523;
+  --ok-ink: #3f6542;
+  --warn-ink: #7d5516;
+  --danger-ink: #8f372e;
+  --info-ink: #3c5c78;
   --ok: #4f7a52;
   --warn: #a8762a;
   --danger: #a8453a;
@@ -55,9 +71,24 @@ html[data-theme='dark'] {
   --border-strong: #4c443b;
   --text: #ece4da;
   --text-muted: #b3a89b;
-  --text-faint: #8a7f73;
+  /* 5.38:1 on surface, 4.84:1 on surface-2, 5.71:1 on bg-subtle */
+  --text-faint: #a0958a;
   --accent: #d97a4c;
   --accent-soft: #3b2a22;
+  --accent-strong: #b05a32;
+  --accent-strong-hover: #a8542c;
+  --accent-strong-active: #9e4a25;
+  --accent-strong-disabled: #807065;
+  --danger-strong: #b64c41;
+  --danger-strong-hover: #a8453a;
+  --danger-strong-active: #9a3d34;
+  --danger-strong-disabled: #8a6b64;
+  --text-on-strong: #fffaf5;
+  --accent-ink: #e7a37c;
+  --ok-ink: #97c09a;
+  --warn-ink: #e3b975;
+  --danger-ink: #e59a8f;
+  --info-ink: #a3c3dd;
   --ok: #7ba67e;
   --warn: #d2a45c;
   --danger: #d07366;

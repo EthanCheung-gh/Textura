@@ -14,6 +14,8 @@ export interface History<T> {
   redo(current: T): T | null;
   canUndo(): boolean;
   canRedo(): boolean;
+  /** 仅清空重做栈，保留撤销历史 */
+  clearRedo(): void;
   clear(): void;
   size(): number;
   limit: number;
@@ -49,6 +51,9 @@ export function createHistory<T>(limit: number = DEFAULT_HISTORY_LIMIT): History
     },
     canRedo() {
       return future.length > 0;
+    },
+    clearRedo() {
+      future = [];
     },
     clear() {
       past = [];

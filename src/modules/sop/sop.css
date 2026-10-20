@@ -1,0 +1,976 @@
+/* ============================================================
+   SOP 模块样式（模块内局部，只使用设计令牌）
+   布局：列表 264px + 画布自适应 + 检查器 320px
+   ============================================================ */
+
+.page.sop-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+  min-height: 0;
+}
+
+.sop-header {
+  flex: none;
+}
+
+.sop-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr) 320px;
+  gap: var(--space-4);
+  position: relative;
+}
+
+.sop-body[data-inspector='closed'] {
+  grid-template-columns: 272px minmax(0, 1fr);
+}
+
+/* ---------- 左栏：SOP 列表 ---------- */
+
+.sop-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.sop-list-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 44px;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.sop-list-heading {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sop-list-count {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-create {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sop-create-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sop-create-row .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.sop-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.sop-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sop-list-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.sop-list-row:hover {
+  background: var(--surface-2);
+}
+
+.sop-list-row[data-active='true'] {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-1);
+}
+
+.sop-list-row--editing {
+  padding: var(--space-2);
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.sop-list-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-2);
+  text-align: left;
+  border-radius: var(--radius-md);
+  color: var(--text);
+}
+
+.sop-list-main:focus-visible {
+  outline-offset: -2px;
+}
+
+.sop-list-area {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sop-list-area[data-empty='true'] {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.sop-list-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sop-list-title {
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-list-row[data-active='true'] .sop-list-title {
+  font-weight: 640;
+}
+
+.sop-list-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sop-list-meta-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-list-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.sop-list-row:hover .sop-list-actions,
+.sop-list-row:focus-within .sop-list-actions {
+  opacity: 1;
+}
+
+.sop-list-items .badge {
+  flex: none;
+  font-size: 10.5px;
+  padding: 1px 6px;
+}
+
+.sop-list-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.sop-list-foot-icon {
+  flex: none;
+}
+
+/* ---------- 画布 ---------- */
+
+.sop-canvas {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.sop-canvas--empty {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  border-style: dashed;
+  background: var(--bg-subtle);
+}
+
+.sop-toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sop-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sop-toolbar-group + .sop-toolbar-group {
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border);
+}
+
+.sop-toolbar-group--icons {
+  margin-left: auto;
+}
+
+.sop-canvas-flow {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.sop-canvas .react-flow {
+  background: var(--bg-subtle);
+}
+
+.sop-canvas .react-flow__pane {
+  cursor: default;
+}
+
+.sop-canvas .react-flow__node-sop {
+  font-family: var(--font-ui);
+}
+
+.sop-canvas .react-flow__handle.sop-node-handle {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1.5px solid var(--border-strong);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.sop-canvas .react-flow__handle.sop-node-handle:hover,
+.sop-canvas .react-flow__handle.sop-node-handle.connectingfrom,
+.sop-canvas .react-flow__handle.sop-node-handle.connectingto {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sop-canvas .react-flow__edge-path {
+  stroke: var(--text-faint);
+  stroke-width: 1.5;
+}
+
+.sop-canvas .react-flow__edge.sop-edge:hover .react-flow__edge-path {
+  stroke: var(--text-muted);
+}
+
+.sop-canvas .react-flow__edge.sop-edge.is-active .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.sop-canvas .react-flow__edge.sop-edge.is-selected .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.25;
+}
+
+.sop-canvas .react-flow__edge-text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.sop-canvas .react-flow__edge-textbg {
+  fill: var(--surface);
+}
+
+.sop-canvas .react-flow__connection-path {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.sop-canvas-empty {
+  width: min(420px, 88%);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------- 节点 ---------- */
+
+.sop-node {
+  position: relative;
+  width: 200px;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--text);
+}
+
+.sop-node-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.sop-node-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sop-node-area {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.sop-node-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-node-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sop-node-kind {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.sop-node-owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sop-node-checkcount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.sop-node-progress {
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.sop-node-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--info);
+  border-radius: inherit;
+}
+
+/* 开始 / 结束：胶囊 */
+.sop-node--start .sop-node-surface,
+.sop-node--end .sop-node-surface {
+  border-radius: 999px;
+  padding-left: 18px;
+  padding-right: 18px;
+  justify-content: center;
+}
+
+.sop-node--start .sop-node-head,
+.sop-node--start .sop-node-meta,
+.sop-node--end .sop-node-head,
+.sop-node--end .sop-node-meta {
+  justify-content: center;
+}
+
+.sop-node--start .sop-node-surface {
+  border-color: var(--ok);
+  box-shadow: inset 0 0 0 1px var(--ok), var(--shadow-1);
+}
+
+.sop-node--start .sop-node-kind {
+  color: var(--ok);
+}
+
+.sop-node--end .sop-node-surface {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+.sop-node--end .sop-node-title {
+  color: var(--bg);
+}
+
+.sop-node--end .sop-node-meta,
+.sop-node--end .sop-node-kind {
+  color: var(--bg);
+  opacity: 0.72;
+}
+
+.sop-node--end .sop-node-area {
+  display: none;
+}
+
+.sop-node--start .sop-node-area {
+  display: none;
+}
+
+/* 判断：斜切 + warn 描边 */
+.sop-node--decision .sop-node-surface {
+  border-color: var(--warn);
+  border-width: 1.5px;
+  padding-left: 16px;
+  padding-right: 16px;
+  transform: skewX(-10deg);
+}
+
+.sop-node--decision .sop-node-head,
+.sop-node--decision .sop-node-meta,
+.sop-node--decision .sop-node-progress {
+  transform: skewX(10deg);
+}
+
+.sop-node--decision .sop-node-kind {
+  color: var(--warn);
+}
+
+/* 检查：左侧语义条 + 勾选进度 */
+.sop-node--check .sop-node-surface {
+  border-color: var(--info);
+  box-shadow: inset 3px 0 0 var(--info), var(--shadow-1);
+}
+
+.sop-node--check .sop-node-kind {
+  color: var(--info);
+}
+
+/* 便签：虚线 */
+.sop-node--note .sop-node-surface {
+  border-style: dashed;
+  background: var(--surface-2);
+}
+
+.sop-node[data-selected='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+.sop-node[data-state='current'] .sop-node-surface {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1);
+}
+
+.sop-node[data-state='current'] .sop-node-kind {
+  color: var(--accent);
+}
+
+.sop-node[data-state='visited'] {
+  opacity: 0.5;
+}
+
+.sop-node[data-state='failed'] {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+.sop-node--end.sop-node[data-state='visited'] {
+  opacity: 0.72;
+}
+
+/* ---------- 运行条 ---------- */
+
+.sop-runbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
+.sop-runbar-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sop-runbar-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sop-runbar-progress {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-runbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+.sop-runbar-title {
+  font-size: 14px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-runbar-meta {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.sop-runbar-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sop-runbar-check {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11.5px;
+}
+
+.sop-runbar-check[data-done='true'] {
+  border-color: var(--ok);
+  color: var(--text-muted);
+}
+
+.sop-runbar-check[data-done='true'] .sop-runbar-check-label span {
+  text-decoration: line-through;
+}
+
+.sop-runbar-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.sop-runbar-check-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-runbar-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.sop-runbar-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sop-checkbox {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  flex: none;
+  cursor: pointer;
+}
+
+/* ---------- 右栏 ---------- */
+
+.sop-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.sop-inspector {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.sop-inspector-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.sop-inspector-eyebrow {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sop-inspector-title {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sop-inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.sop-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.sop-section-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sop-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.sop-checklists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.sop-checklists-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sop-checklists-count {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sop-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sop-checklist-item .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.sop-checklist-item[data-done='true'] .input {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.sop-inspector-danger {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.sop-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.sop-stats,
+.sop-recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.sop-stats-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sop-stats-value {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-stats-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.sop-recent-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: 11.5px;
+}
+
+.sop-recent-step {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-history {
+  flex: none;
+  max-height: 232px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow-y: auto;
+}
+
+.sop-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sop-history-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sop-history-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11.5px;
+}
+
+.sop-history-time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sop-history-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-history-note {
+  grid-column: 1 / -1;
+  color: var(--text-faint);
+  font-size: 11px;
+  padding-left: var(--space-1);
+}
+
+/* ---------- 分支选择 / 小部件 ---------- */
+
+.sop-branch-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sop-branch-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.sop-branch-label {
+  font-weight: 650;
+}
+
+.sop-branch-target {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sop-modal-text {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ---------- 窄屏（<1440，右栏默认收起）：右栏变成抽屉 ---------- */
+
+@media (max-width: 1439px) {
+  .sop-body,
+  .sop-body[data-inspector='closed'] {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .sop-body[data-inspector='open'] .sop-side {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    z-index: 6;
+    padding: var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+@media (max-width: 1120px) {
+  .sop-runbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sop-runbar-actions {
+    justify-content: flex-end;
+  }
+}

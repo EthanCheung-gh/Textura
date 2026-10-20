@@ -18,7 +18,14 @@ import type {
 import { WORKSPACE_VERSION } from './model';
 import { createHistory } from './history';
 import { createDebouncer, areaPalette, cloneWorkspace, currentQuarter, nowIso, uid } from './utils';
-import { emptyWorkspace, loadWorkspace, saveWorkspace } from './repo';
+import {
+  emptyWorkspace,
+  loadWorkspace,
+  mergeCorrectionSummaries,
+  migrateWorkspaceWithReport,
+  takeWorkspaceCorrectionReport,
+} from './repo';
+import type { CorrectionSummary } from './repo';
 import * as repo from './repo';
 import { createSeedWorkspace } from './fixtures';
 import { okrPeriods } from './selectors';
@@ -65,9 +72,11 @@ export interface WorkspaceStore {
   load(): Promise<void>;
   save(): Promise<void>;
   reload(): Promise<void>;
+  replaceWorkspace(next: Workspace, options?: { recordHistory?: boolean }): Promise<void>;
 
   createItem(input: NewItemInput): Item;
   updateItem(id: string, patch: ItemPatch): void;
+  updateItems(patches: Array<{ id: string; patch: ItemPatch }>, options?: { recordHistory?: boolean }): void;
   deleteItems(ids: string[]): void;
   moveItem(id: string, parentId: string | null, order?: number): void;
   toggleDone(id: string): void;
@@ -134,7 +143,7 @@ function mergeDefined<T extends object>(base: T, patch: Partial<T>): T {
   return result;
 }
 
-function applyItemPatch(item: Item, patch: ItemPatch): Item {
+function applyItemPatch(item: Item, patch: ItemPatch, timestamp: string = nowIso()): Item {
   const { okr, sop, gtd, gantt, ...rest } = patch;
   const next: Item = { ...item };
   for (const key of Object.keys(rest) as (keyof typeof rest)[]) {
@@ -143,9 +152,9 @@ function applyItemPatch(item: Item, patch: ItemPatch): Item {
       (next as unknown as Record<string, unknown>)[key] = value;
     }
   }
-  next.updatedAt = nowIso();
+  next.updatedAt = timestamp;
   if (rest.status !== undefined && rest.status !== item.status) {
-    next.completedAt = rest.status === 'done' ? nowIso() : null;
+    next.completedAt = rest.status === 'done' ? timestamp : null;
   }
   if (okr) {
     next.okr = mergeDefined(item.okr ?? { period: currentQuarter(), confidence: 5 }, okr);
@@ -160,12 +169,19 @@ function applyItemPatch(item: Item, patch: ItemPatch): Item {
     };
   }
   if (gtd) {
-    next.gtd = mergeDefined(item.gtd ?? { capturedAt: nowIso(), clarified: true }, gtd);
+    next.gtd = mergeDefined(item.gtd ?? { capturedAt: timestamp, clarified: true }, gtd);
   }
   if (gantt) {
     next.gantt = mergeDefined(item.gantt ?? { start: null, end: null, progress: 0 }, gantt);
   }
   return next;
+}
+
+/** 与 load 共用：当前季度优先，否则取工作区最新季度。 */
+function initialOkrPeriod(ws: Workspace): string {
+  const periods = okrPeriods(ws);
+  const quarter = currentQuarter();
+  return periods.includes(quarter) ? quarter : (periods[0] ?? quarter);
 }
 
 function nextSiblingOrder(ws: Workspace, parentId: string | null): number {
@@ -189,6 +205,37 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     if (get().status === 'ready') scheduleSave.schedule();
   };
 
+  // 串行化所有落盘，避免 replaceWorkspace 与在途 save 交错写入。
+  let saveQueue: Promise<void> = Promise.resolve();
+  const persistWorkspace = (
+    workspace: Workspace,
+    throwOnError: boolean,
+  ): Promise<void> => {
+    const run = async (): Promise<void> => {
+      set({ saveState: 'saving' });
+      try {
+        await repo.saveWorkspace(workspace);
+        set({ saveState: 'saved', error: null });
+      } catch (error) {
+        const message = errorMessage(error);
+        set({ saveState: 'error', error: message });
+        if (throwOnError) throw error instanceof Error ? error : new Error(message);
+      }
+    };
+    const result = saveQueue.then(run, run);
+    saveQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+
+  const notifyCorrections = (summary: CorrectionSummary): void => {
+    if (summary.total === 0) return;
+    console.warn(`[textura] 已修正 ${summary.total} 处非法数据`, summary.entries);
+    notify(`已修正 ${summary.total} 处非法数据（详见控制台）`, 'info');
+  };
+
   const notify = (message: string, tone: Notice['tone'] = 'info'): void => {
     const notice: Notice = { id: uid('notice'), message, tone, at: nowIso() };
     set({ notices: [...get().notices, notice].slice(-4) });
@@ -210,22 +257,24 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
 
     async load() {
       scheduleSave.cancel();
+      // 先让在途保存完成，避免 reload 丢弃尚未落盘的编辑。
+      await saveQueue;
       // 在 await 之前同步读取深链，避免任何异步副作用覆盖 URL/记忆。
       const search = typeof window === 'undefined' ? '' : window.location.search;
       const initialRoute = resolveInitialRoute(search, readRouteMemory());
       const deepItemId = itemIdFromSearch(search);
       set({ status: 'loading', error: null });
       try {
-        let ws = await loadWorkspace();
+        const loaded = await loadWorkspace();
+        let ws = loaded.workspace;
         const isBlank = ws.items.length === 0 && ws.areas.length === 0 && ws.runs.length === 0;
-        if (isBlank) {
+        // 只有「首次安装」才播种；用户主动清空/导入空工作区后重启保持为空。
+        if (isBlank && loaded.freshInstall) {
           ws = createSeedWorkspace();
-          await saveWorkspace(ws);
+          await repo.saveWorkspace(ws);
         }
         history.clear();
-        const periods = okrPeriods(ws);
-        const quarter = currentQuarter();
-        const initialPeriod = periods.includes(quarter) ? quarter : (periods[0] ?? quarter);
+        const initialPeriod = initialOkrPeriod(ws);
         const selectedId =
           deepItemId && ws.items.some((item) => item.id === deepItemId) ? deepItemId : null;
         set({
@@ -237,6 +286,21 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
           ui: { ...get().ui, okrPeriod: initialPeriod, route: initialRoute },
         });
         syncBrowserRoute(initialRoute);
+        notifyCorrections(loaded.corrections ?? { total: 0, entries: [] });
+        if (loaded.parentCycles.length > 0) {
+          let repairedPath = '';
+          try {
+            repairedPath = await repo.saveRepairedWorkspace(ws);
+          } catch (error) {
+            console.warn('[textura] 保存环修复副本失败', error);
+          }
+          notify(
+            `检测到父子环（${loaded.parentCycles.length} 处），已自动切断 parentId；修复副本：${
+              repairedPath || '保存失败'
+            }。原始文件未被覆盖；下次编辑会写回修复结果。`,
+            'error',
+          );
+        }
       } catch (error) {
         set({
           status: 'error',
@@ -250,18 +314,55 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     async save() {
       const state = get();
       if (state.status !== 'ready') return;
-      set({ saveState: 'saving' });
-      try {
-        await saveWorkspace(state.workspace);
-        set({ saveState: 'saved', error: null });
-      } catch (error) {
-        set({ saveState: 'error', error: errorMessage(error) });
-      }
+      await persistWorkspace(state.workspace, false);
     },
 
     async reload() {
+      await saveQueue;
       history.clear();
       await get().load();
+    },
+
+    async replaceWorkspace(next, options) {
+      const recordHistory = options?.recordHistory ?? true;
+      // appshell 会先用 parseWorkspaceText 预校验；沿用当时暂存的修正摘要，
+      // 否则二次归一化会看不到原始非法值。
+      const carried = takeWorkspaceCorrectionReport(next);
+      const migrated = migrateWorkspaceWithReport(next);
+      const corrections = carried
+        ? mergeCorrectionSummaries(carried, migrated.corrections)
+        : migrated.corrections;
+      const normalized: Workspace = {
+        ...migrated.workspace,
+        updatedAt: nowIso(),
+      };
+
+      scheduleSave.cancel();
+      // 先等待在途保存完成，避免旧内容晚于替换内容 rename 到主文件。
+      await saveQueue;
+
+      if (recordHistory) {
+        history.record(cloneWorkspace(get().workspace));
+      } else {
+        // 即使不记录本次替换，也要让旧的重做栈失效。
+        history.clearRedo();
+      }
+
+      set({
+        workspace: normalized,
+        selectedId: null,
+        saveState: 'idle',
+        error: null,
+        ui: { ...get().ui, okrPeriod: initialOkrPeriod(normalized) },
+      });
+
+      try {
+        await persistWorkspace(normalized, true);
+      } catch (error) {
+        notify(`保存失败：${errorMessage(error)}`, 'error');
+        throw error;
+      }
+      notifyCorrections(corrections);
     },
 
     createItem(input) {
@@ -336,6 +437,36 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
         ...ws,
         items: ws.items.map((item) => (item.id === id ? applyItemPatch(item, patch) : item)),
       }));
+    },
+
+    updateItems(patches, options) {
+      if (patches.length === 0) return;
+      const current = get().workspace;
+      const existingIds = new Set(current.items.map((item) => item.id));
+      const patchById = new Map<string, ItemPatch>();
+      for (const { id, patch } of patches) {
+        if (existingIds.has(id)) patchById.set(id, patch);
+      }
+      if (patchById.size === 0) return;
+
+      const recordHistory = options?.recordHistory ?? true;
+      if (recordHistory) {
+        history.record(cloneWorkspace(current));
+      } else {
+        history.clearRedo();
+      }
+
+      const timestamp = nowIso();
+      const items = current.items.map((item) => {
+        const patch = patchById.get(item.id);
+        return patch ? applyItemPatch(item, patch, timestamp) : item;
+      });
+      set({
+        workspace: { ...current, items, updatedAt: timestamp },
+        saveState: 'idle',
+        error: null,
+      });
+      if (get().status === 'ready') scheduleSave.schedule();
     },
 
     deleteItems(ids) {

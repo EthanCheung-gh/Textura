@@ -6,6 +6,8 @@ import {
   rollupProgress,
   scheduledItemsInRange,
   childrenOf,
+  descendantsOf,
+  findParentCycles,
 } from './selectors';
 
 function makeItem(partial: Partial<Item> & Pick<Item, 'id' | 'kind' | 'title'>): Item {
@@ -171,5 +173,46 @@ describe('childrenOf', () => {
       makeItem({ id: 'earlier', kind: 'action', title: '前', parentId: 'parent', order: 1 }),
     ]);
     expect(childrenOf(ws, 'parent').map((item) => item.id)).toEqual(['earlier', 'later']);
+  });
+});
+
+describe('descendantsOf / findParentCycles', () => {
+  it('does not recurse forever on a self-loop', () => {
+    const ws = workspace([
+      makeItem({ id: 'a', kind: 'action', title: 'A', parentId: 'a' }),
+    ]);
+    expect(() => descendantsOf(ws, 'a')).not.toThrow();
+    expect(descendantsOf(ws, 'a')).toEqual([]);
+    expect(findParentCycles(ws)).toEqual([['a', 'a']]);
+  });
+
+  it('handles a two-node cycle and still returns the reachable subtree', () => {
+    const ws = workspace([
+      makeItem({ id: 'a', kind: 'action', title: 'A', parentId: 'b', order: 0 }),
+      makeItem({ id: 'b', kind: 'action', title: 'B', parentId: 'a', order: 1 }),
+      makeItem({ id: 'c', kind: 'action', title: 'C', parentId: 'b', order: 2 }),
+      makeItem({ id: 'd', kind: 'action', title: 'D', parentId: 'c', order: 3 }),
+    ]);
+    expect(descendantsOf(ws, 'a').map((item) => item.id)).toEqual(['b', 'c', 'd']);
+    expect(findParentCycles(ws)).toEqual([['a', 'b', 'a']]);
+  });
+
+  it('reports disjoint cycles and returns [] for a healthy tree', () => {
+    const twoCycles = workspace([
+      makeItem({ id: 'a', kind: 'action', title: 'A', parentId: 'b', order: 0 }),
+      makeItem({ id: 'b', kind: 'action', title: 'B', parentId: 'a', order: 1 }),
+      makeItem({ id: 'x', kind: 'action', title: 'X', parentId: 'y', order: 2 }),
+      makeItem({ id: 'y', kind: 'action', title: 'Y', parentId: 'x', order: 3 }),
+    ]);
+    expect(findParentCycles(twoCycles)).toEqual([
+      ['a', 'b', 'a'],
+      ['x', 'y', 'x'],
+    ]);
+
+    const healthy = workspace([
+      makeItem({ id: 'root', kind: 'project', title: '根', order: 0 }),
+      makeItem({ id: 'child', kind: 'action', title: '子', parentId: 'root', order: 0 }),
+    ]);
+    expect(findParentCycles(healthy)).toEqual([]);
   });
 });
