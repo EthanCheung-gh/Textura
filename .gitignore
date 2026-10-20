@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+*.log
+npm-debug.log*
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+target/
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.openbitfun/
