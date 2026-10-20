@@ -1,0 +1,527 @@
+[
+  {
+    "flow": "a-quick-capture-clarify",
+    "passed": 8,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "baseline inbox count is 6",
+        "ok": true,
+        "detail": {
+          "sidebar": 6,
+          "card": 6,
+          "next": 3
+        }
+      },
+      {
+        "label": "快速收集弹窗打开并聚焦输入框（快捷键路径=顶栏按钮，headless 吞掉了 Ctrl+N）",
+        "ok": true,
+        "detail": {
+          "focused": "quick-capture-input",
+          "viaCtrlN": false
+        }
+      },
+      {
+        "label": "仅 #qa @电脑（无标题）时「收集」禁用且解析出标签/场景",
+        "ok": true,
+        "detail": {
+          "disabled": true,
+          "chips": [
+            "#qa",
+            "@电脑"
+          ]
+        }
+      },
+      {
+        "label": "收件箱计数 +1（侧栏与流程卡）",
+        "ok": true,
+        "detail": {
+          "sidebar": 7,
+          "card": 7,
+          "session": [
+            "QA 冒烟核对#qa@电脑"
+          ]
+        }
+      },
+      {
+        "label": "条目写入：tags=[qa] context=电脑 status=inbox clarified=false",
+        "ok": true,
+        "detail": {
+          "id": "act_b1544ca658",
+          "tags": [
+            "qa"
+          ],
+          "context": "电脑",
+          "status": "inbox",
+          "clarified": false
+        }
+      },
+      {
+        "label": "澄清弹窗默认类型=next 且保留标题/场景",
+        "ok": true,
+        "detail": {
+          "type": "next",
+          "title": "QA 冒烟核对",
+          "context": "电脑"
+        }
+      },
+      {
+        "label": "澄清后：收件箱 -1、下一步 +1",
+        "ok": true,
+        "detail": {
+          "before": {
+            "sidebar": 6,
+            "card": 6,
+            "next": 3
+          },
+          "afterClarify": {
+            "sidebar": 6,
+            "inbox": 6,
+            "next": 4
+          }
+        }
+      },
+      {
+        "label": "澄清后条目 status=next、clarified=true、标签/场景保留",
+        "ok": true,
+        "detail": {
+          "status": "next",
+          "clarified": true,
+          "tags": [
+            "qa"
+          ],
+          "context": "电脑"
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/a-quick-capture-clarify-final-state.png"
+    ]
+  },
+  {
+    "flow": "b-gantt-drag-persist",
+    "passed": 6,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "甘特存在可拖动任务条",
+        "ok": true,
+        "detail": {
+          "label": "需求梳理与竞品盘点，2026-10-11 至 2026-10-15，进度 100%",
+          "cls": "gantt-bar is-done",
+          "id": null
+        }
+      },
+      {
+        "label": "拖动后任务条日期变化",
+        "ok": true,
+        "detail": {
+          "beforeRange": {
+            "start": "2026-10-11",
+            "end": "2026-10-15"
+          },
+          "afterRange": {
+            "start": "2026-10-13",
+            "end": "2026-10-17"
+          },
+          "title": "需求梳理与竞品盘点"
+        }
+      },
+      {
+        "label": "400ms 后侧栏显示「已保存」",
+        "ok": true,
+        "detail": {
+          "saveLabel": "已保存"
+        }
+      },
+      {
+        "label": "localStorage 中 gantt 起止日期已更新",
+        "ok": true,
+        "detail": {
+          "start": "2026-10-13",
+          "end": "2026-10-17"
+        }
+      },
+      {
+        "label": "刷新后日期保留",
+        "ok": true,
+        "detail": {
+          "reloadedLabel": "需求梳理与竞品盘点，2026-10-13 至 2026-10-17，进度 100%",
+          "reloadRange": {
+            "start": "2026-10-13",
+            "end": "2026-10-17"
+          },
+          "expected": {
+            "start": "2026-10-13",
+            "end": "2026-10-17"
+          }
+        }
+      },
+      {
+        "label": "拖动位移=+2 天（week 缩放 28px/天）",
+        "ok": true,
+        "detail": {
+          "deltaDays": 2
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/b-gantt-drag-persist-final-state.png"
+    ]
+  },
+  {
+    "flow": "c-okr-metric-progress",
+    "passed": 4,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "初始 NPS 当前值 47 / 目标 60，KR 进度 28%",
+        "ok": true,
+        "detail": {
+          "avg": "29%",
+          "krPct": "28%",
+          "current": "47",
+          "target": "60"
+        }
+      },
+      {
+        "label": "当前值改为目标值后 KR 进度 100%",
+        "ok": true,
+        "detail": {
+          "avg": "53%",
+          "krPct": "100%",
+          "current": "60",
+          "inputMode": "typed"
+        }
+      },
+      {
+        "label": "目标平均进度上升",
+        "ok": true,
+        "detail": {
+          "before": "29%",
+          "after": "53%"
+        }
+      },
+      {
+        "label": "刷新后 60 与 100% 保留",
+        "ok": true,
+        "detail": {
+          "current": "60",
+          "krPct": "100%"
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/c-okr-metric-progress-final-state.png"
+    ]
+  },
+  {
+    "flow": "d-gtd-complete-sync",
+    "passed": 10,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "今日页读取「近 7 天完成」",
+        "ok": true,
+        "detail": {
+          "beforeWeekly": "1项"
+        }
+      },
+      {
+        "label": "新建条目进入 GTD 收件箱",
+        "ok": true
+      },
+      {
+        "label": "澄清表单带出 /明天 的截止日期",
+        "ok": true,
+        "detail": {
+          "dueValue": "2026-10-22"
+        }
+      },
+      {
+        "label": "条目澄清为下一步且带 gantt.end",
+        "ok": true,
+        "detail": {
+          "status": "next",
+          "end": "2026-10-22"
+        }
+      },
+      {
+        "label": "OKR 关联后 KR 执行项列表出现该条目",
+        "ok": true,
+        "detail": {
+          "linkedText": true
+        }
+      },
+      {
+        "label": "GTD 下一步中出现该条目并点击完成",
+        "ok": true
+      },
+      {
+        "label": "完成状态写回 store（status=done + completedAt）",
+        "ok": true,
+        "detail": {
+          "status": "done",
+          "completedAt": "2026-10-20T17:56:27.676Z"
+        }
+      },
+      {
+        "label": "今日页「近 7 天完成」+1",
+        "ok": true,
+        "detail": {
+          "beforeWeekly": "1项",
+          "afterWeekly": "2项"
+        }
+      },
+      {
+        "label": "甘特中该条目状态同步为已完成（is-done）",
+        "ok": true,
+        "detail": {
+          "cls": "gantt-bar is-done",
+          "label": "联调核对，2026-10-22 至 2026-10-22，进度 100%"
+        }
+      },
+      {
+        "label": "OKR 执行项中显示已完成状态",
+        "ok": true,
+        "detail": {
+          "found": true,
+          "text": "联调核对已完成— – 10/22100%"
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/d-gtd-complete-sync-final-state.png"
+    ]
+  },
+  {
+    "flow": "e-sop-drag-run",
+    "passed": 7,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "SOP 画布渲染出节点",
+        "ok": true,
+        "detail": {
+          "id": "step_start",
+          "title": "新用户注册",
+          "canvas": {
+            "x": 40,
+            "y": 160
+          },
+          "rect": {
+            "x": 732.0651245117188,
+            "y": 273.0862121582031,
+            "w": 167.86981201171875,
+            "h": 47.003509521484375
+          }
+        }
+      },
+      {
+        "label": "拖动节点后 canvas 坐标变化（+x / +y）",
+        "ok": true,
+        "detail": {
+          "before": {
+            "x": 40,
+            "y": 160
+          },
+          "after": {
+            "x": 267,
+            "y": 79
+          }
+        }
+      },
+      {
+        "label": "刷新后节点位置保留",
+        "ok": true,
+        "detail": {
+          "canvas": {
+            "x": 267,
+            "y": 79
+          },
+          "transform": "matrix(1, 0, 0, 1, 267, 79)",
+          "present": true
+        }
+      },
+      {
+        "label": "进入运行模式",
+        "ok": true
+      },
+      {
+        "label": "连点两次「通过」推进步骤",
+        "ok": true,
+        "detail": {
+          "step1": "第 1/7 步",
+          "step2": "第 2/7 步",
+          "step3": "第 3/7 步"
+        }
+      },
+      {
+        "label": "运行记录写入（+2 条 pass）",
+        "ok": true,
+        "detail": {
+          "total": 5,
+          "last": [
+            "pass",
+            "pass"
+          ]
+        }
+      },
+      {
+        "label": "运行期间无 error 级 console 问题",
+        "ok": true,
+        "detail": []
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/e-sop-drag-run-final-state.png"
+    ]
+  },
+  {
+    "flow": "f-command-palette",
+    "passed": 3,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "命令面板搜到条目",
+        "ok": true,
+        "detail": {
+          "rows": [
+            {
+              "text": "前端搭建官网改版",
+              "active": true,
+              "group": "条目"
+            }
+          ]
+        }
+      },
+      {
+        "label": "Enter 后跳到甘特视图并关闭面板",
+        "ok": true,
+        "detail": {
+          "route": "gantt",
+          "url": "?route=gantt",
+          "paletteOpen": false
+        }
+      },
+      {
+        "label": "目标条目处于选中态",
+        "ok": true,
+        "detail": {
+          "route": "gantt",
+          "url": "?route=gantt",
+          "selectedBar": [
+            "前端搭建，2026-10-22 至 2026-10-31，进度 0%"
+          ],
+          "selectedTree": [
+            "前端搭建0%"
+          ],
+          "paletteOpen": false
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/f-command-palette-final-state.png"
+    ]
+  },
+  {
+    "flow": "g-theme-persist",
+    "passed": 5,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "初始为浅色且未写入 localStorage",
+        "ok": true,
+        "detail": {
+          "dataset": "light",
+          "stored": null
+        }
+      },
+      {
+        "label": "点击主题切换按钮",
+        "ok": true
+      },
+      {
+        "label": "切换后 dataset.theme=dark 且 localStorage textura.theme=dark",
+        "ok": true,
+        "detail": {
+          "dataset": "dark",
+          "stored": "dark"
+        }
+      },
+      {
+        "label": "刷新后保持深色主题",
+        "ok": true,
+        "detail": {
+          "dataset": "dark",
+          "stored": "dark"
+        }
+      },
+      {
+        "label": "可以切回浅色",
+        "ok": true,
+        "detail": {
+          "dataset": "light",
+          "stored": "light"
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/g-theme-persist-final-state.png"
+    ]
+  },
+  {
+    "flow": "h-settings-export-reseed",
+    "passed": 5,
+    "failed": 0,
+    "steps": [
+      {
+        "label": "设置页识别为浏览器调试模式",
+        "ok": true
+      },
+      {
+        "label": "浏览器下载分支产出 JSON 文件",
+        "ok": true,
+        "detail": {
+          "files": [
+            "textura-workspace-20261021-0156.json"
+          ]
+        }
+      },
+      {
+        "label": "导出 JSON 可解析且包含完整工作区",
+        "ok": true,
+        "detail": {
+          "version": 1,
+          "items": 30,
+          "areas": 3,
+          "runs": 3,
+          "bytes": 18691
+        }
+      },
+      {
+        "label": "清空 textura.workspace.v1 后刷新重新播种演示数据",
+        "ok": true,
+        "detail": {
+          "items": 30,
+          "inbox": 6,
+          "areas": 3,
+          "runs": 3,
+          "sidebarCount": "6"
+        }
+      },
+      {
+        "label": "收尾：演示数据恢复为干净初始状态",
+        "ok": true,
+        "detail": {
+          "items": 30,
+          "inbox": 6,
+          "route": "dashboard"
+        }
+      }
+    ],
+    "screenshots": [
+      "docs/screenshots/flows/h-settings-export-reseed-final-state.png"
+    ]
+  }
+]

@@ -143,9 +143,11 @@ interface UiState {
 load(): Promise<void>;
 save(): Promise<void>;
 reload(): Promise<void>;
+replaceWorkspace(next: Workspace, options?: { recordHistory?: boolean }): Promise<void>;
 
 createItem(input: NewItemInput): Item;
 updateItem(id: string, patch: ItemPatch): void;
+updateItems(patches: Array<{ id: string; patch: ItemPatch }>, options?: { recordHistory?: boolean }): void;
 deleteItems(ids: string[]): void;
 moveItem(id: string, parentId: string | null, order?: number): void;
 toggleDone(id: string): void;
@@ -173,10 +175,19 @@ notify(message: string, tone?: 'info' | 'success' | 'error'): void;
 
 行为：
 
-- **历史**：每个写操作先把当前工作区深拷贝压入历史，上限 80 步；`undo/redo` 会同步更新
-  `workspace.updatedAt` 并重新触发自动保存。`load()` 清空历史。
+- **历史**：每个写操作先把当前工作区深拷贝压入历史（`replaceWorkspace({ recordHistory: false })`
+  例外），上限 80 步；`undo/redo` 会同步更新 `workspace.updatedAt` 并重新触发自动保存。
+  `load()` 清空历史。
 - **自动保存**：写操作 400ms 防抖调用 `save()`；`saveState` 依次反映 `idle → saving → saved`，
   失败为 `error` 并在 `error` 中给出原因。
+- **replaceWorkspace（整份导入 / 重置的唯一入口）**：
+  - 先用 `migrateWorkspace(next)` 归一化，版本迁移与字段兜底，并把 `updatedAt` 刷新为当前时间；
+  - 默认（`recordHistory: true`）推入一次完整快照，`Ctrl+Z` 可回退整次导入；`recordHistory: false`
+    不新增快照，同时清空 redo 栈；
+  - 清空 `selectedId`，并按与 `load()` 相同的规则重置 `ui.okrPeriod`（当前季度优先，否则最新季度）；
+  - 立即通过 `repo.saveWorkspace` 原子落盘并 `await`，`saveState` 依次为 `saving → saved`；
+    失败时为 `error`，调用 `notify(..., 'error')` 并把原错误抛出，不吞异常；
+  - **禁止**直接写 `workspacePath`、localStorage 或任何文件来绕过该动作。
 - **createItem 默认值**：
   - `status`：`note`/`reference` 默认 `inbox`，其余默认 `next`；显式传入优先。
   - `objective`/`keyresult`：`okr = { period: 当前季度, confidence: 5, ...input.okr }`。
@@ -187,6 +198,8 @@ notify(message: string, tone?: 'info' | 'success' | 'error'): void;
   - `order` 未传时追加到同级末尾。
 - **updateItem**：顶层字段浅合并（`undefined` 值被忽略）；`okr/sop/gtd/gantt` 按块合并，
   `sop.canvas` 逐字段合并；任何更新都刷新 `updatedAt`。
+- **updateItems**：批量局部更新。只压一次历史快照（默认；`recordHistory: false` 时只清 redo），
+  所有 item 与 workspace 共用同一个 `updatedAt`，只触发一次 400ms 防抖保存；空数组与不存在的 id 被忽略。
 - **deleteItems**：级联删除所有子孙、两端涉及的 `edges`、引用被删 SOP/step 的 `runs`；
   若当前 `selectedId` 被删则置空。
 - **moveItem**：拒绝移动到自身或自身子孙下；重排新旧父级的 `order`，按 `order` 插入指定位置。
@@ -196,6 +209,15 @@ notify(message: string, tone?: 'info' | 'success' | 'error'): void;
 - **setUi**：切换主题时同步 `document.documentElement.dataset.theme` 与
   `localStorage['textura.theme']`。
 - **notify**：最多保留 4 条，非 error 提示 3.5s 后自动消失。
+- **load 安全性**：`load()`/`reload()` 开头先 `await saveQueue`，不会丢弃在途保存。
+  读取 `LoadResult { workspace, freshInstall }`。只有 `freshInstall === true` 且工作区为空时
+  才播种演示数据；用户主动导入/清空后的空工作区重启保持为空。
+  加载到父子环时，`normalizeForLoad` 切断每个环的一条 `parentId`，保留磁盘原文件，并另存
+  `workspace.repaired-<时间戳>.json`；`console.warn` 只记录环路径/被切断 id/原 parentId/时间戳，
+  不再输出完整工作区 JSON。`notify` 会说明「下次编辑会写回修复结果」，不白屏、不静默丢数据。
+  工作区版本高于当前应用时进入 `status='error'`，错误信息可读，`save()` 与防抖保存均不会执行。
+- **修正提示**：加载/导入归一化产生修正时，只 `notify` 一次「已修正 N 处非法数据」；
+  完整摘要（最多 20 条，含 itemId/字段/原值/新值）`console.warn` 一次。
 
 ---
 
@@ -204,6 +226,7 @@ notify(message: string, tone?: 'info' | 'success' | 'error'): void;
 ```ts
 itemById(ws, id): Item | undefined
 areaById(ws, id): Area | undefined
+findParentCycles(ws): string[][]                                  // ['a','b','a']，无环 []
 childrenOf(ws, parentId: string | null): Item[]                 // order 升序；null 取根级
 descendantsOf(ws, id): Item[]                                  // 全部子孙，DFS
 ancestorsOf(ws, id): Item[]                                    // 最近父级 → 根
@@ -250,10 +273,13 @@ itemPathTitles(ws, id): string[]                               // 根 → 自身
 ```ts
 isTauri(): boolean
 emptyWorkspace(): Workspace
-migrateWorkspace(input: unknown): Workspace        // 版本迁移 + 字段兜底
-parseWorkspaceText(text: string): Workspace        // 导入时校验
+migrateWorkspace(input: unknown): Workspace        // 严格归一化；环/未来版本抛错
+migrateWorkspaceWithReport(input): { workspace, corrections }
+parseWorkspaceText(text: string): Workspace        // 导入时校验，并暂存修正摘要
+WorkspaceVersionError                             // version > WORKSPACE_VERSION
+saveRepairedWorkspace(workspace): Promise<string>  // 另存 workspace.repaired-*.json
 
-loadWorkspace(): Promise<Workspace>
+loadWorkspace(): Promise<LoadedWorkspace>          // { workspace, freshInstall, parentCycles, corrections }
 saveWorkspace(workspace: Workspace): Promise<SaveInfo>
 storageInfo(): Promise<StorageInfo>
 listBackups(): Promise<BackupInfo[]>
@@ -264,6 +290,10 @@ importWorkspace(path: string): Promise<string>
 interface SaveInfo { savedAt: string; bytes: number }
 interface StorageInfo { dataDir: string; workspacePath: string; backupCount: number; revision: number }
 interface BackupInfo { name: string; size: number; createdAt: string }
+interface LoadResult { workspace: Workspace; freshInstall: boolean }
+interface NormalizationCorrection { itemId: string | null; field: string; from: unknown; to: unknown }
+interface CorrectionSummary { total: number; entries: NormalizationCorrection[] } // entries <= 20
+interface LoadedWorkspace extends LoadResult { parentCycles: string[][]; corrections: CorrectionSummary }
 ```
 
 Tauri 环境（`window.__TAURI_INTERNALS__ !== undefined`）走 `invoke`；否则自动降级 localStorage。
@@ -278,16 +308,26 @@ Tauri 环境（`window.__TAURI_INTERNALS__ !== undefined`）走 `invoke`；否�
   （同一秒多次保存会追加 `-2`、`-3` 后缀）。
 - 读取顺序：`workspace.json` → `workspace.json.bak` → 最新轮换备份 → 空 Workspace；
   解析失败自动尝试下一个候选。读取后若 `version < WORKSPACE_VERSION` 执行迁移。
+- `freshInstall`：主文件、`.bak`、轮换备份均不存在时为 `true`；任一存在（包括空/损坏文件）为 `false`。
+- `load_workspace` / `save_workspace` / `restore_backup` 为 `async` 命令，内部用
+  `spawn_blocking` 执行存储工作，避免 10k items 的 fsync/双拷贝阻塞 IPC 线程。
+- 所有 Mutex 使用 `unwrap_or_else(|poisoned| poisoned.into_inner())`：锁只保护缓存/串行化，
+  中毒不代表数据损坏；继续使用可避免一次 panic 后永久不可用。
+- `version > WORKSPACE_VERSION`：**拒绝加载**（不回退、不覆盖主文件），先把原文件复制为
+  `workspace.future-v<N>.json`，再返回可读错误；前端进入错误态并禁止自动保存。
+- 整个 save 临界区（`.bak`、tmp、fsync、rename、rotation、缓存更新）由 `save_lock` 串行化；
+  并发 save 不允许交错写主文件。
 - 相同内容（JSON 哈希一致）重复保存直接返回缓存 `SaveInfo`，不重复落盘。
 
 命令（结构体 `serde(rename_all = "camelCase")`）：
 
 ```ts
-load_workspace(): Promise<Workspace>
+load_workspace(): Promise<LoadResult>               // { workspace, freshInstall }
 save_workspace(workspace): Promise<SaveInfo>        // { savedAt, bytes }
 storage_info(): Promise<StorageInfo>
 list_backups(): Promise<BackupInfo[]>
 restore_backup(name): Promise<Workspace>            // 读取备份 -> 原子写回 -> 返回工作区
+save_repaired_workspace(workspace): Promise<string> // 另存 workspace.repaired-*.json，不动主文件
 export_workspace(json, path): Promise<void>         // 缩进 2 空格
 import_workspace(path): Promise<string>             // 返回文件文本，前端校验版本
 ```
@@ -295,7 +335,45 @@ import_workspace(path): Promise<string>             // 返回文件文本，前�
 能力文件 `src-tauri/capabilities/default.json` 已包含 `core:default` 与 `dialog:default`。
 
 `cargo test` 覆盖：round-trip + `.bak`、损坏文件回退、空库回退、30 份备份轮换、
-版本迁移、路径穿越拒绝、导出/导入。
+版本迁移、路径穿越拒绝、导出/导入、freshInstall 判定、未来版本拒绝与副本、并发 save 串行化、
+非法 confidence/metric 的反序列化拒绝。
+
+### 4.3 导入/加载归一化（H1）
+
+导入路径 `migrateWorkspace` 严格归一化并拒绝父子环；加载路径 `normalizeForLoad` 使用同一套
+字段规则后切断环。规则：
+
+- `version` 强制整数；`> WORKSPACE_VERSION` → `WorkspaceVersionError`。
+- 数值强制 `Number` 且有限：`confidence` 夹紧为 1–10 整数；`gantt.progress` 夹紧 0–100；
+  `metric.start/target/current` 非有限值回落 0；`order` 非有限值回落索引。
+- 字符串非字符串回落默认；`tags`/`checklist`/`edges`/`areas`/`runs` 保证数组。
+- 枚举白名单：`kind` 非法→`note`（保守落入收件箱/笔记，不进入 GTD 下一步）；`status` 非法→`next`；`nodeType` 非法→`action`；
+  `energy` 非法→省略；`result` 非法→`skip`；`edge.type` 非法→`related`。
+- `notes/tags/areaId/createdAt/updatedAt/completedAt` 缺失补默认（时间戳为当前 ISO）。
+- 父子环：导入拒绝并提示「数据中存在父子环：A → B → A，请修复后重试」；
+  加载时切断环、记录原 parentId、通知用户，不自动覆盖原文件；同时另存
+  `workspace.repaired-<时间戳>.json`（不触碰主文件）。
+- 修正摘要：归一化产生差异时收集 `{ itemId, field, from, to }`，最多 20 条；加载/导入后只
+  `notify` 一次「已修正 N 处非法数据」，完整摘要（≤20 条）`console.warn` 一次。
+
+### 4.4 生产 CSP（Tauri v2）
+
+`src-tauri/tauri.conf.json` 的 `app.security`：
+
+```text
+csp:    default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+devCsp: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+```
+
+- 主题预置已外置为 `public/theme-init.js`（构建到 `/theme-init.js`），生产 CSP 不再需要
+  `script-src 'unsafe-inline'`；
+- `style-src 'unsafe-inline'`：React / @xyflow 的内联 style 属性；
+- `connect-src ipc: http://ipc.localhost`：Tauri v2 IPC；
+- `devCsp` 额外放行 Vite HMR 与 `'unsafe-eval'`。
+
+端到端冒烟：`bash scripts/tauri-smoke.sh`（Xvfb + 截图 + workspace.json 断言 + stderr 检查）。
+deb 的 Maintainer 来自 `Cargo.toml [package].authors` / `bundle.publisher`：
+`Textura <dev@textura.app>`。
 
 ---
 
@@ -357,14 +435,24 @@ light 定义在 `:root`，dark 通过 `html[data-theme="dark"]` 覆盖；主题�
 | 边框 | `--border`、`--border-strong` |
 | 文字 | `--text`、`--text-muted`、`--text-faint` |
 | 强调/语义 | `--accent`、`--accent-soft`、`--ok`、`--warn`、`--danger`、`--info` |
+| 实心强调底 | `--accent-strong`、`--accent-strong-hover`、`--accent-strong-active`、`--accent-strong-disabled`、`--danger-strong*`、`--text-on-strong` |
+| 语义文字（tint 底） | `--accent-ink`、`--ok-ink`、`--warn-ink`、`--danger-ink`、`--info-ink` |
 | 圆角 | `--radius-sm`(4) `--radius-md`(8) `--radius-lg`(14) |
 | 阴影 | `--shadow-1`、`--shadow-2` |
 | 间距 | `--space-1`(4) `--space-2`(8) `--space-3`(12) `--space-4`(16) `--space-5`(24) `--space-6`(32) |
 | 字体 | `--font-ui`（system-ui 栈）、`--font-mono` |
 | 布局/焦点 | `--sidebar-width`(240px)、`--topbar-height`(56px)、`--focus-ring` |
 
-全局样式文件只有：`tokens.css`、`base.css`（reset/基础排版）、`shell.css`（外壳布局）、
-`ui/ui.css`（原语）。**模块不得新增全局 CSS 文件或修改这四个文件。**
+全局样式入口只有：`tokens.css`、`base.css`（reset/基础排版）、`shell.css`（外壳布局）、
+`ui/ui.css`（原语，由 `main.tsx` 引入）。`src/app/RouteErrorBoundary.css` 是错误边界专属的
+组件级样式，仅由该组件 import。**模块不得新增全局 CSS 文件或修改这些文件。**
+
+对比度守护：
+
+- `scripts/contrast-audit.mjs` 解析本文件令牌并输出逐组合 WCAG 对比度表，可单独运行。
+- `src/core/tokens.test.ts` 在 `npm test` 中断言关键组合：正文 ≥ 4.5:1、图标/进度/焦点 ≥ 3:1。
+- `--accent`（品牌色）继续用于描边、图标、焦点环与链接；实心强调底一律使用
+  `--accent-strong*` + `--text-on-strong`，tint 底上的语义文字使用 `--*-ink`。
 
 ---
 
@@ -378,6 +466,9 @@ light 定义在 `:root`，dark 通过 `html[data-theme="dark"]` 覆盖；主题�
 - 内容区自适应；窗口 1440×900，最小 1024×720。
 - `AppShell` 全局挂载 `CommandPalette`、`QuickCapture`、`ShortcutsDialog`，受对应 `ui.*Open` 控制；
   `route === 'settings'` 渲染 `SettingsPage`。
+- `RouteView` 由 `RouteErrorBoundary`（类组件，`getDerivedStateFromError`）包裹。任一模块渲染崩溃时
+  侧栏/顶栏保留，fallback 提供「返回今日」「重新加载工作区」「查看数据目录」三个动作。
+  「重新加载工作区」先 `await save()` 落盘，再 `reload()`；期间按钮显示「正在保存并重新加载…」。
 
 路由元数据（`src/app/routes.ts`）：
 
@@ -427,7 +518,7 @@ syncBrowserRoute(route): void
 | 路径 | 所有者 | 说明 |
 | --- | --- | --- |
 | `src/core/*`、`src/app/*`、`src/styles/*`、`src/ui/*` | Phase A（冻结） | 模块 Worker 只读 |
-| `src/main.tsx`、根配置、`docs/contract.md` | Phase A（冻结） | 只读 |
+| `src/main.tsx`、根配置、`public/theme-init.js`、`docs/contract.md` | Phase A（冻结） | 只读 |
 | `src/modules/sop/**` | sop Worker | 当前占位 `SopPage.tsx` |
 | `src/modules/okr/**` | okr Worker | 当前占位 `OkrPage.tsx` |
 | `src/modules/gtd/**` | gtd Worker | 当前占位 `GtdPage.tsx` |
@@ -467,8 +558,9 @@ buildDemoWorkspace(): Workspace
 > `2026-Q1`，以保证任意时间打开 OKR 视图都有内容；当系统时间处于 2026-Q1 时两者等价。
 > 该选择已冻结，`ui.okrPeriod` 初始值同样取当前季度（若工作区无该季度则取最新季度）。
 
-播种规则：`load()` 发现 `items`、`areas`、`runs` 全为空时，写入种子数据并立即保存一次。
-若想重新播种，清空持久化数据（见下一节）。
+播种规则：只有 `freshInstall === true`（主文件、`.bak`、轮换备份均不存在）且 `items/areas/runs`
+全为空时，才写入种子数据并立即保存一次。文件存在但内容为空的工作区不会自动播种。
+若想重新播种，删除整个工作区文件/备份（见下一节）。
 
 ---
 
@@ -512,7 +604,7 @@ npm run tauri:build          # 产出 deb
 
 ---
 
-## 11. 给模块开发者的 5 条硬性规则
+## 11. 给模块开发者的 6 条硬性规则
 
 1. **只改自己的目录**：`src/modules/<你的模块>/**`。不要修改 `src/core/*`、`src/app/*`、
    `src/ui/*`、`src/styles/*`、`src/main.tsx`、根配置或 `src-tauri/*`；需要新能力先在
@@ -525,7 +617,12 @@ npm run tauri:build          # 产出 deb
    不得新建/修改 `src/styles/*` 或 `src/ui/ui.css`，不得覆盖全局元素选择器。
 5. **复用 selectors 与 store**：所有领域计算调用 `src/core/selectors.ts`，所有读写走
    `useWorkspace` / `getWorkspace()`；不得在模块里复制 rollup / 排期 / 树遍历逻辑，
-   不得直接改 `workspace` 对象（必须通过 store 动作）。
+   不得直接改 `workspace` 对象（必须通过 store 动作）。一次手势更新多条 item 时必须使用
+   `updateItems([...])`，不要循环调用 `updateItem` 制造 N 条历史。
+6. **整份导入 / 重置只走 `replaceWorkspace`**：必须调用
+   `await replaceWorkspace(next, { recordHistory: true })`（默认即 true），不得直接写
+   `storageInfo().workspacePath`、localStorage 或自行调用底层文件写入；只有走该动作才能保证
+   原子写、轮换备份、历史回退与 `saveState` 语义一致。
 
 附加约定（软性但强烈建议）：
 
@@ -539,6 +636,9 @@ npm run tauri:build          # 产出 deb
 ## 12. 冻结的实现细节（避免误解）
 
 - `ancestorsOf` 顺序：**最近父级 → 根**；`itemPathTitles` 返回 **根 → 自身**。
+- `descendantsOf` 带 visited 集合，自环/互环/环+子树都不会无限递归；`findParentCycles` 返回
+  形如 `['a','b','a']` 的环路径。
+- `RouteView` 外包 `RouteErrorBoundary`，模块渲染错误不会导致整窗白屏。
 - `sopGraph` 只返回 `kind === 'step'` 的节点，不包含 SOP 容器本身；边只取 `flow` 且两端在
   节点集中。
 - `scheduledItemsInRange` 返回所有与区间有交集的条目（**包含已完成**），按开始日期升序。
@@ -548,6 +648,10 @@ npm run tauri:build          # 产出 deb
 - `updateItem` 在 status 离开 `done` 时清空 `completedAt`。
 - `moveItem` 的 `order` 是目标父级下的目标下标（从 0 开始）；父级不变时也可以用它排序。
 - `getWorkspace()` 返回完整 store state（`getWorkspace().workspace` 才是数据）。
+- `replaceWorkspace` 默认记录一次整份快照；`recordHistory: false` 只清空 redo 栈、不新增快照。
+- `updateItems` 一次手势只产生一条历史、一个 `updatedAt`、一次防抖保存；模块批量更新必须使用它。
+- `load` 只在 `freshInstall === true` 且空库时播种；未来版本进入错误态且不自动保存；
+  父子环在加载时切断并 warn，导入时拒绝。
 - 视图深链与记忆：URL `?route=` > `localStorage['textura.route']` > `dashboard`；
   `?item=` 只设置选中项；`document.documentElement.dataset.route` 始终与 `ui.route` 同步。
 - 演示数据的 OKR 周期取当前季度（见第 9 节说明）。

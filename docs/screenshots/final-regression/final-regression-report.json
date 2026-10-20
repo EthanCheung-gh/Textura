@@ -1,0 +1,461 @@
+[
+  {
+    "flow": "a-parent-cycle",
+    "label": "导入含环 JSON 被拒绝且错误可读",
+    "ok": true,
+    "detail": {
+      "notices": [
+        "导入失败：数据中存在父子环：环A → 环B → 环A，请修复后重试"
+      ],
+      "modal": false,
+      "items": 30
+    }
+  },
+  {
+    "flow": "a-parent-cycle",
+    "label": "含环数据加载：不白屏、外壳可用、渲染出数据",
+    "ok": true,
+    "detail": {
+      "shell": true,
+      "sidebarLinks": 6,
+      "notices": [
+        "检测到父子环（1 处），已自动切断 parentId；原始文件未被覆盖，请检查控制台日志。"
+      ],
+      "mainText": 819,
+      "storedItems": 2,
+      "storedParentA": "cyc_b",
+      "storedParentB": "cyc_a"
+    }
+  },
+  {
+    "flow": "a-parent-cycle",
+    "label": "含环数据加载：console.warn 记录切断动作",
+    "ok": true,
+    "detail": {
+      "warn": [
+        "[textura] 检测到父子环，已切断 parentId；原文件未自动覆盖 Object"
+      ]
+    }
+  },
+  {
+    "flow": "a-parent-cycle",
+    "label": "含环数据加载：出现可读提示（已切断 parentId）",
+    "ok": true,
+    "detail": {
+      "notices": [
+        "检测到父子环（1 处），已自动切断 parentId；原始文件未被覆盖，请检查控制台日志。"
+      ]
+    }
+  },
+  {
+    "flow": "a-parent-cycle",
+    "label": "原数据未被覆盖（localStorage 中环仍存在）",
+    "ok": true,
+    "detail": {
+      "storedItems": 2,
+      "storedParentA": "cyc_b",
+      "storedParentB": "cyc_a"
+    }
+  },
+  {
+    "flow": "a-parent-cycle",
+    "label": "切断后两条 action 仍可用（GTD 下一步 = 2）",
+    "ok": true,
+    "detail": {
+      "nextCount": "2"
+    }
+  },
+  {
+    "flow": "b-future-version",
+    "label": "future version 启动被拒绝并显示错误屏（不白屏）",
+    "ok": true,
+    "detail": {
+      "hasAlert": true,
+      "shell": false
+    }
+  },
+  {
+    "flow": "b-future-version",
+    "label": "错误文案可读且含版本号",
+    "ok": true,
+    "detail": {
+      "text": "工作区加载失败\n工作区版本 99 高于当前应用支持的版本 1，请升级 Textura 后再打开。\n重试"
+    }
+  },
+  {
+    "flow": "b-future-version",
+    "label": "主数据未被改写（仍为 version 99 / 30 条）",
+    "ok": true,
+    "detail": {
+      "hasAlert": true,
+      "text": "工作区加载失败\n工作区版本 99 高于当前应用支持的版本 1，请升级 Textura 后再打开。\n重试",
+      "shell": false,
+      "storedVersion": 99,
+      "storedItems": 30
+    }
+  },
+  {
+    "flow": "c-empty-workspace",
+    "label": "导入空工作区成功（items=0）",
+    "ok": true,
+    "detail": {
+      "items": 0
+    }
+  },
+  {
+    "flow": "c-empty-workspace",
+    "label": "刷新后仍为空（未被演示数据覆盖）",
+    "ok": true,
+    "detail": {
+      "items": 0,
+      "areas": 0,
+      "runs": 0
+    }
+  },
+  {
+    "flow": "c-empty-workspace",
+    "label": "空工作区下今日页显示空状态（0 指标卡、有引导文案、不报错）",
+    "ok": true,
+    "detail": {
+      "stats": [],
+      "text": "2026年10月21日 星期三\n夜深了，今天推进什么？\n\n今天没有待办，先收集一点想法，或者去定一个目标。\n\n命令面板⌘K\n快速收集\n从第一条记录开始\n\n工作区还是空的。先收集一条想法，或者建立第一个目标 / 流程，今日视图会自动把它们聚合起来。\n\n收集第一条\n创建第一个目标\n创建第一个 SOP"
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "归一化后保存成功（侧栏「已保存」）",
+    "ok": true,
+    "detail": {
+      "saveLabel": "已保存"
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "confidence 999 → 夹紧为 10",
+    "ok": true,
+    "detail": {
+      "confidence": 10
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "progress \"half\" → 0",
+    "ok": true,
+    "detail": {
+      "progress": 0
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "非法 status → 回退 next",
+    "ok": true,
+    "detail": {
+      "status": "next"
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "其它字段保留（日期/指标/区域）",
+    "ok": true,
+    "detail": {
+      "start": "2026-10-20",
+      "current": 50,
+      "areaId": "area_demo"
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "刷新后数据可读且值仍被夹紧",
+    "ok": true,
+    "detail": {
+      "confidence": 10,
+      "status": "next",
+      "items": 3
+    }
+  },
+  {
+    "flow": "d-normalization",
+    "label": "OKR 视图渲染归一化后的 KR（进度 50%，无崩溃）",
+    "ok": true,
+    "detail": {
+      "found": true,
+      "pct": "50%",
+      "objective": "目标：归一化目标",
+      "crashered": false
+    }
+  },
+  {
+    "flow": "e-error-boundaries",
+    "label": "损坏 localStorage：不白屏，回退为空库并渲染外壳",
+    "ok": true,
+    "detail": {
+      "shell": true,
+      "text": "Textura\n织理\n今日\nOKR\nGTD\n甘特\nSOP\n设置\n领域\n暂无领域\n自动保存已开启\n0 条记录 · v1\n今日\n今天要推进的事，一屏看完\n快速收集\n2026年10月21日 星期三\n夜深了，今天推进什么？\n\n今天没有待办，先收集一点想法，或者去定一个目标。\n\n命令面板⌘K\n快速收集\n从第一条记录开始\n\n工作区",
+      "textLength": 228
+    }
+  },
+  {
+    "flow": "e-error-boundaries",
+    "label": "损坏 localStorage：console.warn 说明回退",
+    "ok": true,
+    "detail": {
+      "warn": [
+        "[textura] localStorage 工作区无法读取，已保留原始值并回退为空库 SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 col"
+      ]
+    }
+  },
+  {
+    "flow": "e-error-boundaries",
+    "label": "store 加载错误：显示可读错误屏且提供「重试」",
+    "ok": true,
+    "detail": {
+      "hasAlert": true,
+      "text": "工作区加载失败\n工作区版本 99 高于当前应用支持的版本 1，请升级 Textura 后再打开。\n重试",
+      "retryButton": true
+    }
+  },
+  {
+    "flow": "e-error-boundaries",
+    "label": "渲染异常：RouteErrorBoundary 呈现可读 fallback，外壳仍在",
+    "ok": true,
+    "detail": {
+      "hasBoundary": true,
+      "title": "这个视图暂时无法显示",
+      "description": "工作区数据仍在。可以返回今日、重新加载工作区，或查看数据目录后手动备份。",
+      "detail": "ResizeObserver is not defined",
+      "actions": [
+        "返回今日",
+        "重新加载工作区",
+        "查看数据目录"
+      ],
+      "shellStillThere": true,
+      "whiteScreen": false
+    }
+  },
+  {
+    "flow": "e-error-boundaries",
+    "label": "点击「返回今日」后恢复渲染",
+    "ok": true,
+    "detail": {
+      "route": "dashboard",
+      "boundary": false,
+      "stats": 4
+    }
+  },
+  {
+    "flow": "f-sop-undo-granularity",
+    "label": "读取初始 7 个 step 坐标（不含 SOP 容器）",
+    "ok": true,
+    "detail": {
+      "count": 7
+    }
+  },
+  {
+    "flow": "f-sop-undo-granularity",
+    "label": "拖拽后坐标写入（含预览布局的整张提交）",
+    "ok": true,
+    "detail": {
+      "movedCount": 7
+    }
+  },
+  {
+    "flow": "f-sop-undo-granularity",
+    "label": "一次 Ctrl+Z 全部坐标回到拖拽前（无混合布局）",
+    "ok": true,
+    "detail": {
+      "diffAfterUndo": [],
+      "restored": 7
+    }
+  },
+  {
+    "flow": "f-sop-undo-granularity",
+    "label": "自动布局改变多个节点坐标",
+    "ok": true,
+    "detail": {
+      "layoutMoved": 7
+    }
+  },
+  {
+    "flow": "f-sop-undo-granularity",
+    "label": "一次 Ctrl+Z 撤销整次自动布局（回到拖拽前坐标）",
+    "ok": true,
+    "detail": {
+      "diffLayoutUndo": []
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "初始 NPS 47 / 28%",
+    "ok": true,
+    "detail": {
+      "current": 47,
+      "start": 42,
+      "target": 60,
+      "pct": "28%",
+      "convertText": "42 → 60 分换算 28%"
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "连续输入后当前值 = 60（进度 100%）",
+    "ok": true,
+    "detail": {
+      "current": 60,
+      "start": 42,
+      "target": 60,
+      "pct": "100%",
+      "convertText": "42 → 60 分换算 100%"
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "一次 Ctrl+Z 回到 47（不是 6）",
+    "ok": true,
+    "detail": {
+      "current": 47,
+      "start": 42,
+      "target": 60,
+      "pct": "28%",
+      "convertText": "42 → 60 分换算 28%"
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "打开目标操作菜单",
+    "ok": true
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "目标与全部 KR 一起移动季度",
+    "ok": true,
+    "detail": {
+      "period": "2027-Q1",
+      "krPeriods": [
+        "2027-Q1"
+      ]
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "一次 Ctrl+Z 整体回退到原季度",
+    "ok": true,
+    "detail": {
+      "period": "2026-Q4",
+      "krPeriods": [
+        "2026-Q4"
+      ]
+    }
+  },
+  {
+    "flow": "g-okr-undo",
+    "label": "起点==目标：不显示「换算 100%」且给出可读说明",
+    "ok": true,
+    "detail": {
+      "summary": "42 → 42 分",
+      "hint": "起点当前目标单位42 → 42 分起点与目标相同，无法换算进度；请调整目标值，或直接用完成状态标记 KR。负责人状态下一步进行中等待中已排期已完成已放弃关联执行项落后时间进度 22 个点 · 指标 42 → 42 分 · 尚未关联执行项",
+      "pct": "0%"
+    }
+  },
+  {
+    "flow": "h-weekly-count-consistency",
+    "label": "完成一条下一步以产生完成记录",
+    "ok": true
+  },
+  {
+    "flow": "h-weekly-count-consistency",
+    "label": "周回顾「本周完成」与今日「近 7 天完成」计数一致",
+    "ok": true,
+    "detail": {
+      "dashboardCount": 2,
+      "reviewCount": 2
+    }
+  },
+  {
+    "flow": "i-undated-bucket",
+    "label": "「无日期」桶非空（可用于验证）",
+    "ok": true,
+    "detail": {
+      "undatedCount": 3,
+      "rows": [
+        {
+          "bucket": "today",
+          "title": "视觉稿评审",
+          "start": "2026-10-16",
+          "end": "2026-10-21",
+          "status": "active"
+        },
+        {
+          "bucket": "undated",
+          "title": "整理本周复盘",
+          "start": null,
+          "end": null,
+          "status": "next"
+        },
+        {
+          "bucket": "undated",
+          "title": "更新定价页文案",
+          "start": null,
+          "end": null,
+          "status": "next"
+        },
+        {
+          "bucket": "undated",
+          "title": "写 onboarding 欢迎邮件初稿",
+          "start": null,
+          "end": null,
+          "status": "next"
+        }
+      ]
+    }
+  },
+  {
+    "flow": "i-undated-bucket",
+    "label": "「无日期」桶中没有带 start/end 的条目",
+    "ok": true,
+    "detail": {
+      "undated": [
+        {
+          "title": "整理本周复盘",
+          "start": null,
+          "end": null
+        },
+        {
+          "title": "更新定价页文案",
+          "start": null,
+          "end": null
+        },
+        {
+          "title": "写 onboarding 欢迎邮件初稿",
+          "start": null,
+          "end": null
+        }
+      ]
+    }
+  },
+  {
+    "flow": "i-undated-bucket",
+    "label": "有日期的条目都落在 overdue/today/upcoming 桶",
+    "ok": true,
+    "detail": {
+      "dated": [
+        {
+          "title": "视觉稿评审",
+          "bucket": "today"
+        }
+      ]
+    }
+  },
+  {
+    "flow": "i-undated-bucket",
+    "label": "聚焦摘要计数与实际分桶一致",
+    "ok": true,
+    "detail": {
+      "summary": "0 超期 · 1 今天 · 3 无日期",
+      "counts": {
+        "overdue": 0,
+        "today": 1,
+        "undated": 3
+      }
+    }
+  }
+]

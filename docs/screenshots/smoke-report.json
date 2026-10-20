@@ -1,0 +1,383 @@
+{
+  "routes": [
+    {
+      "route": "dashboard",
+      "shot": "docs/screenshots/dashboard.png",
+      "layout": {
+        "route": "dashboard",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 582,
+        "mainTextHead": "2026年10月21日 星期三\n夜深了，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n快速收集\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboardin",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 26,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "okr",
+      "shot": "docs/screenshots/okr.png",
+      "layout": {
+        "route": "okr",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 694,
+        "mainTextHead": "OKR\n\n用可量化的关键结果推进 2026 Q4 · 时间已过 22%\n\n新建目标\n2026 Q4\n1\n本季\n新建季度\n卡片\n表格\n对齐\n紧凑\n详细\n1\n目标\n3\n关键结果\n29%\n平均进度\n0\n落后 KR\n信心分布\n低 1–3 · 0\n中 4–6 · 2\n高 7–10 · 1\n季度时间进度\n22%\n产品\n进行中\n3 个关键结果\n让新用户在第一周就爱上织理\n",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 77,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "gtd",
+      "shot": "docs/screenshots/gtd.png",
+      "layout": {
+        "route": "gtd",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 758,
+        "mainTextHead": "GTD · 织理\n\n收集、澄清、组织、回顾、执行 —— 让每件事都有归处。\n\n流程台\n周回顾\n收件箱待澄清\n6\n收集 → 澄清\n下一步\n3\n组织 → 执行\n等待中\n1\n委派与跟进\n某天 / 搁置\n1\n暂时不做\n收件箱\n6\n↑\n↓\n选择\nx\n完成\nEnter\n打开澄清\n给财务回电确认发票抬头\n#杂事\n@电话\n2 分钟可完成\n昨天\n2 分钟处理\n转为下一步\n整理",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 53,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "gantt",
+      "shot": "docs/screenshots/gantt.png",
+      "layout": {
+        "route": "gantt",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 1,
+        "mainTextLength": 370,
+        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 7 – 11月 7\n7/11 已排期\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/11–11/3 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期 ·",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 24,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "sop",
+      "shot": "docs/screenshots/sop.png",
+      "layout": {
+        "route": "sop",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 546,
+        "mainTextHead": "SOP\n\n把流程画成可执行的图：节点是步骤，连线决定下一步。\n\n收起右栏\n流程\n1\n新用户 onboarding SOP\n7 步 · 运营\n未通过\n双击重命名 · 删除会级联清除步骤与连线\n行动\n判断\n检查\n结束\n运行\n自动布局\n是\n否\n补充\n通过\n新用户注册\n开始\n发送欢迎邮件\n行动\n·\n5 分钟\n收集团队信息\n行动\n·\n10 分钟\n信息是否完整？\n判断\n",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 25,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "settings",
+      "shot": "docs/screenshots/settings.png",
+      "layout": {
+        "route": "settings",
+        "theme": "light",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 1,
+        "mainTextLength": 820,
+        "mainTextHead": "设置\n\n存储、备份与工作区。\n\n浏览器调试模式\n快捷键\n外观\n\n主题立即生效，并记录在 localStorage（textura.theme），下次启动沿用。\n\n浅色\n深色\n\n浅色是暖纸感的工作台，深色适合夜间复盘。主题只影响界面，不改动工作区数据。\n\n数据与备份\n\n浏览器调试模式写入 localStorage，不提供文件级备份。\n\n自动保存\n运行模式\n浏览",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 19,
+          "modals": 0
+        }
+      },
+      "issues": []
+    }
+  ],
+  "narrow": [
+    {
+      "route": "dashboard",
+      "shot": "docs/screenshots/dashboard-1024.png",
+      "layout": {
+        "route": "dashboard",
+        "theme": "light",
+        "viewport": {
+          "width": 1024,
+          "height": 720
+        },
+        "docScrollWidth": 1024,
+        "docClientWidth": 1024,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 582,
+        "mainTextHead": "2026年10月21日 星期三\n夜深了，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n快速收集\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboardin",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 26,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "route": "gantt",
+      "shot": "docs/screenshots/gantt-1024.png",
+      "layout": {
+        "route": "gantt",
+        "theme": "light",
+        "viewport": {
+          "width": 1024,
+          "height": 720
+        },
+        "docScrollWidth": 1024,
+        "docClientWidth": 1024,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 1,
+        "mainTextLength": 351,
+        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 7 – 10月 23\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/11–11/3 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期 · 0%\n写 on",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 24,
+          "modals": 0
+        }
+      },
+      "issues": []
+    }
+  ],
+  "extras": [
+    {
+      "name": "dashboard-dark",
+      "shot": "docs/screenshots/dashboard-dark.png",
+      "layout": {
+        "route": "dashboard",
+        "theme": "dark",
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "docScrollWidth": 1440,
+        "docClientWidth": 1440,
+        "docOverflowX": 0,
+        "docOverflowY": 0,
+        "bodyOverflowX": 0,
+        "offenders": [],
+        "offenderCount": 0,
+        "clipped": [],
+        "clippedCount": 0,
+        "ellipsisCount": 0,
+        "mainTextLength": 582,
+        "mainTextHead": "2026年10月21日 星期三\n夜深了，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n快速收集\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboardin",
+        "header": {
+          "display": "flex",
+          "padding": "0px 0px 0px 0px",
+          "gap": "16px",
+          "marginBottom": "0px",
+          "h1FontSize": "22px",
+          "h1FontWeight": "650",
+          "bodyFontFamily": "-apple-system"
+        },
+        "counts": {
+          "h1": 1,
+          "buttons": 26,
+          "modals": 0
+        }
+      },
+      "issues": []
+    },
+    {
+      "name": "sop-run",
+      "shot": "docs/screenshots/sop-run.png",
+      "detail": {
+        "step": "第 1/7 步"
+      },
+      "issues": []
+    },
+    {
+      "name": "gantt-deps",
+      "shot": "docs/screenshots/gantt-deps.png",
+      "detail": {
+        "pathCount": 2,
+        "hotCount": 2,
+        "hotLabels": [],
+        "svgVisible": true,
+        "selected": [
+          "前端搭建，2026-10-22 至 2026-10-31，进度 0%"
+        ]
+      },
+      "issues": []
+    }
+  ],
+  "consoleIssues": [],
+  "chrome": "Chrome/155.0.8059.84"
+}

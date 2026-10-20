@@ -22,12 +22,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost; frame-ancestors 'none'; base-uri 'self'; form-action 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"],
+    "targets": [
+      "deb"
+    ],
     "category": "Productivity",
     "shortDescription": "结构化执行工作台",
     "longDescription": "Textura（织理）将 OKR、GTD、甘特图与图形化 SOP 编织在同一套任务内核之上。",
@@ -37,6 +40,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Textura <dev@textura.app>"
   }
 }

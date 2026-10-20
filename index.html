@@ -6,16 +6,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content="Textura · 织理 — 单机优先的结构化执行工作台" />
     <title>Textura · 织理</title>
-    <script>
-      try {
-        var stored = localStorage.getItem('textura.theme');
-        if (stored === 'dark' || stored === 'light') {
-          document.documentElement.dataset.theme = stored;
-        }
-      } catch (error) {
-        /* 忽略隐私模式下的 localStorage 异常 */
-      }
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

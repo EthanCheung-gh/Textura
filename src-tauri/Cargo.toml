@@ -2,7 +2,7 @@
 name = "textura"
 version = "0.1.0"
 description = "Textura · 织理 — 结构化执行工作台"
-authors = ["Textura"]
+authors = ["Textura <dev@textura.app>"]
 edition = "2021"
 rust-version = "1.77.2"
 
