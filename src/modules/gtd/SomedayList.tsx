@@ -1,9 +1,10 @@
+import { memo, useMemo, useState } from 'react';
 import type { Item } from '../../core/model';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { Icon } from '../../ui/icons';
-import { ENERGY_LABELS, contextOf } from './gtdLogic';
+import { ENERGY_LABELS, LIST_PAGE_SIZE, contextOf, paginateItems } from './gtdLogic';
 import { activateSomedayItem } from './gtdMutations';
 
 export interface SomedayListProps {
@@ -12,6 +13,9 @@ export interface SomedayListProps {
 
 /** 某天 / 搁置：保持低摩擦，一键激活为下一步。 */
 export function SomedayList({ items }: SomedayListProps) {
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE);
+  const page = useMemo(() => paginateItems(items, limit), [items, limit]);
+
   if (items.length === 0) {
     return (
       <div className="gtd-section-body gtd-empty-body">
@@ -27,28 +31,43 @@ export function SomedayList({ items }: SomedayListProps) {
 
   return (
     <div className="gtd-side-list">
-      {items.map((item) => {
-        const context = contextOf(item);
-        return (
-          <div key={item.id} className="gtd-side-row">
-            <div className="gtd-side-body">
-              <span className="gtd-row-title gtd-row-title--static">{item.title}</span>
-              <div className="gtd-row-meta">
-                {context ? <Badge tone="info">@{context}</Badge> : null}
-                <Badge tone="neutral">能量 {ENERGY_LABELS[item.gtd?.energy ?? 'medium']}</Badge>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              iconLeft={<Icon name="play" size={12} />}
-              onClick={() => activateSomedayItem(item)}
-            >
-              激活为下一步
-            </Button>
-          </div>
-        );
-      })}
+      {page.items.map((item) => (
+        <SomedayRow key={item.id} item={item} />
+      ))}
+      {page.remaining > 0 ? (
+        <div className="gtd-show-more">
+          <button
+            type="button"
+            className="gtd-linkbtn"
+            onClick={() => setLimit((current) => current + LIST_PAGE_SIZE)}
+          >
+            显示更多（剩余 {page.remaining} 条）
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
+
+const SomedayRow = memo(function SomedayRow({ item }: { item: Item }) {
+  const context = contextOf(item);
+  return (
+    <div className="gtd-side-row">
+      <div className="gtd-side-body">
+        <span className="gtd-row-title gtd-row-title--static">{item.title}</span>
+        <div className="gtd-row-meta">
+          {context ? <Badge tone="info">@{context}</Badge> : null}
+          <Badge tone="neutral">能量 {ENERGY_LABELS[item.gtd?.energy ?? 'medium']}</Badge>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        iconLeft={<Icon name="play" size={12} />}
+        onClick={() => activateSomedayItem(item)}
+      >
+        激活为下一步
+      </Button>
+    </div>
+  );
+});

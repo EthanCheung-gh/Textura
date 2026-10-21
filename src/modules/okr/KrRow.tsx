@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import clsx from 'clsx';
-import type { Item, ItemStatus, Workspace } from '../../core/model';
+import type { Item, ItemStatus } from '../../core/model';
 import { STATUS_LABELS } from '../../core/model';
 import { rollupProgress } from '../../core/selectors';
 import { useWorkspace } from '../../core/store';
@@ -30,7 +30,6 @@ const KR_STATUS_OPTIONS = (['next', 'active', 'waiting', 'scheduled', 'done', 'd
 );
 
 interface KrRowProps {
-  workspace: Workspace;
   objective: Item;
   kr: Item;
   index: number;
@@ -40,8 +39,12 @@ interface KrRowProps {
   onDelete: (kr: Item) => void;
 }
 
-export function KrRow({
-  workspace,
+/**
+ * 单条 KR。props 只含 item（引用稳定）与原始值 / 稳定回调：
+ * 修改 A 条 KR 时，其余 KR 行会被 React.memo 跳过。
+ * 执行项通过自己的订阅获取（内容不变时返回同一数组引用）。
+ */
+export const KrRow = memo(function KrRow({
   objective,
   kr,
   index,
@@ -53,6 +56,9 @@ export function KrRow({
   const updateItem = useWorkspace((state) => state.updateItem);
   const moveItem = useWorkspace((state) => state.moveItem);
   const setStatus = useWorkspace((state) => state.setStatus);
+  const executionItems = useWorkspace((state) => executionItemsOf(state.workspace, kr.id));
+  // 只订阅本行的进度数字：其他 KR 的写入不会让本行重渲染。
+  const progress = useWorkspace((state) => rollupProgress(state.workspace, kr.id));
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [ownerDraft, setOwnerDraft] = useState(kr.okr?.krOwner ?? '');
@@ -62,9 +68,7 @@ export function KrRow({
   }, [kr.id, kr.okr?.krOwner]);
 
   const metric = kr.okr?.metric;
-  const progress = rollupProgress(workspace, kr.id);
   const behind = isKrBehind(progress, elapsedPercent);
-  const executionItems = executionItemsOf(workspace, kr.id);
   const noGrip = !metric && executionItems.length === 0;
   const confidence = kr.okr?.confidence ?? 5;
 
@@ -221,12 +225,10 @@ export function KrRow({
         </div>
       ) : null}
 
-      <LinkItemsDialog
-        open={linkOpen}
-        kr={kr}
-        workspace={workspace}
-        onClose={() => setLinkOpen(false)}
-      />
+      {/* 只在需要时挂载：避免 100 条 KR 各带一个弹窗订阅 store。 */}
+      {linkOpen ? (
+        <LinkItemsDialog open kr={kr} onClose={() => setLinkOpen(false)} />
+      ) : null}
     </li>
   );
-}
+});

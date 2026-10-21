@@ -419,6 +419,31 @@ describe('store structural mutations', () => {
     expect(state.selectedId).toBeNull();
   });
 
+  it('reindexes only the affected siblings when moving items', () => {
+    const workspace: Workspace = {
+      ...emptyWorkspace(),
+      items: [
+        makeItem('parent', { kind: 'project' }),
+        makeItem('a', { parentId: 'parent', order: 0 }),
+        makeItem('b', { parentId: 'parent', order: 1 }),
+        makeItem('c', { parentId: 'parent', order: 2 }),
+        makeItem('other'),
+      ],
+    };
+    const other = workspace.items.find((item) => item.id === 'other')!;
+    useWorkspace.setState({ workspace, status: 'loading', selectedId: null });
+
+    useWorkspace.getState().moveItem('c', 'parent', 0);
+
+    const movedState = useWorkspace.getState().workspace;
+    const children = movedState.items
+      .filter((item) => item.parentId === 'parent')
+      .sort((left, right) => left.order - right.order);
+    expect(children.map((item) => item.id)).toEqual(['c', 'a', 'b']);
+    expect(children.map((item) => item.order)).toEqual([0, 1, 2]);
+    expect(movedState.items.find((item) => item.id === 'other')).toBe(other);
+  });
+
   it('rejects moving an item into itself or its descendants', () => {
     const workspace: Workspace = {
       ...emptyWorkspace(),

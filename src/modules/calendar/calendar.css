@@ -3,19 +3,21 @@
    月视图（6×7 网格）/ 周视图 / 右侧日程面板。
    ============================================================ */
 
-.cal-page {
+/* 页面级覆盖统一用 .page.cal-page / .page-header.cal-header，
+   避免与全局 .page / .page-header 同特异性时依赖样式加载顺序。 */
+.page.cal-page {
   height: calc(100vh - var(--topbar-height) - var(--space-5) * 2);
   min-height: 520px;
   gap: var(--space-4);
 }
 
-.cal-header {
+.page-header.cal-header {
   align-items: flex-start;
   gap: var(--space-4);
   flex-wrap: wrap;
 }
 
-.cal-header h1 {
+.page-header.cal-header h1 {
   font-size: 22px;
   letter-spacing: -0.01em;
 }
@@ -682,7 +684,7 @@
 
 /* ---------- 窄窗口：面板折叠为底部抽屉 ---------- */
 @media (max-width: 1180px) {
-  .cal-page {
+  .page.cal-page {
     height: auto;
     min-height: 0;
   }

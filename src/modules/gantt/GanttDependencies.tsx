@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { Edge } from '../../core/model';
 
 export interface DepRect {
@@ -81,7 +81,7 @@ function dependencyPath(
   ].join(' ');
 }
 
-export function GanttDependencies({
+export const GanttDependencies = memo(function GanttDependencies({
   edges,
   rects,
   titles,
@@ -154,4 +154,4 @@ export function GanttDependencies({
       })}
     </svg>
   );
-}
+});

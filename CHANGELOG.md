@@ -120,6 +120,9 @@
 - 播种规则收紧：只有首次安装且工作区为空才写入演示数据，导入空工作区后重启保持为空。
 - 主题预置从内联脚本外置为 `public/theme-init.js`，生产 CSP 不再需要 `script-src 'unsafe-inline'`。
 - 术语统一：Area 的中文界面名使用「领域」，命令面板分组、设置页统计、侧栏与文档同步修改。
+- **行为变化（性能改造）**：GTD / 今日列表按 100 条分页、OKR 表格按 200 条 KR 分页（「显示更多（剩余 N 条）」，
+  筛选 / 搜索 / 季度 / 折叠变化回到第一页）；视图改为路由懒加载，首次进入显示「正在织理「视图名」…」骨架；
+  `.page.gtd-page`、`.page.cal-page` 收紧页面级样式特异性，页面间距不再依赖 CSS 加载顺序。
 
 ### 修复
 
@@ -145,6 +148,36 @@
   SOP 检查器按钮等）的点击。
 - **日历窄屏面板不展开**：≤1180px 时点日期会自动展开当日抽屉，并保留用户手动收起的意图。
 
+### 性能
+
+- **索引化选择器**：`getWorkspaceIndex(ws)` 以 workspace 身份为键（`WeakMap`）构建 `byId/children/byKind/
+  objectivesByPeriod/byStatus/edgesFrom/edgesTo/areas` 与 rollup / path memento；selectors 全部走索引，
+  返回数组 `Object.freeze`（`itemById` O(1)、`childrenOf` O(k)、`descendantsOf` O(subtree)）。
+- **结构共享历史**：撤销栈不再整份 `structuredClone`，只保存 workspace 引用；`updateItem` 只新建目标条目，
+  `moveItem` 只克隆受影响条目，`deleteItems` 用 children 索引 BFS；新增 `getHistoryStats()`。
+  `indexing.test.ts` 用 `deepFreeze` 守护「不可原地修改」不变量。
+- **甘特视口渲染**：左侧树上下 spacer 虚拟化（固定 36px 行高、动态缓冲）+ 表头列虚拟化（±2 列）+ `React.memo`；
+  新增纯函数 `visibleRows` / `visibleColumns`（`gantt/virtual.ts`）。
+- **SOP 视口渲染**：`onlyRenderVisibleElements` + `sop/perf.ts` 的 `buildCanvasNodes` 复用未变化节点对象；
+  首帧前测量容器尺寸再以 `defaultViewport` 挂载，避免全量首帧。
+- **列表分页**：GTD / 今日每页 100 条、OKR 表格每页 200 条 KR，行级 `React.memo`、列表级面包屑 `Map`、
+  `content-visibility: auto` 降低离屏布局。
+- **路由级分包**：`React.lazy` + `manualChunks`（react / flow / date），`Suspense` 置于 `RouteErrorBoundary` 内，
+  新增 `RouteLoading` 骨架（`role="status"`、`aria-busy`）。
+- **稳定性**：`.page.gtd-page` / `.page.cal-page` 页面级样式改为双类选择器，不再依赖 CSS 加载顺序。
+
+实测（生产构建 + 10,000 条 / 3.23 MB，`scripts/qa/perf-bench.mjs`）：
+
+| 指标 | 结果 |
+| --- | --- |
+| 首屏 JS | 4 个请求，262.1 KiB raw / **84.4 KiB gzip**（优化前 679 KiB / 219 kB，**−61%**），无 >500 kB 警告 |
+| FCP | 256 ms |
+| 路由切换中位 | 今日 62 / 日历 58 / 甘特 108 / SOP 103 / OKR 295 / GTD 311 ms |
+| 编辑 | GTD 45 / OKR 21 / 甘特 63 ms；撤销 18–38 ms |
+| 内存 | 100 次编辑堆净增 **7.5 MB**（优化前 50 步约 424 MB） |
+| DOM | 甘特树 28 行（4,001 行数据）、SOP 28 节点（300 step / 400 边）、GTD 下一步 100 行（1,500 条） |
+| 保存 | 状态切换 10.7 ms；浏览器模式 3.2 MB 序列化一次 135 ms 长任务 |
+
 ### 安全
 
 - 生产 CSP 启用：`default-src 'self'`、`script-src 'self'`、`style-src 'self' 'unsafe-inline'`、
@@ -163,7 +196,8 @@
   保存状态含义。
 - 补充批量撤销、指标 600ms 提交、GTD 单击改名、SOP 撤销粒度等操作说明。
 - 新增日历章节：月 / 周视图、农历与节气标签优先级、当日面板、窄屏抽屉、支持范围与深链。
-- 截图与 QA 证据入库（主图 7 张 + 1024×720 3 张 + 深色 2 张 + SOP 运行 + 甘特依赖 + 日历周视图 + 流程终态）。
+- 新增性能章节：10k 实测数据、索引 / 结构共享 / 视口渲染三条机制、列表分页与懒加载骨架说明。
+- 截图与 QA 证据入库（主图 7 张 + 补充 8 张 + 性能证据 2 张，共 17 张）。
 
 ### 已知限制
 
@@ -173,8 +207,11 @@
 - SOP 连线的进出点按节点位置推导，不写入模型。
 - GTD 的参考资料 / 笔记归档借用 `done` 状态，会进入完成类统计。
 - 领域（Area）当前只有数据层动作，界面未提供增删入口。
-- 大工作区（约 1 万条）下快照历史内存与整份写盘会明显放大；甘特左侧树未虚拟化；
-  主 chunk 约 650 KiB 未压缩；构建 `sourcemap: false`。
+- 大工作区：10,000 条（3.23 MB）已实测可用；超过这个量级仍建议按领域 / 季度分片或换 SQLite。
+  每次保存仍是整份序列化 + `.bak` + 轮换副本，写放大会随条目数线性增长。
+- 保存的主线程成本：浏览器调试模式 3.2 MB 序列化会产生约 135 ms 长任务（桌面端磁盘 IO 在 `spawn_blocking`，
+  序列化仍在主线程）；构建 `sourcemap: false`。
+- 视图按路由懒加载，首次进入某个视图有一次 chunk 加载（实测额外 100–210 ms），期间显示骨架。
 - `workspace.repaired-*.json` 不参与 30 份轮换；React Flow 默认署名水印需商业授权才能去除。
 - 农历只覆盖 1900-01-31 ～ 2100-12-31，范围外只显示公历；节气按太阳视黄经计算（分钟级），
   极少数交节时刻在午夜边界的年份可能与部分日历相差一天。

@@ -7,7 +7,8 @@ import type { Item, OkrData, Workspace } from '../../core/model';
 import {
   areaById,
   childrenOf,
-  edgeTargetsOf,
+  getWorkspaceIndex,
+  itemPathTitles,
   objectivesOfPeriod,
   rollupProgress,
 } from '../../core/selectors';
@@ -176,27 +177,58 @@ function isExecutionItem(item: Item): boolean {
  * 1) `okr` 边（from = KR, to = 执行项）
  * 2) parentId 直接挂在 KR 下的 project/action
  * 同一执行项同时命中两条路径时以 edge 为准（可解除关联）。
+ *
+ * 通过 `edgesFrom` 索引取边（不再对每条执行项扫描整个 edges 数组），
+ * 并用内容签名缓存结果数组：内容没变时返回同一引用，行组件可以 memo 跳过。
  */
+interface ExecutionCacheEntry {
+  signature: string;
+  items: ExecutionItemRef[];
+}
+
+const executionCache = new Map<string, ExecutionCacheEntry>();
+
+/**
+ * Item 引用身份：store 的不可变更新保证未修改条目引用不变，
+ * 因此可以用引用身份做缓存签名（比 updatedAt 更可靠：导入 / 外部替换也能识别）。
+ */
+const itemIdentity = new WeakMap<Item, number>();
+let nextItemIdentity = 1;
+
+function identityOf(item: Item): number {
+  const cached = itemIdentity.get(item);
+  if (cached !== undefined) return cached;
+  const identity = nextItemIdentity;
+  nextItemIdentity += 1;
+  itemIdentity.set(item, identity);
+  return identity;
+}
+
 export function executionItemsOf(workspace: Workspace, krId: string): ExecutionItemRef[] {
+  const index = getWorkspaceIndex(workspace);
   const result: ExecutionItemRef[] = [];
   const seen = new Set<string>();
 
-  for (const item of edgeTargetsOf(workspace, krId, 'okr')) {
-    if (!isExecutionItem(item) || seen.has(item.id)) continue;
-    seen.add(item.id);
-    const edgeId =
-      workspace.edges.find(
-        (edge) => edge.from === krId && edge.to === item.id && edge.type === 'okr',
-      )?.id ?? null;
-    result.push({ item, via: 'edge', edgeId });
+  for (const edge of index.edgesFrom.get(krId) ?? []) {
+    if (edge.type !== 'okr' || seen.has(edge.to)) continue;
+    const target = index.byId.get(edge.to);
+    if (!target || !isExecutionItem(target)) continue;
+    seen.add(target.id);
+    result.push({ item: target, via: 'edge', edgeId: edge.id });
   }
 
-  for (const item of childrenOf(workspace, krId)) {
-    if (!isExecutionItem(item) || seen.has(item.id)) continue;
-    seen.add(item.id);
-    result.push({ item, via: 'child', edgeId: null });
+  for (const child of index.children.get(krId) ?? []) {
+    if (seen.has(child.id) || !isExecutionItem(child)) continue;
+    seen.add(child.id);
+    result.push({ item: child, via: 'child', edgeId: null });
   }
 
+  const signature = result
+    .map((entry) => `${identityOf(entry.item)}:${entry.via}:${entry.edgeId ?? ''}`)
+    .join('|');
+  const cached = executionCache.get(krId);
+  if (cached && cached.signature === signature) return cached.items;
+  executionCache.set(krId, { signature, items: result });
   return result;
 }
 
@@ -255,6 +287,102 @@ export function filterObjectives(
   }
 
   return result;
+}
+
+/* ------------------------------------------------------------------ */
+/* 表格长列表分页                                                       */
+/* ------------------------------------------------------------------ */
+
+/** 表格一次渲染的 KR 行数上限。 */
+export const OKR_KR_PAGE_SIZE = 200;
+
+export interface ObjectiveTablePage {
+  /** 本页要渲染的目标；每个目标的 keyResults 已切到本页范围内。 */
+  entries: ObjectiveView[];
+  shownKeyResults: number;
+  totalKeyResults: number;
+  remaining: number;
+  hasMore: boolean;
+}
+
+/**
+ * 按 KR 行数分页（不是按目标数）：跨目标顺序保持不变，
+ * 一个目标只有在前面的 KR 进入本页时才出现，避免空目标块。
+ * 没有 KR 的目标在还有预算时照常显示（保留「缺少 KR」提示）。
+ */
+export function paginateObjectiveKrs(
+  entries: readonly ObjectiveView[],
+  limit: number,
+): ObjectiveTablePage {
+  const totalKeyResults = entries.reduce((sum, entry) => sum + entry.keyResults.length, 0);
+  const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  let budget = safeLimit;
+  let shownKeyResults = 0;
+  const page: ObjectiveView[] = [];
+
+  for (const entry of entries) {
+    if (budget <= 0) break;
+    if (entry.keyResults.length === 0) {
+      page.push({ ...entry, keyResults: [] });
+      continue;
+    }
+    const visible = entry.keyResults.slice(0, budget);
+    budget -= visible.length;
+    shownKeyResults += visible.length;
+    page.push({ ...entry, keyResults: visible });
+  }
+
+  return {
+    entries: page,
+    shownKeyResults,
+    totalKeyResults,
+    remaining: totalKeyResults - shownKeyResults,
+    hasMore: shownKeyResults < totalKeyResults,
+  };
+}
+
+export interface OkrPaginationState {
+  key: string;
+  limit: number;
+}
+
+/** 分页 key（季度 + 搜索词）变化时自动回到第一页。 */
+export function resolveOkrPageLimit(
+  state: OkrPaginationState,
+  key: string,
+  pageSize: number = OKR_KR_PAGE_SIZE,
+): number {
+  if (state.key !== key) return pageSize;
+  return Math.max(pageSize, state.limit);
+}
+
+export function nextOkrPage(
+  state: OkrPaginationState,
+  key: string,
+  pageSize: number = OKR_KR_PAGE_SIZE,
+): OkrPaginationState {
+  return { key, limit: resolveOkrPageLimit(state, key, pageSize) + pageSize };
+}
+
+/* ------------------------------------------------------------------ */
+/* 执行项路径索引（列表级一次构建，行内 O(1)）                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 为一批执行项构建「根 → 父级」的路径文本。
+ * 行内只做 Map.get，不再逐条调用 itemPathTitles。
+ */
+export function buildParentPathText(
+  workspace: Workspace,
+  items: readonly Item[],
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    if (map.has(item.id)) continue;
+    const titles = itemPathTitles(workspace, item.id);
+    map.set(item.id, titles.slice(0, -1).join(' / '));
+  }
+  return map;
 }
 
 /** 季度偏移，例如 2026-Q4 + 1 → 2027-Q1。 */

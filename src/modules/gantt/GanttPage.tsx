@@ -90,6 +90,8 @@ export function GanttPage() {
 
   const handleViewportChange = useCallback((next: GanttViewport) => setViewport(next), []);
 
+  const handleCloseInspector = useCallback(() => setUi({ inspectorOpen: false }), [setUi]);
+
   const handleSelect = useCallback(
     (id: string | null) => {
       const current = editingRef.current;
@@ -356,6 +358,7 @@ export function GanttPage() {
           selectedId={selectedId}
           todayKey={todayKey}
           scrollTop={viewport.scrollTop}
+          viewportHeight={viewport.height}
           scrollerRef={scrollerRef}
           editing={editing}
           onToggleGroup={handleToggleGroup}
@@ -405,7 +408,7 @@ export function GanttPage() {
             workspace={workspace}
             selectedId={selectedId}
             onSelect={handleSelect}
-            onClose={() => setUi({ inspectorOpen: false })}
+            onClose={handleCloseInspector}
           />
         ) : null}
       </div>

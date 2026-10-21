@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import type { Item } from '../../core/model';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import {
   inboxItems,
+  itemById,
   itemsOfKind,
   objectivesOfPeriod,
   rollupProgress,
@@ -19,7 +21,6 @@ import { ActivityFeed } from './ActivityFeed';
 import { FocusList } from './FocusList';
 import { StatCards } from './StatCards';
 import type { StatCard } from './StatCards';
-import type { FocusEntry } from './today';
 import {
   buildActivity,
   buildTodayFocus,
@@ -43,7 +44,7 @@ function greetingFor(hour: number): string {
 
 export function DashboardPage() {
   const workspace = useWorkspace((state) => state.workspace);
-  const ui = useWorkspace((state) => state.ui);
+  const okrPeriod = useWorkspace((state) => state.ui.okrPeriod);
   const setUi = useWorkspace((state) => state.setUi);
   const select = useWorkspace((state) => state.select);
   const createItem = useWorkspace((state) => state.createItem);
@@ -55,16 +56,16 @@ export function DashboardPage() {
   const isEmpty = workspace.items.length === 0 && workspace.runs.length === 0;
 
   const focus = useMemo(() => buildTodayFocus(workspace, today), [workspace, today]);
-  const counts = countFocusBuckets(focus);
+  const counts = useMemo(() => countFocusBuckets(focus), [focus]);
   const inbox = useMemo(() => inboxItems(workspace), [workspace]);
   const completed = useMemo(() => completedThisWeek(workspace, now), [workspace, today]);
   const objectives = useMemo(
     () =>
-      objectivesOfPeriod(workspace, ui.okrPeriod).map((objective) => ({
+      objectivesOfPeriod(workspace, okrPeriod).map((objective) => ({
         objective,
         progress: rollupProgress(workspace, objective.id),
       })),
-    [workspace, ui.okrPeriod],
+    [workspace, okrPeriod],
   );
   const okrAverage =
     objectives.length > 0
@@ -83,11 +84,9 @@ export function DashboardPage() {
         })),
     [workspace],
   );
-  const newestRun = latestRun(workspace);
-  const newestRunSop = newestRun
-    ? (workspace.items.find((item) => item.id === newestRun.sopId) ?? null)
-    : null;
-  const activity = useMemo(() => buildActivity(workspace, 5), [workspace, today]);
+  const newestRun = useMemo(() => latestRun(workspace), [workspace]);
+  const newestRunSop = newestRun ? (itemById(workspace, newestRun.sopId) ?? null) : null;
+  const activity = useMemo(() => buildActivity(workspace, 5), [workspace]);
 
   const summary = summarizeToday({
     overdue: counts.overdue,
@@ -96,24 +95,27 @@ export function DashboardPage() {
     next: counts.undated,
   });
 
-  const openEntry = (entry: FocusEntry) => {
-    select(entry.item.id);
-    const period = entry.item.okr?.period;
-    setUi({
-      route: routeForItemKind(entry.item.kind),
-      ...(period ? { okrPeriod: period } : {}),
-    });
-  };
+  const openEntry = useCallback(
+    (item: Item) => {
+      select(item.id);
+      const period = item.okr?.period;
+      setUi({
+        route: routeForItemKind(item.kind),
+        ...(period ? { okrPeriod: period } : {}),
+      });
+    },
+    [select, setUi],
+  );
 
   const createObjective = () => {
     const item = createItem({
       kind: 'objective',
       title: '第一个目标',
       status: 'active',
-      okr: { period: ui.okrPeriod },
+      okr: { period: okrPeriod },
     });
     select(item.id);
-    setUi({ route: 'okr', okrPeriod: ui.okrPeriod });
+    setUi({ route: 'okr', okrPeriod: okrPeriod });
     notify('目标已创建，接着添加关键结果吧', 'success');
   };
 
@@ -158,7 +160,7 @@ export function DashboardPage() {
       label: '活跃 OKR 平均进度',
       value: String(okrAverage),
       unit: '%',
-      meta: `${objectives.length} 个目标 · ${ui.okrPeriod}`,
+      meta: `${objectives.length} 个目标 · ${okrPeriod}`,
       icon: 'target',
       tone: 'info',
       ariaLabel: `当前季度 OKR 平均进度 ${okrAverage}%，打开 OKR 视图`,
@@ -291,7 +293,7 @@ export function DashboardPage() {
                       <Icon name="target" size={15} />
                       OKR 概览
                     </h2>
-                    <p className="dash-card-sub">{ui.okrPeriod} · 平均 {okrAverage}%</p>
+                    <p className="dash-card-sub">{okrPeriod} · 平均 {okrAverage}%</p>
                   </div>
                   <button
                     type="button"

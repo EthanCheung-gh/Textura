@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import clsx from 'clsx';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { Item } from '../../core/model';
@@ -25,7 +26,7 @@ export interface GanttBarProps {
   onDragCancel: (event: ReactPointerEvent<HTMLElement>) => void;
 }
 
-export function GanttBar({
+export const GanttBar = memo(function GanttBar({
   item,
   geometry,
   rowIndex,
@@ -117,4 +118,4 @@ export function GanttBar({
       )}
     </div>
   );
-}
+});

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import type { Workspace } from '../../core/model';
+import { memo, useEffect, useState } from 'react';
+import type { Item, Workspace } from '../../core/model';
 import { ITEM_STATUSES, KIND_LABELS, STATUS_LABELS } from '../../core/model';
 import { childrenOf, itemById } from '../../core/selectors';
 import { useWorkspace } from '../../core/store';
@@ -22,7 +22,55 @@ export interface GanttInspectorProps {
 
 const STATUS_OPTIONS = ITEM_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] }));
 
-export function GanttInspector({ workspace, selectedId, onSelect, onClose }: GanttInspectorProps) {
+const DependencyRow = memo(function DependencyRow({
+  edgeId,
+  text,
+  onDelete,
+}: {
+  edgeId: string;
+  text: string;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <li className="gantt-dep-row">
+      <Icon name="link" size={13} />
+      <span className="gantt-dep-text">{text}</span>
+      <IconButton label="删除依赖" size="sm" variant="danger" onClick={() => onDelete(edgeId)}>
+        <Icon name="trash" size={13} />
+      </IconButton>
+    </li>
+  );
+});
+
+const ChildTaskRow = memo(function ChildTaskRow({
+  child,
+  onSelect,
+  onToggleDone,
+}: {
+  child: Item;
+  onSelect: (id: string | null) => void;
+  onToggleDone: (id: string) => void;
+}) {
+  return (
+    <li className="gantt-child-row">
+      <input
+        type="checkbox"
+        className="gantt-check"
+        checked={child.status === 'done'}
+        aria-label={`完成 ${child.title}`}
+        onChange={() => onToggleDone(child.id)}
+      />
+      <button type="button" className="gantt-child-title" onClick={() => onSelect(child.id)}>
+        {child.title}
+      </button>
+      {child.gantt?.end ? (
+        <span className="gantt-child-date">{formatDateKey(child.gantt.end, 'M/d')}</span>
+      ) : null}
+    </li>
+  );
+});
+
+export const GanttInspector = memo(function GanttInspector({ workspace, selectedId, onSelect, onClose }: GanttInspectorProps) {
   const updateItem = useWorkspace((state) => state.updateItem);
   const deleteItems = useWorkspace((state) => state.deleteItems);
   const setStatus = useWorkspace((state) => state.setStatus);
@@ -316,20 +364,16 @@ export function GanttInspector({ workspace, selectedId, onSelect, onClose }: Gan
               const outgoing = edge.from === item.id;
               const other = itemById(workspace, outgoing ? edge.to : edge.from);
               return (
-                <li key={edge.id} className="gantt-dep-row">
-                  <Icon name="link" size={13} />
-                  <span className="gantt-dep-text">
-                    {outgoing ? `依赖「${other?.title ?? '已删除'}」` : `「${other?.title ?? '已删除'}」依赖此任务`}
-                  </span>
-                  <IconButton
-                    label="删除依赖"
-                    size="sm"
-                    variant="danger"
-                    onClick={() => deleteEdge(edge.id)}
-                  >
-                    <Icon name="trash" size={13} />
-                  </IconButton>
-                </li>
+                <DependencyRow
+                  key={edge.id}
+                  edgeId={edge.id}
+                  text={
+                    outgoing
+                      ? `依赖「${other?.title ?? '已删除'}」`
+                      : `「${other?.title ?? '已删除'}」依赖此任务`
+                  }
+                  onDelete={deleteEdge}
+                />
               );
             })}
           </ul>
@@ -368,21 +412,12 @@ export function GanttInspector({ workspace, selectedId, onSelect, onClose }: Gan
           {children.length === 0 ? <p className="gantt-section-empty">暂无子任务。</p> : null}
           <ul className="gantt-child-list">
             {children.map((child) => (
-              <li key={child.id} className="gantt-child-row">
-                <input
-                  type="checkbox"
-                  className="gantt-check"
-                  checked={child.status === 'done'}
-                  aria-label={`完成 ${child.title}`}
-                  onChange={() => toggleDone(child.id)}
-                />
-                <button type="button" className="gantt-child-title" onClick={() => onSelect(child.id)}>
-                  {child.title}
-                </button>
-                {child.gantt?.end ? (
-                  <span className="gantt-child-date">{formatDateKey(child.gantt.end, 'M/d')}</span>
-                ) : null}
-              </li>
+              <ChildTaskRow
+                key={child.id}
+                child={child}
+                onSelect={onSelect}
+                onToggleDone={toggleDone}
+              />
             ))}
           </ul>
         </div>
@@ -419,4 +454,4 @@ export function GanttInspector({ workspace, selectedId, onSelect, onClose }: Gan
       </Modal>
     </aside>
   );
-}
+});

@@ -19,6 +19,8 @@ import {
   childrenOf,
   descendantsOf,
   inboxItems,
+  itemById,
+  itemPathTitles,
   itemsOfKind,
   overdueItems,
   rollupProgress,
@@ -142,6 +144,125 @@ export function sortNextActions(items: Item[]): Item[] {
   });
 }
 
+/* ------------------------------------------------------------------ */
+/* 长列表分页（纯函数，组件只负责保存 limit）                          */
+/* ------------------------------------------------------------------ */
+
+/** 列表首屏渲染条数；超过后由「显示更多」按页追加。 */
+export const LIST_PAGE_SIZE = 100;
+
+export interface PageSlice<T> {
+  /** 当前页要渲染的条目。 */
+  items: T[];
+  /** 已渲染条数。 */
+  shown: number;
+  /** 过滤后的总条数。 */
+  total: number;
+  /** 尚未渲染的条数。 */
+  remaining: number;
+  hasMore: boolean;
+}
+
+/** 取前 limit 条；limit 非法或小于 0 时按 0 处理，超过总数时返回全部。 */
+export function paginateItems<T>(items: readonly T[], limit: number): PageSlice<T> {
+  const total = items.length;
+  const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  const shown = Math.min(safeLimit, total);
+  const visible = shown === total ? [...items] : items.slice(0, shown);
+  return {
+    items: visible,
+    shown,
+    total,
+    remaining: total - shown,
+    hasMore: shown < total,
+  };
+}
+
+/** 分页状态带 key：key 变化（筛选 / 分组 / 搜索）时自动回到第一页。 */
+export interface PaginationState {
+  key: string;
+  limit: number;
+}
+
+/**
+ * 当前生效的 limit。state.key 与当前 key 不一致时说明筛选条件已经变化，
+ * 直接返回 pageSize（等价于重置），不需要额外的 useEffect。
+ */
+export function resolvePageLimit(
+  state: PaginationState,
+  key: string,
+  pageSize: number = LIST_PAGE_SIZE,
+): number {
+  if (state.key !== key) return pageSize;
+  return Math.max(pageSize, state.limit);
+}
+
+/** 点击「显示更多」后的分页状态：基于当前生效的 limit 再追加一页。 */
+export function nextPage(
+  state: PaginationState,
+  key: string,
+  pageSize: number = LIST_PAGE_SIZE,
+): PaginationState {
+  return { key, limit: resolvePageLimit(state, key, pageSize) + pageSize };
+}
+
+/* ------------------------------------------------------------------ */
+/* 面包屑路径索引（列表级一次构建，行内 O(1) 取值）                     */
+/* ------------------------------------------------------------------ */
+
+export interface PathTitleIndex {
+  /** id → 根 → 自身的标题路径。 */
+  paths: Map<string, readonly string[]>;
+  /** id → 根 → 父级的标题路径（面包屑，不含自身）。 */
+  parents: Map<string, readonly string[]>;
+  /** id → 父级路径的展示文本；空路径为 ''。行内直接用字符串做 memo 比较。 */
+  parentText: Map<string, string>;
+}
+
+/**
+ * 为一批条目一次性构建标题路径索引。
+ *
+ * 行组件只做 `parentText.get(id)`，不再逐条调用 `itemPathTitles`；
+ * 同一 id 重复出现时只计算一次（去重后按首次出现顺序）。
+ */
+export function buildPathTitleIndex(
+  workspace: Workspace,
+  items: readonly Item[],
+): PathTitleIndex {
+  const paths = new Map<string, readonly string[]>();
+  const parents = new Map<string, readonly string[]>();
+  const parentText = new Map<string, string>();
+  for (const item of items) {
+    if (paths.has(item.id)) continue;
+    const path = Object.freeze([...itemPathTitles(workspace, item.id)]);
+    paths.set(item.id, path);
+    const parent = Object.freeze(path.slice(0, -1));
+    parents.set(item.id, parent);
+    parentText.set(item.id, parent.join(' / '));
+  }
+  return { paths, parents, parentText };
+}
+
+/* ------------------------------------------------------------------ */
+/* 等待中列表的预计算                                                   */
+/* ------------------------------------------------------------------ */
+
+export interface WaitingRow {
+  item: Item;
+  days: number;
+  overdue: boolean;
+}
+
+/** 按等待天数倒序；天数与超期标记只计算一次。 */
+export function buildWaitingRows(items: readonly Item[], today: string): WaitingRow[] {
+  return items
+    .map((item) => {
+      const days = waitingDays(item, today);
+      return { item, days, overdue: days > WAITING_WARN_DAYS };
+    })
+    .sort((a, b) => b.days - a.days || a.item.order - b.item.order);
+}
+
 export interface NextFilter {
   /** null = 全部；NO_CONTEXT_FILTER = 无场景；其它为具体场景。 */
   context: string | null;
@@ -193,7 +314,7 @@ export function filterNextActions(items: Item[], filter: NextFilter): Item[] {
  * - 其余（有未完成但没有任何 next）→ true
  */
 export function isStuckProject(ws: Workspace, projectId: string): boolean {
-  const project = ws.items.find((item) => item.id === projectId);
+  const project = itemById(ws, projectId);
   if (!project || project.kind !== 'project') return false;
   if (project.status === 'done' || project.status === 'dropped') return false;
   const related = descendantsOf(ws, projectId).filter(

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import type { Item, Workspace } from '../../core/model';
+import type { Item } from '../../core/model';
 import { KIND_LABELS, STATUS_LABELS } from '../../core/model';
 import { areaById, itemsOfKind } from '../../core/selectors';
 import { useWorkspace } from '../../core/store';
@@ -17,12 +17,12 @@ import { formatSchedule, statusTone } from './okrDisplay';
 interface LinkItemsDialogProps {
   open: boolean;
   kr: Item;
-  workspace: Workspace;
   onClose: () => void;
 }
 
 /** 为 KR 关联项目/行动：搜索、多选、写入 `okr` 边（store 负责去重）。 */
-export function LinkItemsDialog({ open, kr, workspace, onClose }: LinkItemsDialogProps) {
+export function LinkItemsDialog({ open, kr, onClose }: LinkItemsDialogProps) {
+  const workspace = useWorkspace((state) => state.workspace);
   const createEdge = useWorkspace((state) => state.createEdge);
   const notify = useWorkspace((state) => state.notify);
   const uiSearch = useWorkspace((state) => state.ui.search);
@@ -37,14 +37,15 @@ export function LinkItemsDialog({ open, kr, workspace, onClose }: LinkItemsDialo
   }, [open, kr.id, uiSearch]);
 
   const linkedIds = useMemo(
-    () => new Set(executionItemsOf(workspace, kr.id).map((entry) => entry.item.id)),
-    [workspace, kr.id],
+    () => (open ? new Set(executionItemsOf(workspace, kr.id).map((entry) => entry.item.id)) : new Set<string>()),
+    [open, workspace, kr.id],
   );
 
   const candidates = useMemo(() => {
+    if (!open) return [];
     const pool = [...itemsOfKind(workspace, 'project'), ...itemsOfKind(workspace, 'action')];
     return pool.filter((item) => matchesQuery(workspace, item, query));
-  }, [workspace, query]);
+  }, [open, workspace, query]);
 
   const toggle = (id: string) => {
     setSelected((previous) => {

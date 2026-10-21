@@ -1,23 +1,11 @@
 /** SOP 画布自定义节点：按 nodeType 区分形状与语义色。 */
+import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import type { Node, NodeProps } from '@xyflow/react';
+import type { NodeProps } from '@xyflow/react';
 import clsx from 'clsx';
 import type { SopNodeType } from '../../core/model';
-
-export type SopNodeState = 'idle' | 'current' | 'visited' | 'failed';
-
-export type SopNodeData = {
-  title: string;
-  nodeType: SopNodeType;
-  owner: string;
-  durationMin: number | null;
-  checklistDone: number;
-  checklistTotal: number;
-  areaColor: string | null;
-  state: SopNodeState;
-};
-
-export type SopFlowNode = Node<SopNodeData, 'sop'>;
+import { sameNodeData } from './perf';
+import type { SopFlowNode } from './types';
 
 export const NODE_TYPE_LABELS: Record<SopNodeType, string> = {
   start: '开始',
@@ -28,7 +16,7 @@ export const NODE_TYPE_LABELS: Record<SopNodeType, string> = {
   note: '便签',
 };
 
-export function SopNodeView({ data, selected }: NodeProps<SopFlowNode>) {
+function SopNodeComponent({ data, selected }: NodeProps<SopFlowNode>) {
   const total = data.checklistTotal;
   const done = data.checklistDone;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -87,3 +75,13 @@ export function SopNodeView({ data, selected }: NodeProps<SopFlowNode>) {
     </div>
   );
 }
+
+function sameNodeProps(prev: NodeProps<SopFlowNode>, next: NodeProps<SopFlowNode>): boolean {
+  return prev.selected === next.selected && sameNodeData(prev.data, next.data);
+}
+
+/**
+ * 节点只在自身 data 或选中态变化时重渲染；
+ * 未变化节点由 buildCanvasNodes 保持对象引用，配合 onlyRenderVisibleElements 控制 DOM 数量。
+ */
+export const SopNodeView = memo(SopNodeComponent, sameNodeProps);

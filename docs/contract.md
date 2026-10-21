@@ -171,13 +171,17 @@ canRedo(): boolean;
 setUi(patch: Partial<UiState>): void;
 select(id: string | null): void;
 notify(message: string, tone?: 'info' | 'success' | 'error'): void;
+
+// 非 action 的只读诊断（从 store 模块导出）
+getHistoryStats(): { steps: number; limit: number };
 ```
 
 行为：
 
-- **历史**：每个写操作先把当前工作区深拷贝压入历史（`replaceWorkspace({ recordHistory: false })`
-  例外），上限 80 步；`undo/redo` 会同步更新 `workspace.updatedAt` 并重新触发自动保存。
-  `load()` 清空历史。
+- **历史**：每个写操作把当前 `workspace` **引用**压入历史（结构共享，不再深拷贝；
+  `replaceWorkspace({ recordHistory: false })` 例外），上限 80 步；`undo/redo` 会同步更新
+  `workspace.updatedAt` 并重新触发自动保存。`load()` 清空历史。
+  诊断：`getHistoryStats(): { steps, limit }`。
 - **自动保存**：写操作 400ms 防抖调用 `save()`；`saveState` 依次反映 `idle → saving → saved`，
   失败为 `error` 并在 `error` 中给出原因。
 - **replaceWorkspace（整份导入 / 重置的唯一入口）**：
@@ -248,6 +252,57 @@ countByStatus(ws): Record<ItemStatus, number>                  // 所有 status 
 treeDepth(ws, id): number                                      // 根级 0
 itemPathTitles(ws, id): string[]                               // 根 → 自身
 ```
+
+### 3.1 性能契约（索引、缓存与不可变）
+
+`src/core/selectors.ts` 导出：
+
+```ts
+interface WorkspaceIndex {
+  byId: Map<string, Item>;
+  children: Map<string | null, readonly Item[]>;  // 已按 order/createdAt 排序
+  byKind: Map<ItemKind, readonly Item[]>;
+  objectivesByPeriod: Map<string, readonly Item[]>;
+  byStatus: Map<ItemStatus, readonly Item[]>;
+  edgesFrom: Map<string, readonly Edge[]>;
+  edgesTo: Map<string, readonly Edge[]>;
+  areas: Map<string, Area>;
+  rollups: Map<string, number>;
+  paths: Map<string, readonly Item[]>;
+  memo: Map<string, unknown>;
+}
+getWorkspaceIndex(ws: Workspace): WorkspaceIndex;
+```
+
+- **缓存键是 `Workspace` 对象身份**（`WeakMap`）。丢弃旧对象后索引自然回收。
+- 复杂度保证：
+  - `itemById` / `areaById`：O(1)
+  - `childrenOf`：O(k)
+  - `itemsOfKind` / `objectivesOfPeriod` / 状态列表：O(k)
+  - `descendantsOf`：O(subtree)，含 visited 环保护
+  - `ancestorsOf` / `treeDepth` / `itemPathTitles`：首次 O(depth)，之后命中 `paths` 缓存
+  - `rollupProgress`：首次 O(subtree)，之后命中 `rollups` 缓存
+  - `scheduledItemsInRange`：预计算按 start 排序的日期行 + 二分前缀，避免每次全表扫描；
+    最坏 O(n)，常见区间远低于全量，且结果按区间 memo
+  - `edgeTargetsOf` / `edgeSourcesOf`：按 `edgesFrom` / `edgesTo` 取 O(k)
+- 派生结果按索引实例 memo：`okrPeriods`、`countByStatus`、`inbox/next/waiting/someday`、
+  `scheduled:<from>|<to>`、`overdue:<today>`、`dueToday:<today>`、`edgeTargets:<id>:<type>`、
+  `edgeSources:<id>:<type>`、`sopGraph:<sopId>`、`parentCycles`。
+- **缓存数组一律 `Object.freeze`**，返回值为只读契约；禁止 `push/splice/sort/reverse` 原地修改。
+- 需要复用索引时可在 `useMemo` 中调用 `getWorkspaceIndex(workspace)`，但必须遵守下一条。
+
+**硬性规则：`Workspace` 与 `Item` 对象不可原地修改。** 所有写操作必须返回新的 workspace
+对象、新的 items/edges/areas/runs 数组，并且只新建实际变更的 Item；未变更条目保持同一引用。
+否则索引缓存会脏，历史结构共享也会互相污染。
+
+历史快照同样基于该不变量：80 步只保存 workspace 引用，内存量级从
+「条目数 × 步数」降为「步数 × 变更条目」；`updateItem` 只新建目标 Item，
+`moveItem` 只新建被移动条目与 order 变化的同级条目，`deleteItems` 通过 children 索引 BFS，
+`updateItems` 一次 map 完成批量更新。诊断用 `getHistoryStats(): { steps, limit }` 由 store 导出。
+
+模块内的性能纯函数属于实现细节，不入本契约：`gantt/virtual.ts` 的 `visibleRows` / `visibleColumns`
+（行 / 列窗口，含缓冲与边界夹紧）、`sop/perf.ts` 的 `buildCanvasNodes`（节点对象引用复用）、
+以及各列表的分页常量（GTD / 今日 100、OKR 表格 200）与 `paginate*` 纯函数。
 
 `rollupProgress` 规则（与实现对一致）：
 
@@ -627,8 +682,9 @@ npm run tauri:build          # 产出 deb
    不得新建/修改 `src/styles/*` 或 `src/ui/ui.css`，不得覆盖全局元素选择器。
 5. **复用 selectors 与 store**：所有领域计算调用 `src/core/selectors.ts`，所有读写走
    `useWorkspace` / `getWorkspace()`；不得在模块里复制 rollup / 排期 / 树遍历逻辑，
-   不得直接改 `workspace` 对象（必须通过 store 动作）。一次手势更新多条 item 时必须使用
-   `updateItems([...])`，不要循环调用 `updateItem` 制造 N 条历史。
+   不得直接改 `workspace` 对象（必须通过 store 动作）。selectors 返回的数组已 `Object.freeze`，
+   禁止 `push/splice/sort/reverse` 原地修改；如需排序先 `[...result]`。一次手势更新多条 item
+   时必须使用 `updateItems([...])`，不要循环调用 `updateItem` 制造 N 条历史。
 6. **整份导入 / 重置只走 `replaceWorkspace`**：必须调用
    `await replaceWorkspace(next, { recordHistory: true })`（默认即 true），不得直接写
    `storageInfo().workspacePath`、localStorage 或自行调用底层文件写入；只有走该动作才能保证

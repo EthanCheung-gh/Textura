@@ -205,6 +205,22 @@
   padding: 0 var(--space-2) var(--space-2);
 }
 
+/* 长列表分页：超过 100 条时出现 */
+.dash-show-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px dashed var(--border);
+}
+
+.dash-show-more-note {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .dash-focus-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { useWorkspace } from '../core/store';
 import { storageInfo } from '../core/repo';
 import type { Route } from '../core/store';
@@ -6,16 +6,32 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Button } from '../ui/Button';
 import { DashboardPage } from '../modules/dashboard/DashboardPage';
-import { OkrPage } from '../modules/okr/OkrPage';
-import { GtdPage } from '../modules/gtd/GtdPage';
-import { GanttPage } from '../modules/gantt/GanttPage';
-import { SopPage } from '../modules/sop/SopPage';
-import { CalendarPage } from '../modules/calendar/CalendarPage';
 import { CommandPalette } from '../modules/appshell/CommandPalette';
 import { QuickCapture } from '../modules/appshell/QuickCapture';
-import { SettingsPage } from '../modules/appshell/SettingsPage';
 import { ShortcutsDialog } from '../modules/appshell/ShortcutsDialog';
 import { RouteErrorBoundary } from './RouteErrorBoundary';
+import { RouteLoading } from './RouteLoading';
+
+/*
+ * 路由级代码分割：今日视图留在首屏主 chunk；其余视图按需加载。
+ * 重量级依赖只被懒加载视图引用，因此会跟着落到各自的异步 chunk：
+ *   sop     → @xyflow/react + @dagrejs/dagre
+ *   calendar→ 农历表与节气算法
+ * 懒加载失败（chunk 请求失败）会以 rejected promise 形式在渲染期抛出，
+ * 由外层 RouteErrorBoundary 兜住，外壳不白屏。
+ */
+const OkrPage = lazy(() => import('../modules/okr/OkrPage').then((m) => ({ default: m.OkrPage })));
+const GtdPage = lazy(() => import('../modules/gtd/GtdPage').then((m) => ({ default: m.GtdPage })));
+const GanttPage = lazy(() =>
+  import('../modules/gantt/GanttPage').then((m) => ({ default: m.GanttPage })),
+);
+const SopPage = lazy(() => import('../modules/sop/SopPage').then((m) => ({ default: m.SopPage })));
+const CalendarPage = lazy(() =>
+  import('../modules/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })),
+);
+const SettingsPage = lazy(() =>
+  import('../modules/appshell/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
 
 let bootstrapped = false;
 
@@ -130,7 +146,9 @@ export function AppShell() {
             reloading={reloading}
             onShowDataDir={() => void showDataDir()}
           >
-            <RouteView route={route} />
+            <Suspense fallback={<RouteLoading route={route} />}>
+              <RouteView route={route} />
+            </Suspense>
           </RouteErrorBoundary>
         </main>
       </div>

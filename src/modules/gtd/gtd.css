@@ -1,15 +1,15 @@
 /* GTD 模块局部样式：只使用 tokens.css 中的令牌，不新增全局样式。 */
 
-.gtd-page {
+.page.gtd-page {
   gap: var(--space-4);
 }
 
 /* 1024×720 下允许页头换行，避免 Segmented + 快速收集被裁切。 */
-.gtd-page .page-header {
+.page.gtd-page .page-header {
   flex-wrap: wrap;
 }
 
-.gtd-page .page-actions {
+.page.gtd-page .page-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -845,6 +845,22 @@
 
 .gtd-linkbtn:hover {
   text-decoration: underline;
+}
+
+/* 长列表分页：只在超过阈值时出现 */
+.gtd-show-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px dashed var(--border);
+}
+
+.gtd-show-more-note {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 澄清表单 ---------- */

@@ -1,12 +1,13 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import type { KeyboardEvent, RefObject } from 'react';
 import clsx from 'clsx';
 import type { Item } from '../../core/model';
 import { STATUS_LABELS } from '../../core/model';
 import { formatDateKey } from '../../core/utils';
 import { Icon } from '../../ui/icons';
-import { ROW_HEIGHT, displayProgress, itemRange } from './scale';
-import type { GanttItemRow, GanttRow } from './scale';
+import { HEADER_HEIGHT, ROW_HEIGHT, displayProgress, itemRange } from './scale';
+import type { GanttGroupRow, GanttItemRow, GanttRow } from './scale';
+import { visibleRows } from './virtual';
 
 export interface GanttEditing {
   id: string;
@@ -18,6 +19,8 @@ export interface GanttTreeProps {
   selectedId: string | null;
   todayKey: string;
   scrollTop: number;
+  /** 时间轴整体的可视高度（含 52px 吸顶表头），用于计算树窗口。 */
+  viewportHeight: number;
   scrollerRef: RefObject<HTMLDivElement>;
   editing: GanttEditing | null;
   onToggleGroup: (id: string) => void;
@@ -78,34 +81,37 @@ function InlineTitleInput({
   );
 }
 
-function ItemRow({
-  row,
-  selected,
-  todayKey,
-  editing,
-  onSelect,
-  onStartEdit,
-  onEditingChange,
-  onCommitEdit,
-  onCancelEdit,
-  onSchedule,
-}: {
+interface ItemRowProps {
   row: GanttItemRow;
   selected: boolean;
   todayKey: string;
-  editing: GanttEditing | null;
+  /** null 表示不在编辑；字符串（含空串）表示当前行正在编辑。 */
+  editingValue: string | null;
   onSelect: (id: string | null) => void;
   onStartEdit: (item: Item) => void;
   onEditingChange: (value: string) => void;
   onCommitEdit: () => void;
   onCancelEdit: () => void;
   onSchedule: (id: string) => void;
-}) {
+}
+
+const ItemRow = memo(function ItemRow({
+  row,
+  selected,
+  todayKey,
+  editingValue,
+  onSelect,
+  onStartEdit,
+  onEditingChange,
+  onCommitEdit,
+  onCancelEdit,
+  onSchedule,
+}: ItemRowProps) {
   const { item } = row;
   const range = itemRange(item);
   const progress = displayProgress(item);
   const overdue = isOverdue(item, todayKey);
-  const editingThis = editing?.id === item.id;
+  const editingThis = editingValue !== null;
   const dateLabel = range ? `${formatDateKey(range.start, 'M/d')} – ${formatDateKey(range.end, 'M/d')}` : '未排期';
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -118,6 +124,7 @@ function ItemRow({
 
   return (
     <div
+      data-row-id={item.id}
       className={clsx(
         'gantt-tree-row',
         'is-item',
@@ -135,7 +142,7 @@ function ItemRow({
       <span className={clsx('gantt-status-dot', `is-${item.status}`)} aria-hidden="true" />
       {editingThis ? (
         <InlineTitleInput
-          value={editing.value}
+          value={editingValue ?? ''}
           onChange={onEditingChange}
           onCommit={onCommitEdit}
           onCancel={onCancelEdit}
@@ -176,13 +183,77 @@ function ItemRow({
       )}
     </div>
   );
+});
+
+interface GroupRowProps {
+  row: GanttGroupRow;
+  selected: boolean;
+  onToggleGroup: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }
+
+const GroupRow = memo(function GroupRow({ row, selected, onToggleGroup, onSelect }: GroupRowProps) {
+  const rangeLabel =
+    row.start && row.end
+      ? `${formatDateKey(row.start, 'M/d')}–${formatDateKey(row.end, 'M/d')}`
+      : '未排期';
+
+  return (
+    <div
+      data-row-id={row.id}
+      className={clsx('gantt-tree-row', 'is-group', selected && 'is-selected')}
+      style={{ height: ROW_HEIGHT }}
+      onClick={() => onSelect(row.item?.id ?? null)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(row.item?.id ?? null);
+        }
+      }}
+      tabIndex={0}
+      aria-expanded={!row.collapsed}
+      title={`${row.title} · ${row.count} 项 · ${rangeLabel} · ${row.progress}%`}
+    >
+      <button
+        type="button"
+        className="gantt-group-toggle"
+        aria-label={row.collapsed ? `展开 ${row.title}` : `折叠 ${row.title}`}
+        aria-expanded={!row.collapsed}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleGroup(row.id);
+        }}
+      >
+        <Icon name={row.collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
+      </button>
+      <span className="gantt-group-icon" aria-hidden="true">
+        <Icon name="folder" size={14} />
+      </span>
+      <span className="gantt-group-main">
+        <span className="gantt-group-title">
+          {row.title}
+          <span className="gantt-group-count">{row.count}</span>
+        </span>
+        <span className="gantt-group-meta">
+          {rangeLabel} · {row.progress}%
+        </span>
+      </span>
+      <span
+        className="gantt-group-progress"
+        style={{ width: `${Math.min(100, Math.max(0, row.progress))}%` }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+});
 
 export function GanttTree({
   rows,
   selectedId,
   todayKey,
   scrollTop,
+  viewportHeight,
   scrollerRef,
   editing,
   onToggleGroup,
@@ -194,7 +265,26 @@ export function GanttTree({
   onSchedule,
 }: GanttTreeProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const itemCount = rows.filter((row) => row.type === 'item').length;
+  const itemCount = useMemo(
+    () => rows.reduce((count, row) => count + (row.type === 'item' ? 1 : 0), 0),
+    [rows],
+  );
+
+  // 行窗口：可视行数取实际行区域高度，缓冲为可视行数的 50%（至少 10 行）。
+  const rowViewportHeight = Math.max(0, viewportHeight - HEADER_HEIGHT);
+  const visibleRowCount = Math.max(1, Math.ceil(rowViewportHeight / ROW_HEIGHT));
+  const buffer = Math.max(10, Math.ceil(visibleRowCount * 0.5));
+  const rowScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
+  const rowWindow = useMemo(
+    () => visibleRows(rowScrollTop, rowViewportHeight, ROW_HEIGHT, buffer, rows.length),
+    [rowScrollTop, rowViewportHeight, buffer, rows.length],
+  );
+  const windowRows = useMemo(
+    () => rows.slice(rowWindow.start, rowWindow.end),
+    [rows, rowWindow.start, rowWindow.end],
+  );
+  const topSpacerHeight = rowWindow.start * ROW_HEIGHT;
+  const bottomSpacerHeight = Math.max(0, (rows.length - rowWindow.end) * ROW_HEIGHT);
 
   // 左侧树自己没有滚动条：滚轮直接驱动右侧时间轴的纵向滚动，保证两边行对齐。
   useEffect(() => {
@@ -212,7 +302,7 @@ export function GanttTree({
   }, [scrollerRef]);
 
   return (
-    <div className="gantt-tree">
+    <div className="gantt-tree" data-total-rows={rows.length}>
       <div className="gantt-tree-head">
         <span>任务</span>
         <span className="gantt-tree-head-count">{itemCount} 条</span>
@@ -234,60 +324,18 @@ export function GanttTree({
         >
           {rows.length === 0 ? <p className="gantt-tree-empty">暂无项目或行动。</p> : null}
 
-          {rows.map((row) => {
+          {topSpacerHeight > 0 ? <div style={{ height: topSpacerHeight }} aria-hidden="true" /> : null}
+
+          {windowRows.map((row) => {
             if (row.type === 'group') {
-              const selected = selectedId === row.id && row.item !== null;
-              const rangeLabel =
-                row.start && row.end
-                  ? `${formatDateKey(row.start, 'M/d')}–${formatDateKey(row.end, 'M/d')}`
-                  : '未排期';
               return (
-                <div
+                <GroupRow
                   key={`group-${row.id}`}
-                  className={clsx('gantt-tree-row', 'is-group', selected && 'is-selected')}
-                  style={{ height: ROW_HEIGHT }}
-                  onClick={() => onSelect(row.item?.id ?? null)}
-                  onKeyDown={(event) => {
-                    if (event.target !== event.currentTarget) return;
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onSelect(row.item?.id ?? null);
-                    }
-                  }}
-                  tabIndex={0}
-                  aria-expanded={!row.collapsed}
-                  title={`${row.title} · ${row.count} 项 · ${rangeLabel} · ${row.progress}%`}
-                >
-                  <button
-                    type="button"
-                    className="gantt-group-toggle"
-                    aria-label={row.collapsed ? `展开 ${row.title}` : `折叠 ${row.title}`}
-                    aria-expanded={!row.collapsed}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleGroup(row.id);
-                    }}
-                  >
-                    <Icon name={row.collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
-                  </button>
-                  <span className="gantt-group-icon" aria-hidden="true">
-                    <Icon name="folder" size={14} />
-                  </span>
-                  <span className="gantt-group-main">
-                    <span className="gantt-group-title">
-                      {row.title}
-                      <span className="gantt-group-count">{row.count}</span>
-                    </span>
-                    <span className="gantt-group-meta">
-                      {rangeLabel} · {row.progress}%
-                    </span>
-                  </span>
-                  <span
-                    className="gantt-group-progress"
-                    style={{ width: `${Math.min(100, Math.max(0, row.progress))}%` }}
-                    aria-hidden="true"
-                  />
-                </div>
+                  row={row}
+                  selected={selectedId === row.id && row.item !== null}
+                  onToggleGroup={onToggleGroup}
+                  onSelect={onSelect}
+                />
               );
             }
 
@@ -297,7 +345,7 @@ export function GanttTree({
                 row={row}
                 selected={selectedId === row.id}
                 todayKey={todayKey}
-                editing={editing}
+                editingValue={editing?.id === row.id ? editing.value : null}
                 onSelect={onSelect}
                 onStartEdit={onStartEdit}
                 onEditingChange={onEditingChange}
@@ -307,6 +355,8 @@ export function GanttTree({
               />
             );
           })}
+
+          {bottomSpacerHeight > 0 ? <div style={{ height: bottomSpacerHeight }} aria-hidden="true" /> : null}
         </div>
       </div>
     </div>

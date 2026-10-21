@@ -1,0 +1,84 @@
+/* ---------- 路由懒加载骨架（Suspense fallback） ---------- */
+.route-loading {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.route-loading-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.route-loading-mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: textura-spin 0.9s linear infinite;
+}
+
+.route-loading-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.route-loading-bar {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  animation: route-loading-pulse 1.6s ease-in-out infinite;
+}
+
+.route-loading-bar[data-width='title'] {
+  height: 26px;
+  width: 240px;
+}
+
+.route-loading-bar[data-width='subtitle'] {
+  width: 380px;
+  max-width: 60%;
+}
+
+.route-loading-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.route-loading-card {
+  height: 128px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  animation: route-loading-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes route-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-mark,
+  .route-loading-bar,
+  .route-loading-card {
+    animation: none;
+  }
+}

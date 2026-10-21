@@ -106,8 +106,8 @@ GTD 勾完成，甘特条与 OKR 汇总立刻变。
 用户操作
   ├─ 单条写：createItem / updateItem / setStatus / createEdge / …
   │    → commit(recipe)
-  │        1. history.record(cloneWorkspace(current))   // 1 次快照，最多 80 步
-  │        2. workspace = recipe(current) + updatedAt   // 1 个新时间戳
+  │        1. history.record(current)                    // 记录引用（结构共享），最多 80 步
+  │        2. workspace = recipe(current) + updatedAt   // 只新建变更的 Item
   │        3. set({ workspace, saveState: 'idle' })     // 乐观更新，界面立即变
   │        4. scheduleSave()                            // 1 次 400ms 防抖
   │
@@ -131,8 +131,9 @@ scheduleSave() ──400ms──► save()
   SOP 的拖动 / 自动布局（`positions.ts` 把 N 个节点坐标整理成 N 条 patch 后一次提交）与
   OKR 的「移动到其他季度」（目标 + 全部 KR 一次提交）都用它，所以 `Ctrl+Z` 一次整体回退。
   空数组、不存在的 id 会被忽略；`recordHistory: false` 只清 redo 栈。
-- **80 步快照历史**：`undo/redo` 直接换回整份 `Workspace` 快照，之后同样触发一次防抖保存，
-  所以「撤销」也会落盘。`load()` / `reload()` 清空历史。
+- **80 步结构共享历史**：`undo/redo` 换回历史里的 `Workspace` 引用，未变更条目与数组跨快照共享，
+  不再整份深拷贝；之后同样触发一次防抖保存，所以「撤销」也会落盘。`load()` / `reload()` 清空历史。
+  依赖的不变量与守护见 §7.3。
 - **保存串行化**：所有落盘都经过 `saveQueue`（Promise 链）。`load()`、`reload()`、`replaceWorkspace()`
   在写入前先 `await saveQueue`，避免旧内容晚于新内容 rename 到主文件。
 - **输入提交时机**：OKR 指标编辑器是「草稿 + 600ms 防抖提交」，失焦 / Enter 立即提交，
@@ -351,12 +352,12 @@ base-uri 'self'; form-action 'none'
 
 **选择**：整份 `Workspace` 序列化成一个 JSON，临时文件 + `fsync` + `rename` 覆盖，另有 `.bak` 与 30 份轮换备份。
 
-**理由**：数据规模是「一个人的工作区」（千级条目），全量写一次几毫秒；单文件让备份、导出、
-导入、跨设备手工搬移都是同一件事；`rename` 天然原子，不需要事务与迁移框架；Rust 侧只有几百行、
-`cargo test` 能完整覆盖。
+**理由**：数据规模是「一个人的工作区」；10k 条目（3.23 MB）实测 FCP 256 ms、编辑 21–63 ms、保存状态切换
+10.7 ms，全量写的代价在可接受范围（见 §7）。单文件让备份、导出、导入、跨设备手工搬移都是同一件事；
+`rename` 天然原子，不需要事务与迁移框架；Rust 侧只有几百行、`cargo test` 能完整覆盖。
 
 **代价**：写入是 O(整个工作区)，没有部分更新与并发写入；两个进程同时打开会互相覆盖（后写赢）。
-突破到万级条目时需要换存储（见 §7）。
+**10k 以内已验证可用**；更大规模仍建议按领域 / 季度分片或换 SQLite + 增量写（见 §7.5）。
 
 ### 6.2 不用 react-router
 
@@ -453,32 +454,75 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 **代价**：同一套取值域在 TS 与 Rust 各维护一份（契约是唯一来源），加字段时要同步两边；
 前端归一化会掩盖上游写入的 bug，只能靠「已修正 N 处非法数据」的提示与控制台摘要暴露。
 
-## 7. 性能与规模假设
+## 7. 性能与规模（10k 实测）
 
-当前设计的前提是「一个人的工作区」：
+测量条件：生产构建（`npm run build`，gzip 由 `gzip -c` 对 dist 现算）+ **10,000 条目 / 3.23 MB** 工作区，
+无头 Chrome 1440×900，脚本 `scripts/qa/perf-bench.mjs`，原始结果在 `/tmp/textura-perf/perf-report.json`。
 
-| 维度 | 现状 | 合理上限 | 超限后需要改什么 |
-| --- | --- | --- | --- |
-| 条目数 | 演示数据 30 条 | **舒适的 2,000–5,000 条；约 1 万条开始明显退化** | 拆分存储（按领域 / 季度分文件）或换 SQLite + 增量写 |
-| 单次保存 | 全量序列化 + 哈希 + 原子写 | 3MB 以内（约 5,000 条带日期条目） | 保存改为增量 / 后台线程（Rust 侧已在 `spawn_blocking`） |
-| 磁盘占用 | 主文件 + `.bak` + 30 份轮换 | 32 × 单文件大小（5,000 条约 100MB；1 万条约 200MB+） | 降低轮换份数或改为按天保留 |
-| 渲染 | 每个页面订阅整个 `workspace` | 千级条目、单视图百级节点 | 引入细粒度 selector / 分页 / 虚拟列表 |
-| 甘特 | 时间轴只渲染可视行（±400px 预取），**左侧树未虚拟化**，表头按整个区间生成 | 日视图跨度 1 年 ≈ 365 列 | 表头虚拟化 + 左侧树虚拟化 |
-| SOP 画布 | React Flow 渲染全部节点与边 | 数百节点 | 折叠子流程 / 分页画布 / 只渲染视口内节点 |
-| 日历 | 42 格 + 7 列，农历换算 O(log 200 + 12)，节气按年缓存 | 单日数百条仍可读（圆点折叠为 `+N`） | 单日条目极多时需要按状态分组或分页 |
-| 历史 | 80 份整份快照（结构化克隆） | 5,000 条 × 80 步 ≈ 数百 MB 内存 | 改为写操作日志或增量补丁 |
-| 前端产物 | 单个主 chunk 约 650 KiB 未压缩 | 桌面端本地加载，无网络成本 | 需要首屏更快时再拆分路由 chunk |
+### 7.1 实测结果
 
-具体说明：
+| 维度 | 实测（10k） |
+| --- | --- |
+| 数据构成 | 1 目标 + 300 KR、1 SOP + 300 step + 400 flow 边、1 项目 + 2,000 带日期行动、1,500 下一步、1,000 收件箱、500 等待、300 某天，其余 note 补齐 |
+| 首屏产物 | **4 个 JS 请求，262.1 KiB raw / 84.4 KiB gzip**（入口 94.91 kB、`react` 141.88 kB、`date` 31.23 kB）；`flow`（xyflow + dagre）222.23 kB 与 6 个视图 chunk 懒加载；构建不再有 >500 kB 警告 |
+| 首屏 FCP | **256 ms** |
+| 路由切换（中位） | 今日 **62** / 日历 **58** / 甘特 **108** / SOP **103** / OKR **295** / GTD **311** ms；首次（冷）切换额外 +100–210 ms 用于加载对应 chunk |
+| 编辑延迟 | GTD 完成 **45** / OKR 指标 **21** / 甘特拖拽 **63** ms |
+| 撤销 | **18–38 ms**（OKR 18.5 / 甘特 34.7 / GTD 38） |
+| 内存 | 100 次编辑堆净增 **7.5 MB**（结构共享；优化前 50 步约 424 MB） |
+| DOM 规模 | 甘特树 **28 行**（4,001 行数据、2,001 条已排期）、表头 **7 列**（±2 列缓冲）；SOP **28 节点 / 35 边**（300 step、400 边）；GTD 下一步 **100 行**（1,500 条，分页）；今日聚焦 **100 行** |
+| 单次保存 | 状态切换 **10.7 ms**；浏览器模式整份 3.2 MB 序列化产生一次 **135 ms 长任务**（桌面端磁盘 IO 走 `spawn_blocking`，序列化仍在主线程）；防抖仍是 400 ms |
 
-- **甘特虚拟化**：`GanttTimeline` 按 `viewport.scrollTop/height` 计算可视行窗口，只为可见行生成任务条与
-  依赖矩形；拖动中的那一行永远保留渲染。左侧树（`GanttTree`）当前仍会为全部行生成 DOM。
-- **SOP 拖拽只在结束时写回**：拖动过程只更新本地 `drafts`（`onNodesChange`），
-  `onNodeDragStop` 才通过一次 `updateItems` 写回；自动布局与「物化预览」同样是一次批量写回。
-- **全量订阅的代价**：页面普遍用 `useWorkspace((s) => s.workspace)`，任何写操作都会让当前页面重渲染。
-  在千级条目下配合 `useMemo` 尚可接受；这是最容易被规模突破点击穿的地方。
-- **写放大**：每次保存都是整份序列化 + `.bak` 复制 + 轮换副本写入，约 1 万条时单次保存的文件 IO
-  会达到数 MB 量级；Rust 侧用 `spawn_blocking` 把这段工作移出 IPC 线程，但磁盘写入量本身无法避免。
+优化前后对比：首屏 JS 从 679 KiB / 219 kB(gzip) 降到 **262.1 KiB / 84.4 KiB**（**−61%**）；
+历史内存从「50 步 ≈ 424 MB」降到「100 次编辑 +7.5 MB」。
+
+### 7.2 索引化选择器
+
+`src/core/selectors.ts` 的 `getWorkspaceIndex(ws)` 以 **`Workspace` 对象身份**为键（`WeakMap`）构建一次索引：
+
+- `byId` / `areas`（O(1)）、`children`（已排序，O(k)）、`byKind` / `objectivesByPeriod` / `byStatus`、
+  `edgesFrom` / `edgesTo`；
+- `rollupProgress` 与 `itemPathTitles` 走索引实例上的 memento，首次 O(subtree) / O(depth)，之后 O(1)；
+- `scheduledItemsInRange` 预计算按开始日期排序的行 + 二分前缀，常见区间远低于全量扫描；
+- 派生结果按索引实例 memo（`okrPeriods`、`countByStatus`、`sopGraph`、`parentCycles` 等）。
+
+**只读契约**：索引里所有数组 `Object.freeze`，selectors 返回值也 `Object.freeze`。
+调用方拿到的是只读视图，`push/sort/splice` 会直接抛错——这让「不小心原地改缓存」在开发期就暴露。
+代价是写操作必须遵守「工作区与 Item 不可原地修改」，否则索引会脏（见 §7.3）。
+
+### 7.3 结构共享历史
+
+历史不再对每一步 `structuredClone` 整份工作区，而是**保存 workspace 的引用**：
+
+- 写操作返回新的 `Workspace` 对象、新的 `items/edges/areas/runs` 数组，只新建真正变化的 `Item`；
+  未变更条目保持同一引用，因此 80 步快照之间大量共享节点；
+- `updateItem` 只新建目标 Item；`moveItem` 只克隆被移动条目与 order 变化的同级条目；
+  `deleteItems` 通过 children 索引 BFS 求闭包；`updateItems` 一次 `map` 完成批量更新；
+- `getHistoryStats()` 暴露 `{ steps, limit }` 供诊断。
+
+这条优化**依赖不变量而不是防御性拷贝**：`src/core/indexing.test.ts` 用 `deepFreeze` 把种子工作区冻结后
+跑遍所有 store 动作，任何原地写入都会抛错；另有断言验证「未变更条目保持同一引用」「撤销后恢复同一引用」。
+
+### 7.4 视口级渲染
+
+| 视图 | 做法 | 10k 实测 |
+| --- | --- | --- |
+| 甘特 | 左侧树按 `visibleRows` 上下 spacer 虚拟化（固定 36px 行高、动态缓冲 ≥10 行）；表头按 `visibleColumns` 只生成可视列（±2 列缓冲）；行组件 `React.memo` | 4,001 行数据只挂 28 行 DOM；表头 7 列 |
+| SOP | `onlyRenderVisibleElements` + `perf.ts` 的 `buildCanvasNodes` 复用未变化节点对象；首次挂载前先量出容器尺寸再带 `defaultViewport` 挂载，避免「全量首帧→再剔除」 | 300 step / 400 边只挂 28 节点 / 35 边 |
+| 列表 | GTD 收件箱 / 下一步 / 等待 / 某天与今日聚焦每页 **100** 条、OKR 表格每页 **200** 条 KR，「显示更多（剩余 N 条）」追加；行级 `React.memo`、列表级面包屑 `Map`、筛选变化重置分页 | 1,500 条下一步只挂 100 行 |
+| 样式 | `content-visibility: auto` 跳过离屏布局 | OKR 表格行 |
+
+### 7.5 仍存在的边界
+
+- **写放大**：每次保存仍是整份序列化 + `.bak` 复制 + 轮换副本，10k 时单次几 MB 磁盘 IO；
+  Rust 侧已把 IO 移出 IPC 线程，但**序列化本身仍在主线程**（浏览器模式实测 135 ms 长任务）。
+- **单文档上限**：10k 条目已验证可用（FCP 256 ms、编辑 21–63 ms），但超过这个量级仍建议按领域 / 季度
+  分片或换 SQLite；单文件同时受 30 份轮换备份的磁盘占用约束。
+- **冷切换成本**：路由级分包让首屏降到 84.4 KiB gzip，代价是首次进入某视图要加载对应 chunk
+  （实测额外 100–210 ms），由 `RouteLoading` 骨架承接。
+- **全量订阅**：页面仍用 `useWorkspace((s) => s.workspace)` 订阅整个工作区，写操作会让当前页面重渲染；
+  在 10k 下靠索引、分页与 `memo` 压住，进一步扩大规模时应改为细粒度 selector。
+- **日历**：42 格 + 7 列，农历换算 O(log 200 + 12)，节气按年缓存；单日条目极多时只靠圆点 `+N` 收敛。
 
 ## 8. 扩展指南
 
@@ -491,7 +535,8 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 3. `src/app/routes.ts`：`ROUTES` 加一条 `{ id, label, title, subtitle, icon }`（侧栏、顶栏、命令面板
    「前往…」自动生效）。
 4. `src/ui/icons.tsx`：若需要新图标，在 `IconName` 与图标表里补；否则复用现有图标。
-5. `src/app/AppShell.tsx`：`RouteView` 的 `switch` 加分支。
+5. `src/app/AppShell.tsx`：用 `React.lazy` 注册视图并加进 `RouteView` 的 `switch`
+   （`Suspense` 已在 `RouteErrorBoundary` 内，fallback 是 `RouteLoading` 骨架）。
 6. `src/modules/<view>/`：新建目录与入口组件，导出名与文件名一致；
    样式写在模块自己的 CSS 文件里并 `import`。
 7. 如需从其他视图跳过来：扩展 `src/modules/appshell/navigation.ts` 的 `routeForItemKind`，
@@ -507,6 +552,9 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
   实心强调底用 `--accent-strong*` + `--text-on-strong`，tint 底上的语义文字用 `--*-ink`。
 - 页面根节点沿用 `.page`、`.page-header`、`.page-actions` 的留白节奏。
 - 视图内的渲染异常应能在 `RouteErrorBoundary` 下恢复，不要在模块内 `throw` 到外壳之外。
+- **列表要分页、长列表要虚拟化**：条目列表首屏 100 条（OKR 表格 200 条 KR）+「显示更多」，
+  行组件用 `React.memo`；行/列窗口计算写成纯函数并单测（参考 `gantt/virtual.ts`）。
+- **不要原地修改工作区**：所有写操作返回新对象，否则索引缓存与结构共享历史都会失真（§7.3）。
 - 新增纯函数逻辑时同时加 `*.test.ts`（vitest 覆盖 `src/**/*.test.ts`）。
 
 ### 8.2 新增一个顶层字段

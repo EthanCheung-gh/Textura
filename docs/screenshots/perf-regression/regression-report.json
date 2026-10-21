@@ -1,0 +1,158 @@
+[
+  {
+    "flow": "routes",
+    "label": "7 条路由 console error = 0、无横向溢出",
+    "ok": true,
+    "detail": {
+      "今日": {
+        "route": "dashboard",
+        "overflowX": 0,
+        "mainText": 577,
+        "errors": []
+      },
+      "日历": {
+        "route": "calendar",
+        "overflowX": 0,
+        "mainText": 1743,
+        "errors": []
+      },
+      "OKR": {
+        "route": "okr",
+        "overflowX": 0,
+        "mainText": 694,
+        "errors": []
+      },
+      "GTD": {
+        "route": "gtd",
+        "overflowX": 0,
+        "mainText": 781,
+        "errors": []
+      },
+      "甘特": {
+        "route": "gantt",
+        "overflowX": 0,
+        "mainText": 374,
+        "errors": []
+      },
+      "SOP": {
+        "route": "sop",
+        "overflowX": 0,
+        "mainText": 546,
+        "errors": []
+      },
+      "设置": {
+        "route": "settings",
+        "overflowX": 0,
+        "mainText": 820,
+        "errors": []
+      }
+    }
+  },
+  {
+    "flow": "capture",
+    "label": "快速收集后收件箱 +1",
+    "ok": true,
+    "detail": {
+      "beforeInbox": "6",
+      "afterInbox": "7"
+    }
+  },
+  {
+    "flow": "capture",
+    "label": "澄清后进入下一步（status=next / clarified=true）",
+    "ok": true,
+    "detail": {
+      "status": "next",
+      "clarified": true
+    }
+  },
+  {
+    "flow": "okr",
+    "label": "OKR 指标提交（600ms 防抖）并切表格/卡片不丢",
+    "ok": true,
+    "detail": {
+      "metricAfterType": 66,
+      "cardValue": "66"
+    }
+  },
+  {
+    "flow": "gantt",
+    "label": "甘特拖拽改期并刷新后保留",
+    "ok": true,
+    "detail": {
+      "before": "需求梳理与竞品盘点，2026-10-11 至 2026-10-15，进度 100%",
+      "after": "需求梳理与竞品盘点，2026-10-13 至 2026-10-17，进度 100%"
+    }
+  },
+  {
+    "flow": "sop",
+    "label": "SOP 运行模式连续 3 步推进",
+    "ok": true,
+    "detail": {
+      "steps": [
+        "第 1/7 步",
+        "第 2/7 步",
+        "第 3/7 步",
+        "第 4/7 步"
+      ]
+    }
+  },
+  {
+    "flow": "calendar",
+    "label": "日历快速添加 1 条并出现在面板",
+    "ok": true,
+    "detail": {
+      "start": "2026-10-21",
+      "status": "next",
+      "inPanel": true
+    }
+  },
+  {
+    "flow": "undo-redo",
+    "label": "撤销/重做跨视图一致（今日完成数）",
+    "ok": true,
+    "detail": {
+      "nextBefore": "5",
+      "completedAfter": 2,
+      "completedAfterUndo": 1,
+      "completedAfterRedo": 2
+    }
+  },
+  {
+    "flow": "pagination",
+    "label": "演示数据（30 条）下 GTD/OKR/今日 均无「显示更多」",
+    "ok": true,
+    "detail": {
+      "GTD": 0,
+      "OKR": 0,
+      "今日": 0
+    }
+  },
+  {
+    "flow": "skeleton",
+    "label": "首次进入 SOP：role=status 骨架出现后画布渲染",
+    "ok": true,
+    "detail": {
+      "sawSkeleton": true,
+      "role": "status",
+      "canvas": true
+    }
+  },
+  {
+    "flow": "boundary",
+    "label": "RouteErrorBoundary 呈现并可恢复",
+    "ok": true,
+    "detail": {
+      "boundary": {
+        "hasBoundary": true,
+        "title": "这个视图暂时无法显示",
+        "shell": true
+      },
+      "recovered": {
+        "route": "dashboard",
+        "boundary": false,
+        "stats": 4
+      }
+    }
+  }
+]

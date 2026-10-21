@@ -23,6 +23,7 @@ import {
   totalWidth,
 } from './scale';
 import type { BarRange, DateRange, GanttRow, GanttZoom } from './scale';
+import { visibleColumns as visibleColumnWindow, visibleRows as visibleRowWindow } from './virtual';
 
 export interface GanttViewport {
   scrollLeft: number;
@@ -81,17 +82,26 @@ export function GanttTimeline({
   );
   const todayX = Math.min(total, Math.max(0, diffDays(range.start, todayKey) * px + px / 2));
 
-  const visibleColumns = useMemo(() => {
-    const fromX = viewport.scrollLeft - 320;
-    const toX = viewport.scrollLeft + viewport.width + 320;
-    return header.columns.filter((column) => column.x + column.width >= fromX && column.x <= toX);
-  }, [header.columns, viewport.scrollLeft, viewport.width]);
+  const columnWidths = useMemo(() => header.columns.map((column) => column.width), [header.columns]);
+  const groupWidths = useMemo(() => header.groups.map((group) => group.width), [header.groups]);
 
-  const visibleGroups = useMemo(() => {
-    const fromX = viewport.scrollLeft - 320;
-    const toX = viewport.scrollLeft + viewport.width + 320;
-    return header.groups.filter((group) => group.x + group.width >= fromX && group.x <= toX);
-  }, [header.groups, viewport.scrollLeft, viewport.width]);
+  const columnWindow = useMemo(
+    () => visibleColumnWindow(viewport.scrollLeft, viewport.width, columnWidths, 2),
+    [viewport.scrollLeft, viewport.width, columnWidths],
+  );
+  const visibleColumns = useMemo(
+    () => header.columns.slice(columnWindow.start, columnWindow.end),
+    [header.columns, columnWindow.start, columnWindow.end],
+  );
+
+  const groupWindow = useMemo(
+    () => visibleColumnWindow(viewport.scrollLeft, viewport.width, groupWidths, 1),
+    [viewport.scrollLeft, viewport.width, groupWidths],
+  );
+  const visibleGroups = useMemo(
+    () => header.groups.slice(groupWindow.start, groupWindow.end),
+    [header.groups, groupWindow.start, groupWindow.end],
+  );
 
   const stripes = useMemo(() => {
     const result: { key: string; x: number; width: number }[] = [];
@@ -111,14 +121,24 @@ export function GanttTimeline({
     return result;
   }, [visibleColumns, range.start, px]);
 
-  const firstRow = Math.max(0, Math.floor((viewport.scrollTop - HEADER_HEIGHT) / ROW_HEIGHT) - 4);
-  const lastRow = Math.min(rows.length - 1, Math.ceil((viewport.scrollTop + viewport.height) / ROW_HEIGHT) + 6);
+  const rowWindow = useMemo(
+    () =>
+      visibleRowWindow(
+        Math.max(0, viewport.scrollTop - HEADER_HEIGHT),
+        Math.max(0, viewport.height - HEADER_HEIGHT),
+        ROW_HEIGHT,
+        4,
+        rows.length,
+      ),
+    [viewport.scrollTop, viewport.height, rows.length],
+  );
   const visibleRows = useMemo(
     () =>
-      rows
-        .map((row, index) => ({ row, index }))
-        .filter(({ index }) => index >= firstRow && index <= lastRow),
-    [rows, firstRow, lastRow],
+      rows.slice(rowWindow.start, rowWindow.end).map((row, offset) => ({
+        row,
+        index: rowWindow.start + offset,
+      })),
+    [rows, rowWindow.start, rowWindow.end],
   );
 
   const dragPreview = drag
@@ -136,34 +156,37 @@ export function GanttTimeline({
     [workspace.items],
   );
 
-  const rects = new Map<string, DepRect>();
-  const bars: { item: Item; geometry: ReturnType<typeof barGeometry>; rowIndex: number }[] = [];
-  const viewLeft = viewport.scrollLeft - 400;
-  const viewRight = viewport.scrollLeft + viewport.width + 400;
-  for (const { row, index } of visibleRows) {
-    if (row.type !== 'item') continue;
-    const base = itemRange(row.item);
-    if (!base) continue;
-    const preview = drag?.id === row.id && dragPreview ? dragPreview : base;
-    const geometry = barGeometry(preview, range.start, px);
-    const keep = drag?.id === row.id || (geometry.x + geometry.width >= viewLeft && geometry.x <= viewRight);
-    if (!keep) continue;
-    bars.push({ item: row.item, geometry, rowIndex: index });
-    rects.set(row.id, {
-      x1: geometry.x,
-      x2: geometry.x + geometry.width,
-      cy: index * ROW_HEIGHT + ROW_HEIGHT / 2,
-    });
-  }
+  const { bars, rects } = useMemo(() => {
+    const nextBars: { item: Item; geometry: ReturnType<typeof barGeometry>; rowIndex: number }[] = [];
+    const nextRects = new Map<string, DepRect>();
+    for (const { row, index } of visibleRows) {
+      if (row.type !== 'item') continue;
+      const base = itemRange(row.item);
+      if (!base) continue;
+      const preview = drag?.id === row.id && dragPreview ? dragPreview : base;
+      const geometry = barGeometry(preview, range.start, px);
+      nextBars.push({ item: row.item, geometry, rowIndex: index });
+      nextRects.set(row.id, {
+        x1: geometry.x,
+        x2: geometry.x + geometry.width,
+        cy: index * ROW_HEIGHT + ROW_HEIGHT / 2,
+      });
+    }
+    return { bars: nextBars, rects: nextRects };
+  }, [visibleRows, range.start, px, drag?.id, dragPreview?.start, dragPreview?.end]);
 
-  const summaries = visibleRows
-    .filter(({ row }) => row.type === 'group' && row.start !== null && row.end !== null)
-    .map(({ row, index }) => {
-      if (row.type !== 'group' || !row.start || !row.end) return null;
-      const geometry = barGeometry({ start: row.start, end: row.end }, range.start, px);
-      return { row, index, geometry };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const summaries = useMemo(
+    () =>
+      visibleRows
+        .filter(({ row }) => row.type === 'group' && row.start !== null && row.end !== null)
+        .map(({ row, index }) => {
+          if (row.type !== 'group' || !row.start || !row.end) return null;
+          const geometry = barGeometry({ start: row.start, end: row.end }, range.start, px);
+          return { row, index, geometry };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
+    [visibleRows, range.start, px],
+  );
 
   const report = useCallback(() => {
     const element = scrollerRef.current;
@@ -321,6 +344,7 @@ export function GanttTimeline({
             {visibleRows.map(({ row, index }) => (
               <div
                 key={`row-${row.id}-${index}`}
+                data-row-id={row.id}
                 className={clsx(
                   'gantt-row',
                   row.type === 'group' && 'is-group',
@@ -393,7 +417,7 @@ export function GanttTimeline({
                   Boolean(item.gantt?.end) &&
                   (item.gantt?.end ?? '') < todayKey
                 }
-                onSelect={(id) => onSelect(id)}
+                onSelect={onSelect}
                 onDragStart={handleDragStart}
                 onDragMove={handleDragMove}
                 onDragEnd={handleDragEnd}

@@ -17,7 +17,7 @@ import type {
 } from './model';
 import { WORKSPACE_VERSION } from './model';
 import { createHistory } from './history';
-import { createDebouncer, areaPalette, cloneWorkspace, currentQuarter, nowIso, uid } from './utils';
+import { createDebouncer, areaPalette, currentQuarter, nowIso, uid } from './utils';
 import {
   emptyWorkspace,
   loadWorkspace,
@@ -28,7 +28,7 @@ import {
 import type { CorrectionSummary } from './repo';
 import * as repo from './repo';
 import { createSeedWorkspace } from './fixtures';
-import { okrPeriods } from './selectors';
+import { getWorkspaceIndex, itemById, okrPeriods } from './selectors';
 import {
   itemIdFromSearch,
   readRouteMemory,
@@ -185,7 +185,7 @@ function initialOkrPeriod(ws: Workspace): string {
 }
 
 function nextSiblingOrder(ws: Workspace, parentId: string | null): number {
-  const siblings = ws.items.filter((item) => item.parentId === parentId);
+  const siblings = getWorkspaceIndex(ws).children.get(parentId) ?? [];
   if (siblings.length === 0) return 0;
   return Math.max(...siblings.map((item) => item.order)) + 1;
 }
@@ -199,7 +199,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
 
   const commit = (recipe: (ws: Workspace) => Workspace): void => {
     const current = get().workspace;
-    history.record(cloneWorkspace(current));
+    history.record(current);
     const next = { ...recipe(current), updatedAt: nowIso() };
     set({ workspace: next, saveState: 'idle', error: null });
     if (get().status === 'ready') scheduleSave.schedule();
@@ -342,7 +342,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
       await saveQueue;
 
       if (recordHistory) {
-        history.record(cloneWorkspace(get().workspace));
+        history.record(get().workspace);
       } else {
         // 即使不记录本次替换，也要让旧的重做栈失效。
         history.clearRedo();
@@ -442,7 +442,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     updateItems(patches, options) {
       if (patches.length === 0) return;
       const current = get().workspace;
-      const existingIds = new Set(current.items.map((item) => item.id));
+      const existingIds = getWorkspaceIndex(current).byId;
       const patchById = new Map<string, ItemPatch>();
       for (const { id, patch } of patches) {
         if (existingIds.has(id)) patchById.set(id, patch);
@@ -451,7 +451,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
 
       const recordHistory = options?.recordHistory ?? true;
       if (recordHistory) {
-        history.record(cloneWorkspace(current));
+        history.record(current);
       } else {
         history.clearRedo();
       }
@@ -473,18 +473,14 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
       if (ids.length === 0) return;
       commit((ws) => {
         const doomed = new Set(ids);
-        for (const id of ids) {
-          for (const child of ws.items.filter((item) => item.parentId === id)) doomed.add(child.id);
-        }
-        // 迭代闭包，确保深层子孙也被级联删除。
-        let changed = true;
-        while (changed) {
-          changed = false;
-          for (const item of ws.items) {
-            if (item.parentId && doomed.has(item.parentId) && !doomed.has(item.id)) {
-              doomed.add(item.id);
-              changed = true;
-            }
+        const queue = [...ids];
+        const children = getWorkspaceIndex(ws).children;
+        while (queue.length > 0) {
+          const parentId = queue.pop()!;
+          for (const child of children.get(parentId) ?? []) {
+            if (doomed.has(child.id)) continue;
+            doomed.add(child.id);
+            queue.push(child.id);
           }
         }
         return {
@@ -495,54 +491,67 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
         };
       });
       const selectedId = get().selectedId;
-      if (selectedId && !get().workspace.items.some((item) => item.id === selectedId)) {
+      if (selectedId && !getWorkspaceIndex(get().workspace).byId.has(selectedId)) {
         set({ selectedId: null });
       }
     },
 
     moveItem(id, parentId, order) {
       commit((ws) => {
-        const moving = ws.items.find((item) => item.id === id);
+        const index = getWorkspaceIndex(ws);
+        const moving = index.byId.get(id);
         if (!moving || parentId === id) return ws;
         if (parentId) {
-          let cursor = ws.items.find((item) => item.id === parentId);
+          let cursor = index.byId.get(parentId);
           const seen = new Set<string>();
           while (cursor) {
             if (cursor.id === id) return ws; // 禁止移动到自身子孙下
             if (seen.has(cursor.id)) break;
             seen.add(cursor.id);
-            cursor = cursor.parentId ? ws.items.find((item) => item.id === cursor!.parentId) : undefined;
+            cursor = cursor.parentId ? index.byId.get(cursor.parentId) : undefined;
           }
         }
-        const items = ws.items.map((item) =>
-          item.id === id ? { ...item, parentId, updatedAt: nowIso() } : { ...item },
-        );
-        const moved = items.find((item) => item.id === id)!;
-        const oldParentId = moving.parentId;
 
-        const reindex = (pid: string | null) => {
-          const siblings = items
-            .filter((item) => item.parentId === pid)
-            .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
-          siblings.forEach((sibling, index) => {
-            sibling.order = index;
+        const oldParentId = moving.parentId;
+        const timestamp = nowIso();
+        const moved: Item = { ...moving, parentId, updatedAt: timestamp };
+        const updates = new Map<string, Item>([[id, moved]]);
+        const assignOrders = (pid: string | null, insertMoved: boolean) => {
+          const siblings = (index.children.get(pid) ?? []).filter((item) => item.id !== id);
+          if (!insertMoved) {
+            siblings.forEach((sibling, position) => {
+              if (sibling.order !== position) {
+                updates.set(sibling.id, { ...sibling, order: position });
+              }
+            });
+            return;
+          }
+          const insertAt =
+            order === undefined
+              ? siblings.length
+              : Math.min(Math.max(Math.round(order), 0), siblings.length);
+          siblings.splice(insertAt, 0, moved);
+          siblings.forEach((sibling, position) => {
+            if (sibling.id === id) {
+              moved.order = position;
+            } else if (sibling.order !== position) {
+              updates.set(sibling.id, { ...sibling, order: position });
+            }
           });
-          return siblings;
         };
-        const siblings = reindex(parentId).filter((item) => item.id !== id);
-        const insertAt =
-          order === undefined ? siblings.length : Math.min(Math.max(Math.round(order), 0), siblings.length);
-        siblings.splice(insertAt, 0, moved);
-        siblings.forEach((sibling, index) => {
-          sibling.order = index;
-        });
-        if (oldParentId !== parentId) reindex(oldParentId);
-        return { ...ws, items };
+
+        assignOrders(parentId, true);
+        if (oldParentId !== parentId) assignOrders(oldParentId, false);
+
+        return {
+          ...ws,
+          items: ws.items.map((item) => updates.get(item.id) ?? item),
+        };
       });
     },
 
     toggleDone(id) {
-      const item = get().workspace.items.find((entry) => entry.id === id);
+      const item = itemById(get().workspace, id);
       if (!item) return;
       get().setStatus(id, item.status === 'done' ? 'next' : 'done');
     },
@@ -564,9 +573,9 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     },
 
     createEdge(input) {
-      const existing = get().workspace.edges.find(
-        (edge) => edge.from === input.from && edge.to === input.to && edge.type === input.type,
-      );
+      const existing = getWorkspaceIndex(get().workspace).edgesFrom
+        .get(input.from)
+        ?.find((edge) => edge.to === input.to && edge.type === input.type);
       if (existing) return existing;
       const edge: Edge = {
         id: uid('edge'),
@@ -631,7 +640,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     },
 
     undo() {
-      const snapshot = history.undo(cloneWorkspace(get().workspace));
+      const snapshot = history.undo(get().workspace);
       if (!snapshot) return;
       set({
         workspace: { ...snapshot, updatedAt: nowIso() },
@@ -642,7 +651,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     },
 
     redo() {
-      const snapshot = history.redo(cloneWorkspace(get().workspace));
+      const snapshot = history.redo(get().workspace);
       if (!snapshot) return;
       set({
         workspace: { ...snapshot, updatedAt: nowIso() },
@@ -686,3 +695,8 @@ export function getWorkspace(): WorkspaceStore {
 /** 供模块按需使用的持久化能力（设置页导入/导出等）。 */
 export { repo };
 export type { Item, Area, Edge, ItemStatus, NewItemInput, ItemPatch };
+
+/** 历史诊断（只读）：当前快照步数与上限。 */
+export function getHistoryStats(): { steps: number; limit: number } {
+  return { steps: history.size(), limit: history.limit };
+}

@@ -4,7 +4,7 @@
  * 坐标只在「拖动结束 / 自动布局」时通过一次 updateItems 批量写回 store；
  * 拖动过程中只更新本地草稿，避免自动保存风暴与逐节点 undo 历史。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -17,7 +17,9 @@ import {
 import type {
   DefaultEdgeOptions,
   Edge as FlowEdge,
+  EdgeMouseHandler,
   NodeChange,
+  NodeMouseHandler,
   NodeTypes,
   OnNodeDrag,
 } from '@xyflow/react';
@@ -46,16 +48,28 @@ import {
 import { canvasPatchesToUpdateItems, positionsToPatch } from './positions';
 import type { CanvasPatch } from './positions';
 import type { FitBounds } from './fit';
+import { buildCanvasNodes } from './perf';
 import { NODE_TYPE_LABELS, SopNodeView } from './SopNode';
-import type { SopFlowNode, SopNodeState } from './SopNode';
+import type { CanvasRunState, SopFlowNode } from './types';
 import type { RunSession, SopSelection } from './types';
 
 const nodeTypes = { sop: SopNodeView } as NodeTypes;
 
+const FLOW_EDGE_MARKER = {
+  type: MarkerType.ArrowClosed,
+  width: 16,
+  height: 16,
+  color: 'var(--text-faint)',
+};
+
 const defaultEdgeOptions: DefaultEdgeOptions = {
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'var(--text-faint)' },
+  markerEnd: FLOW_EDGE_MARKER,
 };
+
+// 顶层常量：避免每次渲染新建对象导致 React Flow 重新初始化。
+const fitViewOptions = { padding: INITIAL_FIT_PADDING, maxZoom: MAX_FIT_ZOOM };
+const connectionLineStyle = { stroke: 'var(--accent)', strokeWidth: 1.5 };
 
 const NEW_NODE_TITLES: Record<SopNodeType, string> = {
   start: '开始',
@@ -102,8 +116,10 @@ function SopCanvasInner({
     useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const displayBoundsRef = useRef<FitBounds | null>(null);
+  const flowNodesRef = useRef<SopFlowNode[]>([]);
+  const flowEdgesRef = useRef<FlowEdge[]>([]);
   const timeoutsRef = useRef<number[]>([]);
-  const rafRef = useRef<number | null>(null);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { x: number; y: number }>>({});
   // 纵向预览只在「未编辑布局」时生效；一旦用户拖动/自动布局/撤销，就回落到已保存坐标。
   const [previewDisabled, setPreviewDisabled] = useState(false);
@@ -124,15 +140,42 @@ function SopCanvasInner({
     () => () => {
       for (const id of timeoutsRef.current) window.clearTimeout(id);
       timeoutsRef.current = [];
-      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
     },
     [],
   );
 
+  // 在首次挂载 / 切换 SOP 时先量出画布尺寸，再带 defaultViewport 挂载 React Flow，
+  // 避免先按 (0,0,1) 渲染全部节点、随后才剔除的“全量首帧”。
+  useLayoutEffect(() => {
+    let cancelled = false;
+    let frame = 0;
+    const measure = () => {
+      if (cancelled) return;
+      const element = wrapperRef.current;
+      if (!element) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width >= 40 && rect.height >= 40) {
+        setCanvasSize((previous) =>
+          previous && previous.width === rect.width && previous.height === rect.height
+            ? previous
+            : { width: rect.width, height: rect.height },
+        );
+        return;
+      }
+      frame = window.requestAnimationFrame(measure);
+    };
+    measure();
+    return () => {
+      cancelled = true;
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [sop.id]);
+
   useEffect(() => {
     setDrafts({});
     setPreviewDisabled(false);
+    flowNodesRef.current = [];
+    flowEdgesRef.current = [];
   }, [sop.id]);
 
   const areaColors = useMemo(() => {
@@ -266,66 +309,51 @@ function SopCanvasInner({
     return () => window.clearTimeout(timer);
   }, [displayPositions, getViewport, runCurrentId, setCenter]);
 
-  const fitInitialView = useCallback((): boolean => {
-    const element = wrapperRef.current;
-    if (!element) return false;
-    const rect = element.getBoundingClientRect();
-    if (rect.width < 40 || rect.height < 40) return false;
+  /** 首帧视口：由容器尺寸 + 内容包围盒计算，作为 React Flow 的 defaultViewport。 */
+  const initialViewport = useMemo(() => {
+    if (!canvasSize) return null;
     const bounds = boundsOfPositions(displayPositions, SOP_NODE_WIDTH, FIT_NODE_HEIGHT);
-    if (!bounds) return false;
-    const { viewport } = computeReadableViewport({
-      containerWidth: rect.width,
-      containerHeight: rect.height,
+    if (!bounds) return { x: 0, y: 0, zoom: 1 };
+    return computeReadableViewport({
+      containerWidth: canvasSize.width,
+      containerHeight: canvasSize.height,
       bounds,
       padding: INITIAL_FIT_PADDING,
       minZoom: READABLE_MIN_ZOOM,
       maxZoom: MAX_FIT_ZOOM,
-    });
-    void setViewport(viewport, { duration: 0 });
-    return true;
-  }, [displayPositions, setViewport]);
+    }).viewport;
+  }, [canvasSize, displayPositions]);
 
-  const handleInit = useCallback(() => {
-    if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
-    let attempts = 0;
-    const attempt = () => {
-      rafRef.current = null;
-      attempts += 1;
-      if (!fitInitialView() && attempts < 12) schedule(attempt, 60);
-    };
-    rafRef.current = window.requestAnimationFrame(attempt);
-  }, [fitInitialView, schedule]);
-
-  const flowNodes = useMemo<SopFlowNode[]>(
+  const runState = useMemo<CanvasRunState | null>(
     () =>
-      nodes.map((item) => {
-        const checklist = item.sop?.checklist ?? [];
-        const canvas = item.sop?.canvas ?? { x: 0, y: 0 };
-        let state: SopNodeState = 'idle';
-        if (run) {
-          if (run.currentId === item.id) state = 'current';
-          else if (run.failed.includes(item.id)) state = 'failed';
-          else if (run.visited.includes(item.id)) state = 'visited';
-        }
-        return {
-          id: item.id,
-          type: 'sop',
-          position: drafts[item.id] ?? displayPositions[item.id] ?? canvas,
-          selected: selectedNodeId === item.id,
-          data: {
-            title: item.title,
-            nodeType: item.sop?.nodeType ?? 'action',
-            owner: item.sop?.owner ?? '',
-            durationMin: item.sop?.durationMin ?? null,
-            checklistDone: checklist.filter((entry) => entry.done).length,
-            checklistTotal: checklist.length,
-            areaColor: item.areaId ? (areaColors[item.areaId] ?? null) : null,
-            state,
-          },
-        };
-      }),
-    [areaColors, displayPositions, drafts, nodes, run, selectedNodeId],
+      run
+        ? { currentId: run.currentId, visited: run.visited, failed: run.failed }
+        : null,
+    [run?.currentId, run?.failed, run?.visited],
   );
+
+  // 拖动草稿只在有草稿时合并，避免空对象频繁触发节点构建。
+  const nodePositions = useMemo(
+    () => (Object.keys(drafts).length === 0 ? displayPositions : { ...displayPositions, ...drafts }),
+    [displayPositions, drafts],
+  );
+
+  /**
+   * 节点对象尽量复用：选中切换只影响相关节点，拖动只影响被拖节点。
+   * previous 引用由 ref 保存，用于跨 render 的结构稳定性。
+   */
+  const flowNodes = useMemo(() => {
+    const next = buildCanvasNodes({
+      steps: nodes,
+      areaColors,
+      positions: nodePositions,
+      selectedId: selectedNodeId,
+      run: runState,
+      previous: flowNodesRef.current,
+    });
+    flowNodesRef.current = next;
+    return next;
+  }, [areaColors, nodePositions, nodes, runState, selectedNodeId]);
 
   const flowEdges = useMemo<FlowEdge[]>(() => {
     // 根据节点相对位置选择连接 handle：横向相邻走左右 handle，其余走上/下。
@@ -346,21 +374,45 @@ function SopCanvasInner({
       return {};
     };
 
-    return edges.map((edge) => {
+    const previousById = new Map<string, FlowEdge>();
+    for (const edge of flowEdgesRef.current) previousById.set(edge.id, edge);
+
+    const next = edges.map((edge) => {
       const selected = selection?.kind === 'edge' && selection.id === edge.id;
       const active = run !== null && run.currentId === edge.from;
+      const label = edge.label || undefined;
+      const className = clsx('sop-edge', selected && 'is-selected', active && 'is-active');
+      const handles = handlesFor(edge.from, edge.to);
+      const previous = previousById.get(edge.id);
+
+      if (
+        previous &&
+        previous.source === edge.from &&
+        previous.target === edge.to &&
+        previous.label === label &&
+        previous.selected === selected &&
+        previous.className === className &&
+        previous.sourceHandle === handles.sourceHandle &&
+        previous.targetHandle === handles.targetHandle
+      ) {
+        return previous;
+      }
+
       return {
         id: edge.id,
         source: edge.from,
         target: edge.to,
         type: 'smoothstep',
-        label: edge.label || undefined,
+        label,
         selected,
-        className: clsx('sop-edge', selected && 'is-selected', active && 'is-active'),
-        ...handlesFor(edge.from, edge.to),
-        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'var(--text-faint)' },
+        className,
+        ...handles,
+        markerEnd: FLOW_EDGE_MARKER,
       };
     });
+
+    flowEdgesRef.current = next;
+    return next;
   }, [edges, flowNodes, selection, run]);
 
   /** 一次手势 / 一次命令的所有坐标变化合并成一次 updateItems（单条历史、单次保存）。 */
@@ -444,6 +496,18 @@ function SopCanvasInner({
     },
     [createEdge],
   );
+
+  const handleNodeClick: NodeMouseHandler<SopFlowNode> = useCallback(
+    (_event, node) => onSelect({ kind: 'node', id: node.id }),
+    [onSelect],
+  );
+
+  const handleEdgeClick: EdgeMouseHandler = useCallback(
+    (_event, edge) => onSelect({ kind: 'edge', id: edge.id }),
+    [onSelect],
+  );
+
+  const handlePaneClick = useCallback(() => onSelect(null), [onSelect]);
 
   const viewportCenter = useCallback(() => {
     const rect = wrapperRef.current?.getBoundingClientRect();
@@ -629,28 +693,30 @@ function SopCanvasInner({
       </div>
 
       <div className="sop-canvas-flow" ref={wrapperRef}>
-        <ReactFlow
-          key={sop.id}
-          nodes={flowNodes}
-          edges={flowEdges}
-          nodeTypes={nodeTypes}
-          onNodesChange={handleNodesChange}
-          onNodeDragStop={handleNodeDragStop}
-          onNodeClick={(_event, node) => onSelect({ kind: 'node', id: node.id })}
-          onEdgeClick={(_event, edge) => onSelect({ kind: 'edge', id: edge.id })}
-          onPaneClick={() => onSelect(null)}
-          onConnect={handleConnect}
-          onInit={handleInit}
-          defaultEdgeOptions={defaultEdgeOptions}
-          nodesDraggable={!running}
-          nodesConnectable={!running}
-          deleteKeyCode={null}
-          minZoom={MIN_ZOOM}
-          maxZoom={1.8}
-          fitViewOptions={{ padding: INITIAL_FIT_PADDING, maxZoom: MAX_FIT_ZOOM }}
-          connectionLineStyle={{ stroke: 'var(--accent)', strokeWidth: 1.5 }}
-          aria-label="SOP 流程图"
-        >
+        {initialViewport ? (
+          <ReactFlow
+            key={sop.id}
+            defaultViewport={initialViewport}
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            onNodesChange={handleNodesChange}
+            onNodeDragStop={handleNodeDragStop}
+            onNodeClick={handleNodeClick}
+            onEdgeClick={handleEdgeClick}
+            onPaneClick={handlePaneClick}
+            onConnect={handleConnect}
+            defaultEdgeOptions={defaultEdgeOptions}
+            nodesDraggable={!running}
+            nodesConnectable={!running}
+            onlyRenderVisibleElements
+            deleteKeyCode={null}
+            minZoom={MIN_ZOOM}
+            maxZoom={1.8}
+            fitViewOptions={fitViewOptions}
+            connectionLineStyle={connectionLineStyle}
+            aria-label="SOP 流程图"
+          >
           <Background
             variant={BackgroundVariant.Dots}
             gap={18}
@@ -678,6 +744,7 @@ function SopCanvasInner({
             </Panel>
           ) : null}
         </ReactFlow>
+        ) : null}
       </div>
     </section>
   );

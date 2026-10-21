@@ -255,7 +255,6 @@ export function ObjectiveCard({
               return (
                 <KrRow
                   key={kr.id}
-                  workspace={workspace}
                   objective={objective}
                   kr={kr}
                   index={index}

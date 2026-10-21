@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Item } from '../../core/model';
-import { inboxItems, itemsOfKind, nextActions, somedayItems, waitingItems } from '../../core/selectors';
+import { inboxItems, itemById, itemsOfKind, nextActions, somedayItems, waitingItems } from '../../core/selectors';
 import { useWorkspace } from '../../core/store';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
@@ -57,16 +57,21 @@ export function GtdPage() {
   const waiting = useMemo(() => waitingItems(workspace), [workspace]);
   const someday = useMemo(() => somedayItems(workspace), [workspace]);
   const projects = useMemo(() => itemsOfKind(workspace, 'project'), [workspace]);
-  const stats = useMemo(() => weeklyReview(workspace, today), [workspace, today]);
-  const clarifyItem: Item | null = clarifyId
-    ? workspace.items.find((item) => item.id === clarifyId) ?? null
-    : null;
+  // 周回顾只在「回顾」视图计算：流程台的每次写操作不需要跑一遍聚合。
+  const stats = useMemo(
+    () => (view === 'review' ? weeklyReview(workspace, today) : null),
+    [workspace, today, view],
+  );
+  const clarifyItem: Item | null = clarifyId ? itemById(workspace, clarifyId) ?? null : null;
 
   const focusSection = useCallback((key: GtdSectionKey) => {
     setView('flow');
     setPendingFocus(key);
     setHighlight(key);
   }, []);
+
+  const openClarify = useCallback((item: Item) => setClarifyId(item.id), []);
+  const focusNext = useCallback(() => focusSection('next'), [focusSection]);
 
   useEffect(() => {
     if (!pendingFocus) return;
@@ -191,8 +196,8 @@ export function GtdPage() {
               >
                 <InboxList
                   items={inbox}
-                  onClarify={(item) => setClarifyId(item.id)}
-                  onFocusNext={() => focusSection('next')}
+                  onClarify={openClarify}
+                  onFocusNext={focusNext}
                 />
               </GtdSection>
 
@@ -207,7 +212,7 @@ export function GtdPage() {
                   sectionRefs.current.next = element;
                 }}
               >
-                <NextActions items={next} today={today} onClarify={(item) => setClarifyId(item.id)} />
+                <NextActions items={next} today={today} onClarify={openClarify} />
               </GtdSection>
             </div>
 
@@ -248,14 +253,18 @@ export function GtdPage() {
                   sectionRefs.current.projects = element;
                 }}
               >
-                <ProjectPanel workspace={workspace} onFocusNext={() => focusSection('next')} />
+                <ProjectPanel workspace={workspace} onFocusNext={focusNext} />
               </GtdSection>
             </div>
           </div>
         </>
-      ) : (
-        <WeeklyReview stats={stats} onNavigate={focusSection} onGoToday={() => setUi({ route: 'dashboard' })} />
-      )}
+      ) : stats ? (
+        <WeeklyReview
+          stats={stats}
+          onNavigate={focusSection}
+          onGoToday={() => setUi({ route: 'dashboard' })}
+        />
+      ) : null}
 
       <ClarifyDialog
         key={clarifyItem?.id ?? 'closed'}

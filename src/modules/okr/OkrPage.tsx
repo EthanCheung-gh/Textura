@@ -266,7 +266,12 @@ export function OkrPage() {
           </div>
         )
       ) : view === 'table' ? (
-        <OkrTable workspace={workspace} entries={filtered} elapsedPercent={summary.elapsedPercent} />
+        <OkrTable
+          workspace={workspace}
+          entries={filtered}
+          elapsedPercent={summary.elapsedPercent}
+          resetKey={`${period}|${search}`}
+        />
       ) : view === 'alignment' ? (
         <OkrAlignment
           workspace={workspace}

@@ -10,6 +10,20 @@ import { setTimeout as sleep } from 'node:timers/promises';
 export const CHROME_BIN = process.env.CHROME_BIN || 'google-chrome';
 export const BASE_URL = process.env.TEXTURA_BASE_URL || 'http://localhost:1430';
 
+/**
+ * 各路由的根选择器。路由级代码分割后，`dataset.route` 会先于懒加载 chunk 就绪，
+ * 因此自动化必须等根节点出现，而不是固定 sleep。
+ */
+export const ROUTE_ROOT = {
+  dashboard: '.dash-page',
+  calendar: '.cal-page',
+  okr: '.okr-page',
+  gtd: '.gtd-page',
+  gantt: '.gantt-page',
+  sop: '.sop-page',
+  settings: '.settings-page',
+};
+
 export { sleep };
 
 async function waitForHttp(url, timeout = 15000) {
@@ -26,7 +40,7 @@ async function waitForHttp(url, timeout = 15000) {
   throw new Error(`Chrome debugging endpoint not reachable: ${url}`);
 }
 
-export async function launchChrome({ port = 9333, profileDir, width = 1440, height = 900 } = {}) {
+export async function launchChrome({ port = 9333, profileDir, width = 1440, height = 900, extraArgs = [] } = {}) {
   const profile = profileDir || `/tmp/textura-qa-profile-${port}`;
   rmSync(profile, { recursive: true, force: true });
   mkdirSync(profile, { recursive: true });
@@ -49,6 +63,7 @@ export async function launchChrome({ port = 9333, profileDir, width = 1440, heig
     `--user-data-dir=${profile}`,
     `--window-size=${width},${height}`,
     `--remote-debugging-port=${port}`,
+    ...extraArgs,
     'about:blank',
   ];
 
@@ -258,8 +273,19 @@ export class Page {
         `document.documentElement.dataset.route === ${JSON.stringify(route)}`,
         { timeout, label: `route ${route}` },
       );
+      await this.waitRouteRoot(route, timeout);
     }
     return this.issues;
+  }
+
+  /** 等待懒加载路由真正挂载（根选择器出现）。 */
+  async waitRouteRoot(route, timeout = 20000) {
+    const root = ROUTE_ROOT[route];
+    if (!root) return;
+    await this.waitFor(`!!document.querySelector(${JSON.stringify(root)})`, {
+      timeout,
+      label: `route root ${root}`,
+    });
   }
 
   async reload({ route = null } = {}) {
@@ -271,6 +297,7 @@ export class Page {
       await this.waitFor(`document.documentElement.dataset.route === ${JSON.stringify(route)}`, {
         label: `route ${route} after reload`,
       });
+      await this.waitRouteRoot(route);
     }
     return this.issues;
   }

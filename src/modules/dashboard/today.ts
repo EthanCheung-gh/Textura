@@ -63,7 +63,7 @@ export function buildTodayFocus(ws: Workspace, today: string): FocusEntry[] {
   const push = (item: Item, bucket: FocusBucket) => {
     if (seen.has(item.id)) return;
     seen.add(item.id);
-    const ancestors = ancestorsOf(ws, item.id).reverse();
+    const ancestors = [...ancestorsOf(ws, item.id)].reverse();
     const due = dateKey(item.gantt?.end);
     entries.push({
       item,
@@ -100,6 +100,31 @@ export interface FocusCounts {
   overdue: number;
   today: number;
   undated: number;
+}
+
+/** 今日聚焦首屏最多渲染的条数。 */
+export const FOCUS_PAGE_SIZE = 100;
+
+export interface FocusPage {
+  items: FocusEntry[];
+  shown: number;
+  total: number;
+  remaining: number;
+  hasMore: boolean;
+}
+
+/** 取前 limit 条；limit 非法或小于 0 时按 0 处理。 */
+export function paginateFocus(entries: readonly FocusEntry[], limit: number): FocusPage {
+  const total = entries.length;
+  const safeLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  const shown = Math.min(safeLimit, total);
+  return {
+    items: shown === total ? [...entries] : entries.slice(0, shown),
+    shown,
+    total,
+    remaining: total - shown,
+    hasMore: shown < total,
+  };
 }
 
 export function countFocusBuckets(entries: FocusEntry[]): FocusCounts {
