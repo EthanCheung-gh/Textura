@@ -102,7 +102,23 @@ export function OkrPage() {
             用可量化的关键结果推进 {quarterLabel(period)} · 时间已过 {summary.elapsedPercent}%
           </p>
         </div>
-        <div className="page-actions">
+        <div className="page-actions okr-header-actions">
+          {view === 'cards' ? (
+            <Segmented<OkrDensity>
+              options={DENSITY_OPTIONS}
+              value={density}
+              onChange={setDensity}
+              size="sm"
+              ariaLabel="切换卡片密度"
+            />
+          ) : null}
+          <Segmented<OkrView>
+            options={VIEW_OPTIONS}
+            value={view}
+            onChange={setView}
+            size="sm"
+            ariaLabel="切换 OKR 视图"
+          />
           <Button
             variant="primary"
             iconLeft={<Icon name="plus" size={14} />}
@@ -113,7 +129,7 @@ export function OkrPage() {
         </div>
       </div>
 
-      <section className="okr-periodbar" aria-label="季度切换与视图">
+      <section className="okr-periodbar" aria-label="季度切换">
         <div className="okr-periods" role="group" aria-label="选择季度">
           {periodOptions.map((option) => {
             const active = option === period;
@@ -135,33 +151,15 @@ export function OkrPage() {
               </button>
             );
           })}
-          <Button
-            variant="ghost"
-            size="sm"
-            iconLeft={<Icon name="plus" size={13} />}
-            onClick={() => setNewQuarterOpen(true)}
-          >
-            新建季度
-          </Button>
         </div>
-        <div className="okr-period-tools">
-          <Segmented<OkrView>
-            options={VIEW_OPTIONS}
-            value={view}
-            onChange={setView}
-            size="sm"
-            ariaLabel="切换 OKR 视图"
-          />
-          {view === 'cards' ? (
-            <Segmented<OkrDensity>
-              options={DENSITY_OPTIONS}
-              value={density}
-              onChange={setDensity}
-              size="sm"
-              ariaLabel="切换卡片密度"
-            />
-          ) : null}
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconLeft={<Icon name="plus" size={13} />}
+          onClick={() => setNewQuarterOpen(true)}
+        >
+          新建季度
+        </Button>
       </section>
 
       <section className="okr-health" aria-label="季度健康度">

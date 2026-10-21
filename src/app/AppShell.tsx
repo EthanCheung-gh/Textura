@@ -10,6 +10,7 @@ import { OkrPage } from '../modules/okr/OkrPage';
 import { GtdPage } from '../modules/gtd/GtdPage';
 import { GanttPage } from '../modules/gantt/GanttPage';
 import { SopPage } from '../modules/sop/SopPage';
+import { CalendarPage } from '../modules/calendar/CalendarPage';
 import { CommandPalette } from '../modules/appshell/CommandPalette';
 import { QuickCapture } from '../modules/appshell/QuickCapture';
 import { SettingsPage } from '../modules/appshell/SettingsPage';
@@ -28,6 +29,8 @@ function RouteView({ route }: { route: Route }) {
       return <GanttPage />;
     case 'sop':
       return <SopPage />;
+    case 'calendar':
+      return <CalendarPage />;
     case 'settings':
       return <SettingsPage />;
     case 'dashboard':

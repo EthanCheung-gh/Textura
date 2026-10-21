@@ -9,14 +9,21 @@ export interface RouteMeta {
   icon: IconName;
 }
 
-/** 侧栏导航顺序即产品主流程：今日 → OKR → GTD → 甘特 → SOP → 设置。 */
+/** 侧栏导航顺序即产品主流程：今日 → 日历 → OKR → GTD → 甘特 → SOP → 设置。 */
 export const ROUTES: RouteMeta[] = [
   {
     id: 'dashboard',
     label: '今日',
     title: '今日',
     subtitle: '今天要推进的事，一屏看完',
-    icon: 'calendar',
+    icon: 'home',
+  },
+  {
+    id: 'calendar',
+    label: '日历',
+    title: '日历',
+    subtitle: '公历、农历与节气的日程视图',
+    icon: 'calendar-grid',
   },
   {
     id: 'okr',

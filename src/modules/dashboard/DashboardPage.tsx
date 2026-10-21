@@ -124,6 +124,12 @@ export function DashboardPage() {
     notify('SOP 已创建，去画布上添加步骤吧', 'success');
   };
 
+  /** 收集属于 GTD：先切到 GTD，再打开收集弹窗。 */
+  const openGtdCapture = () => {
+    setUi({ route: 'gtd' });
+    setUi({ quickCaptureOpen: true });
+  };
+
   const cards: StatCard[] = [
     {
       id: 'inbox',
@@ -202,14 +208,6 @@ export function DashboardPage() {
             命令面板
             <span className="dash-kbd">⌘K</span>
           </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            iconLeft={<Icon name="plus" size={14} />}
-            onClick={() => setUi({ quickCaptureOpen: true })}
-          >
-            快速收集
-          </Button>
         </div>
       </div>
 
@@ -218,16 +216,16 @@ export function DashboardPage() {
           <EmptyState
             icon={<Icon name="workflow" size={22} />}
             title="从第一条记录开始"
-            description="工作区还是空的。先收集一条想法，或者建立第一个目标 / 流程，今日视图会自动把它们聚合起来。"
+            description="工作区还是空的。先去 GTD 收件箱收集一条想法，或者建立第一个目标 / 流程，今日视图会自动聚合它们。"
             action={
               <div className="dash-onboarding-actions">
                 <Button
                   variant="primary"
                   size="sm"
-                  iconLeft={<Icon name="plus" size={14} />}
-                  onClick={() => setUi({ quickCaptureOpen: true })}
+                  iconLeft={<Icon name="inbox" size={14} />}
+                  onClick={openGtdCapture}
                 >
-                  收集第一条
+                  去 GTD 收集
                 </Button>
                 <Button
                   variant="secondary"

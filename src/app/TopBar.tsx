@@ -1,5 +1,4 @@
 import { useWorkspace } from '../core/store';
-import { Button } from '../ui/Button';
 import { Icon } from '../ui/icons';
 import { IconButton } from '../ui/IconButton';
 import { TextInput } from '../ui/Field';
@@ -17,7 +16,7 @@ export function TopBar() {
         <span className="topbar-subtitle">{meta.subtitle}</span>
       </div>
       <div className="topbar-spacer" />
-      <div className="topbar-search">
+      <div className="topbar-search" style={{ flex: '0 1 320px', width: 'auto', minWidth: 180 }}>
         <TextInput
           type="search"
           aria-label="搜索工作区"
@@ -27,14 +26,6 @@ export function TopBar() {
         />
       </div>
       <div className="topbar-actions">
-        <Button
-          variant="primary"
-          size="sm"
-          iconLeft={<Icon name="plus" size={14} />}
-          onClick={() => setUi({ quickCaptureOpen: true })}
-        >
-          快速收集
-        </Button>
         <IconButton
           label={ui.theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
           variant="ghost"

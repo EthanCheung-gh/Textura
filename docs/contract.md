@@ -124,7 +124,7 @@ ui: UiState;
 notices: { id: string; message: string; tone: 'info' | 'success' | 'error'; at: string }[];
 
 interface UiState {
-  route: 'dashboard' | 'sop' | 'okr' | 'gtd' | 'gantt' | 'settings';
+  route: 'dashboard' | 'calendar' | 'sop' | 'okr' | 'gtd' | 'gantt' | 'settings';
   theme: 'light' | 'dark';
   okrPeriod: string;
   ganttZoom: 'day' | 'week' | 'month';
@@ -418,9 +418,9 @@ deb 的 Maintainer 来自 `Cargo.toml [package].authors` / `bundle.publisher`：
 <Icon name={IconName} size={18} />
 ```
 
-`IconName`：`folder | target | inbox | timeline | workflow | search | plus | chevron-left |
+`IconName`：`folder | home | target | inbox | timeline | workflow | search | plus | chevron-left |
 chevron-right | chevron-down | close | settings | sun | moon | check | x | play | grip |
-zoom-in | zoom-out | link | calendar | tag | flag | clock | trash | edit | more`
+zoom-in | zoom-out | link | calendar | calendar-grid | tag | flag | clock | trash | edit | more`
 
 ---
 
@@ -459,10 +459,10 @@ light 定义在 `:root`，dark 通过 `html[data-theme="dark"]` 覆盖；主题�
 ## 7. 路由与布局
 
 - 路由是 `ui.route` 字符串，不使用 react-router。
-- 侧栏 240px：品牌（Textura / 织理）、视图导航（今日 / OKR / GTD / 甘特 / SOP / 设置）、
+- 侧栏 240px：品牌（Textura / 织理）、视图导航（今日 / 日历 / OKR / GTD / 甘特 / SOP / 设置）、
   Area 列表、底部存储状态。
-- 顶栏 56px：视图标题与副标题、搜索输入（`ui.search`）、快速收集（打开 `ui.quickCaptureOpen`）、
-  主题切换。
+- 顶栏 56px：视图标题与副标题、搜索输入（`ui.search`，弹性宽度）、主题切换。
+  **顶栏不放置「快速收集」按钮**。
 - 内容区自适应；窗口 1440×900，最小 1024×720。
 - `AppShell` 全局挂载 `CommandPalette`、`QuickCapture`、`ShortcutsDialog`，受对应 `ui.*Open` 控制；
   `route === 'settings'` 渲染 `SettingsPage`。
@@ -472,14 +472,15 @@ light 定义在 `:root`，dark 通过 `html[data-theme="dark"]` 覆盖；主题�
 
 路由元数据（`src/app/routes.ts`）：
 
-| route | label | icon |
-| --- | --- | --- |
-| `dashboard` | 今日 | `calendar` |
-| `okr` | OKR | `target` |
-| `gtd` | GTD | `inbox` |
-| `gantt` | 甘特 | `timeline` |
-| `sop` | SOP | `workflow` |
-| `settings` | 设置 | `settings` |
+| route | label | icon | subtitle |
+| --- | --- | --- | --- |
+| `dashboard` | 今日 | `home` | 今天要推进的事，一屏看完 |
+| `calendar` | 日历 | `calendar-grid` | 公历、农历与节气的日程视图 |
+| `okr` | OKR | `target` | 目标与关键结果的季度视图 |
+| `gtd` | GTD | `inbox` | 收集、澄清、推进下一步 |
+| `gantt` | 甘特 | `timeline` | 时间轴上的承诺与依赖 |
+| `sop` | SOP | `workflow` | 把流程画成可执行的图 |
+| `settings` | 设置 | `settings` | 存储、备份与工作区 |
 
 ### 深链与视图记忆
 
@@ -501,7 +502,7 @@ syncBrowserRoute(route): void
 行为：
 
 - 启动时 `load()` 在任何 `await` 之前读取 `window.location.search`：
-  - `?route=okr|gtd|gantt|sop|dashboard|settings` 合法时作为初始视图，**优先级高于**记忆；
+  - `?route=dashboard|calendar|okr|gtd|gantt|sop|settings` 合法时作为初始视图，**优先级高于**记忆；
   - 否则恢复 `localStorage['textura.route']`；再否则 `dashboard`；
   - `?item=<id>` 且该条目存在时写入 `selectedId`（`select(id)` 的等价效果），无效 id 忽略。
 - 视图切换（`setUi({ route })`）与初始化成功后调用 `syncBrowserRoute(route)`：
@@ -510,6 +511,14 @@ syncBrowserRoute(route): void
   - 同步 `document.documentElement.dataset.route = route`，便于无头截图与自动化断言。
 - 无效的 `?route=` 会被忽略并回退到记忆值；初始化后 URL 会被规范化为合法的 `?route=`。
 - 不使用路由库；`AppShell` 的导出与模块挂载方式不变，视图仍由 `ui.route` 驱动。
+- 示例深链：`?route=calendar`、`?route=okr&item=obj_activation`。
+
+### 快速收集入口归属
+
+1. 「快速收集」写入 GTD 收件箱：`kind=action`、`status=inbox`、`gtd.clarified=false`。
+   因此 UI 入口归属 GTD 视图，由 GTD 模块提供；**顶栏不放置领域动作按钮**。
+2. `Ctrl/Cmd+N` 作为全局快捷键仍可随时打开同一个收集弹窗，但它只是快捷键，
+   不是顶栏入口。`QuickCapture` 仍在 `AppShell` 全局挂载，受 `ui.quickCaptureOpen` 控制。
 
 ---
 
@@ -524,6 +533,7 @@ syncBrowserRoute(route): void
 | `src/modules/gtd/**` | gtd Worker | 当前占位 `GtdPage.tsx` |
 | `src/modules/gantt/**` | gantt Worker | 当前占位 `GanttPage.tsx` |
 | `src/modules/dashboard/**` | appshell Worker | 当前占位 `DashboardPage.tsx` |
+| `src/modules/calendar/**` | calendar Worker | 已实现（月/周视图 + 农历引擎） |
 | `src/modules/appshell/**` | appshell Worker | 占位 `CommandPalette.tsx`、`QuickCapture.tsx`、`SettingsPage.tsx`、`ShortcutsDialog.tsx` |
 | `src-tauri/**` | Phase A（冻结） | 模块不得修改 Rust 持久化 |
 

@@ -1,0 +1,842 @@
+[
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "所有路由顶栏均无「快速收集」按钮",
+    "ok": true,
+    "detail": {
+      "今日": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "日历": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "OKR": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "GTD": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "甘特": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "SOP": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      },
+      "设置": {
+        "topbarCaptureButtons": 0,
+        "topbarButtons": [
+          "切换到深色主题"
+        ]
+      }
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "今日页页头无收集入口",
+    "ok": true,
+    "detail": {
+      "buttons": [
+        "命令面板⌘K"
+      ],
+      "captureHits": 0
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "GTD 页头有 primary「快速收集」",
+    "ok": true,
+    "detail": {
+      "found": true,
+      "primary": true,
+      "aria": "收集到收件箱 · 收集后需澄清（快捷键 ⌘/Ctrl+N）",
+      "title": "收集到收件箱 · 收集后需澄清（快捷键 ⌘/Ctrl+N）",
+      "rect": {
+        "w": 106,
+        "h": 34
+      }
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "弹窗标题为「收集到 GTD 收件箱」",
+    "ok": true,
+    "detail": {
+      "title": "收集到 GTD 收件箱",
+      "focused": "quick-capture-input"
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "收集后 GTD 收件箱计数 +1",
+    "ok": true,
+    "detail": {
+      "before": 6,
+      "after": {
+        "inbox": 7,
+        "sidebar": 7
+      }
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "字段正确：tags=[qa] context=电话 status=inbox clarified=false",
+    "ok": true,
+    "detail": {
+      "tags": [
+        "qa"
+      ],
+      "context": "电话",
+      "status": "inbox",
+      "clarified": false
+    }
+  },
+  {
+    "flow": "a-quick-capture-placement",
+    "label": "⌘/Ctrl+N 仍可全局打开收集弹窗",
+    "ok": true,
+    "detail": {
+      "method": "synthetic ctrl+n"
+    }
+  },
+  {
+    "flow": "b-dashboard-empty",
+    "label": "空工作区按钮为「去 GTD 收集 / 创建第一个目标 / 创建第一个 SOP」",
+    "ok": true,
+    "detail": {
+      "buttons": [
+        "命令面板⌘K",
+        "去 GTD 收集",
+        "创建第一个目标",
+        "创建第一个 SOP"
+      ],
+      "headerButtons": [
+        "命令面板⌘K"
+      ]
+    }
+  },
+  {
+    "flow": "b-dashboard-empty",
+    "label": "点「去 GTD 收集」→ route=gtd 且打开收集弹窗",
+    "ok": true,
+    "detail": {
+      "route": "gtd",
+      "modal": true,
+      "title": "收集到 GTD 收件箱"
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1440: 顺序为 紧凑/详细 → 卡片/表格/对齐 → 新建目标",
+    "ok": true,
+    "detail": {
+      "order": [
+        "紧凑详细",
+        "卡片表格对齐",
+        "新建目标"
+      ]
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1440: 无横向溢出 / 无按钮裁切",
+    "ok": true,
+    "detail": {
+      "headerScroll": 0,
+      "docOverflow": 0,
+      "clipped": []
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1440: 季度条内无视图/密度控件",
+    "ok": true,
+    "detail": {
+      "periodBarControls": []
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1024: 顺序为 紧凑/详细 → 卡片/表格/对齐 → 新建目标",
+    "ok": true,
+    "detail": {
+      "order": [
+        "紧凑详细",
+        "卡片表格对齐",
+        "新建目标"
+      ]
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1024: 无横向溢出 / 无按钮裁切",
+    "ok": true,
+    "detail": {
+      "headerScroll": 0,
+      "docOverflow": 0,
+      "clipped": []
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "1024: 季度条内无视图/密度控件",
+    "ok": true,
+    "detail": {
+      "periodBarControls": []
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "切到表格后密度控件消失且无空洞（容器只剩 视图 + 新建目标）",
+    "ok": true,
+    "detail": {
+      "children": [
+        {
+          "tag": "div",
+          "cls": "segmented segmented--sm",
+          "text": "卡片表格对齐",
+          "left": 1136,
+          "right": 1266,
+          "clipped": false
+        },
+        {
+          "tag": "button",
+          "cls": "btn btn--primary btn--md",
+          "text": "新建目标",
+          "left": 1274,
+          "right": 1380,
+          "clipped": false
+        }
+      ]
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "对齐视图同样无密度控件",
+    "ok": true,
+    "detail": {
+      "children": [
+        {
+          "tag": "div",
+          "cls": "segmented segmented--sm",
+          "text": "卡片表格对齐",
+          "left": 1136,
+          "right": 1266,
+          "clipped": false
+        },
+        {
+          "tag": "button",
+          "cls": "btn btn--primary btn--md",
+          "text": "新建目标",
+          "left": 1274,
+          "right": 1380,
+          "clipped": false
+        }
+      ]
+    }
+  },
+  {
+    "flow": "c-okr-header",
+    "label": "切回卡片后密度控件恢复",
+    "ok": true,
+    "detail": {
+      "children": [
+        {
+          "tag": "div",
+          "cls": "segmented segmented--sm",
+          "text": "紧凑详细",
+          "left": 1040,
+          "right": 1128,
+          "clipped": false
+        },
+        {
+          "tag": "div",
+          "cls": "segmented segmented--sm",
+          "text": "卡片表格对齐",
+          "left": 1136,
+          "right": 1266,
+          "clipped": false
+        },
+        {
+          "tag": "button",
+          "cls": "btn btn--primary btn--md",
+          "text": "新建目标",
+          "left": 1274,
+          "right": 1380,
+          "clipped": false
+        }
+      ]
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "42 格 / 6 行 / 周一起始",
+    "ok": true,
+    "detail": {
+      "count": 42,
+      "headers": [
+        "一",
+        "二",
+        "三",
+        "四",
+        "五",
+        "六",
+        "日"
+      ],
+      "first": "2026-09-28",
+      "firstWeekday": 1,
+      "rows": 6,
+      "title": "2026年10月 · 丙午马年 · 农历九月"
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "今天 2026-10-21 高亮且为农历九月十二",
+    "ok": true,
+    "detail": {
+      "today": {
+        "date": "2026-10-21",
+        "aria": "2026年10月21日，星期三，农历九月十二，今天",
+        "lunar": "十二",
+        "lunarClass": "cal-lunar",
+        "daynum": "21",
+        "today": true,
+        "selected": true,
+        "outside": false,
+        "dots": 3,
+        "more": null
+      },
+      "todayPanel": "丙午年 九月十二"
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "月内可见节日/节气标签（含寒露/霜降/重阳）",
+    "ok": true,
+    "detail": {
+      "festivals": [
+        {
+          "text": "重阳",
+          "date": "2026-10-18"
+        }
+      ],
+      "terms": [
+        {
+          "text": "寒露",
+          "date": "2026-10-08"
+        },
+        {
+          "text": "霜降",
+          "date": "2026-10-23"
+        },
+        {
+          "text": "立冬",
+          "date": "2026-11-07"
+        }
+      ],
+      "dots": 65
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "带日期条目在月格出现圆点",
+    "ok": true,
+    "detail": {
+      "dots": 65
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "点击日期后右侧面板显示该日条目",
+    "ok": true,
+    "detail": {
+      "date": "2026年10月21日 星期三",
+      "lunar": "丙午年 九月十二",
+      "items": [
+        "官网改版",
+        "视觉稿评审",
+        "信息架构重排"
+      ],
+      "count": 3
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "方向键 / Home / End 导航正确并移动焦点",
+    "ok": true,
+    "detail": [
+      {
+        "key": "ArrowRight",
+        "expected": "2026-10-22",
+        "selected": "2026-10-22",
+        "focused": "2026-10-22",
+        "ok": true
+      },
+      {
+        "key": "ArrowLeft",
+        "expected": "2026-10-21",
+        "selected": "2026-10-21",
+        "focused": "2026-10-21",
+        "ok": true
+      },
+      {
+        "key": "ArrowUp",
+        "expected": "2026-10-14",
+        "selected": "2026-10-14",
+        "focused": "2026-10-14",
+        "ok": true
+      },
+      {
+        "key": "ArrowDown",
+        "expected": "2026-10-21",
+        "selected": "2026-10-21",
+        "focused": "2026-10-21",
+        "ok": true
+      },
+      {
+        "key": "Home",
+        "expected": "2026-10-19",
+        "selected": "2026-10-19",
+        "focused": "2026-10-19",
+        "ok": true
+      },
+      {
+        "key": "End",
+        "expected": "2026-10-25",
+        "selected": "2026-10-25",
+        "focused": "2026-10-25",
+        "ok": true
+      }
+    ]
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "PageDown/PageUp 切换月份并保持日期",
+    "ok": true,
+    "detail": {
+      "beforePageDown": "2026-10-25",
+      "afterPageDown": {
+        "selected": "2026-11-25",
+        "month": "11"
+      },
+      "afterPageUp": {
+        "selected": "2026-10-25",
+        "month": "10"
+      }
+    }
+  },
+  {
+    "flow": "d-calendar-month",
+    "label": "Enter 聚焦日程面板",
+    "ok": true,
+    "detail": {
+      "active": "cal-panel",
+      "isPanel": true
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2026-02-17 显示「春节」，aria-label 含农历「正月初一」",
+    "ok": true,
+    "detail": {
+      "date": "2026-02-17",
+      "aria": "2026年2月17日，星期二，农历正月初一，春节",
+      "lunar": "春节",
+      "lunarClass": "cal-lunar cal-lunar--festival",
+      "daynum": "17",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2026-02-16 显示「除夕」，aria-label 含农历「腊月」",
+    "ok": true,
+    "detail": {
+      "date": "2026-02-16",
+      "aria": "2026年2月16日，星期一，农历腊月廿九，除夕",
+      "lunar": "除夕",
+      "lunarClass": "cal-lunar cal-lunar--festival",
+      "daynum": "16",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2026-09-25 显示「中秋」，aria-label 含农历「八月十五」",
+    "ok": true,
+    "detail": {
+      "date": "2026-09-25",
+      "aria": "2026年9月25日，星期五，农历八月十五，中秋",
+      "lunar": "中秋",
+      "lunarClass": "cal-lunar cal-lunar--festival",
+      "daynum": "25",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2026-12-22 显示「冬至」，aria-label 含农历「冬至」",
+    "ok": true,
+    "detail": {
+      "date": "2026-12-22",
+      "aria": "2026年12月22日，星期二，农历冬月十四，冬至节气",
+      "lunar": "冬至",
+      "lunarClass": "cal-lunar cal-lunar--term",
+      "daynum": "22",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2025-07-25 显示「闰六月」，aria-label 含农历「闰六月初一」",
+    "ok": true,
+    "detail": {
+      "date": "2025-07-25",
+      "aria": "2025年7月25日，星期五，农历闰六月初一",
+      "lunar": "闰六月",
+      "lunarClass": "cal-lunar",
+      "daynum": "25",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "e-lunar-accuracy",
+    "label": "2023-03-22 显示「闰二月」，aria-label 含农历「闰二月初一」",
+    "ok": true,
+    "detail": {
+      "date": "2023-03-22",
+      "aria": "2023年3月22日，星期三，农历闰二月初一",
+      "lunar": "闰二月",
+      "lunarClass": "cal-lunar",
+      "daynum": "22",
+      "today": false,
+      "selected": false,
+      "outside": false,
+      "dots": 0,
+      "more": null
+    }
+  },
+  {
+    "flow": "f-calendar-week",
+    "label": "周视图 7 列且表头含农历/节日",
+    "ok": true,
+    "detail": [
+      {
+        "weekday": "星期一",
+        "day": "19",
+        "lunar": "初十",
+        "aria": "星期一 10月19日"
+      },
+      {
+        "weekday": "星期二",
+        "day": "20",
+        "lunar": "十一",
+        "aria": "星期二 10月20日"
+      },
+      {
+        "weekday": "星期三",
+        "day": "21",
+        "lunar": "十二",
+        "aria": "星期三 10月21日"
+      },
+      {
+        "weekday": "星期四",
+        "day": "22",
+        "lunar": "十三",
+        "aria": "星期四 10月22日"
+      },
+      {
+        "weekday": "星期五",
+        "day": "23",
+        "lunar": "霜降",
+        "aria": "星期五 10月23日"
+      },
+      {
+        "weekday": "星期六",
+        "day": "24",
+        "lunar": "十五",
+        "aria": "星期六 10月24日"
+      },
+      {
+        "weekday": "星期日",
+        "day": "25",
+        "lunar": "十六",
+        "aria": "星期日 10月25日"
+      }
+    ]
+  },
+  {
+    "flow": "f-calendar-week",
+    "label": "跨天条目显示「第 n 天」",
+    "ok": true,
+    "detail": {
+      "spanTexts": [
+        "第 9/24 天",
+        "第 4/6 天",
+        "第 1/7 天",
+        "第 10/24 天",
+        "第 5/6 天",
+        "第 2/7 天",
+        "第 11/24 天",
+        "第 6/6 天",
+        "第 3/7 天",
+        "第 12/24 天",
+        "第 4/7 天",
+        "第 1/10 天",
+        "第 13/24 天",
+        "第 5/7 天",
+        "第 2/10 天",
+        "第 14/24 天",
+        "第 6/7 天",
+        "第 3/10 天",
+        "第 15/24 天",
+        "第 7/7 天",
+        "第 4/10 天"
+      ]
+    }
+  },
+  {
+    "flow": "f-calendar-week",
+    "label": "点击行动卡片跳到甘特并选中该任务条",
+    "ok": true,
+    "detail": {
+      "actionCard": "视觉稿评审第 4/6 天",
+      "actionSelected": {
+        "route": "gantt",
+        "bars": [
+          "视觉稿评审，2026-10-16 至 2026-10-21，进度 70%"
+        ]
+      }
+    }
+  },
+  {
+    "flow": "f-calendar-week",
+    "label": "点击项目卡片跳到甘特并选中分组行/汇总条",
+    "ok": true,
+    "detail": {
+      "projectCard": "官网改版第 9/24 天",
+      "projectSelected": {
+        "route": "gantt",
+        "rows": [
+          "官网改版610/11–11/3 · 17%"
+        ],
+        "summary": [
+          "项目汇总：官网改版"
+        ]
+      }
+    }
+  },
+  {
+    "flow": "g-calendar-quick-add",
+    "label": "创建 action：gantt.start=end=当日、status=next",
+    "ok": true,
+    "detail": {
+      "kind": "action",
+      "status": "next",
+      "gantt": {
+        "start": "2026-10-25",
+        "end": "2026-10-25",
+        "progress": 0
+      }
+    }
+  },
+  {
+    "flow": "g-calendar-quick-add",
+    "label": "出现在该日列表与月格圆点中",
+    "ok": true,
+    "detail": {
+      "panelHas": true,
+      "cell": {
+        "date": "2026-10-25",
+        "aria": "2026年10月25日，星期日，农历九月十六",
+        "lunar": "十六",
+        "lunarClass": "cal-lunar",
+        "daynum": "25",
+        "today": false,
+        "selected": true,
+        "outside": false,
+        "dots": 3,
+        "more": "+1"
+      }
+    }
+  },
+  {
+    "flow": "g-calendar-quick-add",
+    "label": "+N 折叠逻辑正确（最多 3 个圆点，其余显示 +N）",
+    "ok": true,
+    "detail": {
+      "panelCount": 4,
+      "dots": 3,
+      "more": "+1",
+      "expectedMore": "+1"
+    }
+  },
+  {
+    "flow": "g-calendar-quick-add",
+    "label": "刷新后仍在（持久化 + 面板可见）",
+    "ok": true,
+    "detail": {
+      "persists": true,
+      "stillInPanel": true
+    }
+  },
+  {
+    "flow": "h-calendar-boundary",
+    "label": "1900-01：不崩溃、范围外农历降级（无 null 文本）",
+    "ok": true,
+    "detail": {
+      "count": 42,
+      "subtitle": "1900年1月 · 农历数据仅支持 1900–2100",
+      "firstCell": {
+        "date": "1900-01-01",
+        "lunar": ""
+      },
+      "anyNullText": false,
+      "panel": "农历数据超出 1900–2100 支持范围",
+      "selectedDate": "1900-01-21"
+    }
+  },
+  {
+    "flow": "h-calendar-boundary",
+    "label": "2100-12：不崩溃，12-31 仍有农历",
+    "ok": true,
+    "detail": {
+      "count": 42,
+      "lastLunar": "腊月",
+      "lastAria": "2100年12月31日，星期五，农历腊月初一",
+      "anyNullText": false,
+      "errors": 42
+    }
+  },
+  {
+    "flow": "h-calendar-boundary",
+    "label": "边界浏览期间 0 console error",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "flow": "i-dark-1024",
+    "label": "深色主题已生效",
+    "ok": true,
+    "detail": {
+      "theme": "dark"
+    }
+  },
+  {
+    "flow": "i-dark-1024",
+    "label": "深色下今日数字 / 选中格 / 节日节气标签对比度均 ≥ 4.5",
+    "ok": true,
+    "detail": {
+      "theme": "dark",
+      "today": {
+        "text": "21",
+        "color": "rgb(231, 163, 124)",
+        "bg": "rgb(59,42,34)",
+        "ratio": 6.45,
+        "fontSize": "13px"
+      },
+      "selectedCell": {
+        "bg": "rgb(59, 42, 34)",
+        "day": {
+          "text": "21",
+          "color": "rgb(231, 163, 124)",
+          "bg": "rgb(59,42,34)",
+          "ratio": 6.45,
+          "fontSize": "13px"
+        },
+        "lunar": {
+          "text": "十二",
+          "color": "rgb(179, 168, 155)",
+          "bg": "rgb(59,42,34)",
+          "ratio": 5.84,
+          "fontSize": "10.5px"
+        }
+      },
+      "festival": {
+        "text": "重阳",
+        "color": "rgb(231, 163, 124)",
+        "bg": "rgb(47,42,37)",
+        "ratio": 6.71,
+        "fontSize": "10.5px"
+      },
+      "panelDate": {
+        "text": "2026年10月21日 星期三",
+        "color": "rgb(236, 228, 218)",
+        "bg": "rgb(38,34,30)",
+        "ratio": 12.54,
+        "fontSize": "14.5px"
+      }
+    }
+  },
+  {
+    "flow": "i-dark-1024",
+    "label": "1024×720 月格 ≥ 52px 且无横向溢出",
+    "ok": true,
+    "detail": {
+      "cell": {
+        "w": 105,
+        "h": 78
+      },
+      "overflowX": 0,
+      "panelCollapsed": true,
+      "toggle": "展开日程"
+    }
+  },
+  {
+    "flow": "i-dark-1024",
+    "label": "1024 下面板可展开（默认收起）",
+    "ok": true,
+    "detail": {
+      "collapsed": false,
+      "visible": true,
+      "toggle": "收起日程"
+    }
+  },
+  {
+    "flow": "i-dark-1024",
+    "label": "1024 下面板可再次收起且无溢出",
+    "ok": true,
+    "detail": {
+      "collapsed": true,
+      "toggle": "展开日程",
+      "overflowX": 0
+    }
+  }
+]

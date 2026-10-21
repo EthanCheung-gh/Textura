@@ -24,7 +24,7 @@ const GROUPS: ShortcutGroup[] = [
     description: '任何视图下都可用',
     items: [
       { keys: ['⌘/Ctrl', 'K'], action: '打开 / 关闭命令面板' },
-      { keys: ['⌘/Ctrl', 'N'], action: '打开快速收集（同时支持 ⌘/Ctrl + ⇧ + N）' },
+      { keys: ['⌘/Ctrl', 'N'], action: '打开快速收集（收集到 GTD 收件箱；同时支持 ⌘/Ctrl + ⇧ + N）' },
       { keys: ['⌘/Ctrl', 'Z'], action: '撤销上一次工作区修改' },
       { keys: ['⌘/Ctrl', '⇧', 'Z'], action: '重做' },
       { keys: ['?'], action: '打开快捷键帮助（Shift + /）' },
@@ -45,7 +45,7 @@ const GROUPS: ShortcutGroup[] = [
   {
     id: 'capture',
     title: '快速收集',
-    description: '⌘/Ctrl + N 唤出，收集后保持打开以便连续录入',
+    description: '⌘/Ctrl + N 唤出，收集到 GTD 收件箱；收集后保持打开以便连续录入',
     items: [
       { keys: ['Enter'], action: '收集并继续下一条' },
       { keys: ['⌘/Ctrl', 'Enter'], action: '收集并关闭' },

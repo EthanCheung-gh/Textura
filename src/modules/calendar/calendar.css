@@ -1,0 +1,724 @@
+/* ============================================================
+   日历视图 — 只使用 tokens.css 中的变量，类名统一 cal- 前缀。
+   月视图（6×7 网格）/ 周视图 / 右侧日程面板。
+   ============================================================ */
+
+.cal-page {
+  height: calc(100vh - var(--topbar-height) - var(--space-5) * 2);
+  min-height: 520px;
+  gap: var(--space-4);
+}
+
+.cal-header {
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.cal-header h1 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.cal-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 工具栏 ---------- */
+.cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.cal-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.cal-selects {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cal-select {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 26px 4px 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-select--year {
+  width: 94px;
+}
+
+.cal-select--month {
+  width: 82px;
+}
+
+.cal-toolbar .cal-panel-toggle {
+  display: none;
+}
+
+/* ---------- 布局 ---------- */
+.cal-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-4);
+}
+
+.cal-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cal-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.cal-hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cal-dot--today {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.cal-dot--selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---------- 月网格 ---------- */
+.cal-grid {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.cal-grid-head {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-grid-headcell {
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.cal-grid-headcell.is-weekend {
+  color: var(--text-faint);
+}
+
+.cal-grid-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-week {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(52px, 1fr));
+}
+
+.cal-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 0;
+  padding: 5px 7px 6px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.12s ease;
+}
+
+.cal-week .cal-cell:nth-child(7) {
+  border-right: none;
+}
+
+.cal-grid-body .cal-week:last-child .cal-cell {
+  border-bottom: none;
+}
+
+.cal-cell:hover {
+  background: var(--surface-2);
+}
+
+.cal-cell.is-weekend {
+  background: var(--surface-2);
+}
+
+.cal-cell.is-outside {
+  background: var(--bg-subtle);
+}
+
+.cal-cell.is-outside .cal-daynum,
+.cal-cell.is-outside .cal-lunar {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.cal-cell.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.cal-cell:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  z-index: 1;
+}
+
+.cal-cell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+}
+
+.cal-daynum {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 1px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-daynum.is-today {
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.cal-lunar {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-lunar--festival {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.cal-lunar--term {
+  color: var(--info-ink);
+  font-weight: 550;
+}
+
+.cal-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 8px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.cal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.cal-dot-more {
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 周视图 ---------- */
+.cal-week-view {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.cal-week-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.cal-week-col:last-child {
+  border-right: none;
+}
+
+.cal-week-col.is-weekend {
+  background: var(--surface-2);
+}
+
+.cal-week-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  text-align: left;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.cal-week-head:hover {
+  background: var(--surface);
+}
+
+.cal-week-col.is-selected .cal-week-head {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.cal-week-head-weekday {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.cal-week-head-day {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cal-week-head-day.is-today {
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: 50%;
+}
+
+.cal-week-head-lunar {
+  max-width: 100%;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-week-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+
+.cal-week-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 7px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.cal-week-card:hover {
+  border-color: var(--accent);
+}
+
+.cal-week-card[aria-current='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cal-week-card.is-done {
+  background: var(--surface-2);
+}
+
+.cal-week-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.cal-week-card-title svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-faint);
+}
+
+.cal-week-card.is-done .cal-week-card-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.cal-week-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cal-area-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.cal-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-faint);
+  background: transparent;
+  flex: none;
+}
+
+.cal-week-card-span {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cal-week-empty {
+  margin: 0;
+  padding: 10px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ---------- 右侧日程面板 ---------- */
+.cal-panel {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.cal-panel:focus {
+  outline: none;
+}
+
+.cal-panel:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.cal-panel-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-panel-head-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cal-panel-head-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cal-panel .cal-panel-close {
+  display: none;
+}
+
+.cal-panel-date {
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-panel-lunar {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.cal-panel-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.cal-panel-distance {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.cal-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cal-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 2px 2px 2px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cal-item[data-current='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.cal-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: var(--space-2);
+  padding: 7px 6px 7px 9px;
+  text-align: left;
+  color: var(--text);
+  border-radius: calc(var(--radius-md) - 1px);
+}
+
+.cal-item-main:hover {
+  background: var(--surface);
+}
+
+.cal-item-icon {
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.cal-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cal-item-title {
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cal-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cal-area {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cal-item-span {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-item.is-done .cal-item-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.cal-item-check {
+  flex: none;
+  margin: 5px 4px 0 0;
+  color: var(--text-faint);
+}
+
+.cal-check-box {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 4px;
+}
+
+.cal-check-box.is-done {
+  border-color: var(--ok-ink);
+  background: var(--ok-ink);
+  color: var(--surface);
+}
+
+.cal-quick {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+
+.cal-quick .input {
+  min-height: 30px;
+  font-size: 12.5px;
+}
+
+.cal-quick .btn {
+  flex: none;
+}
+
+.cal-panel-footer {
+  flex: none;
+  padding: 0 var(--space-3) var(--space-3);
+  background: var(--surface-2);
+}
+
+/* ---------- 窄窗口：面板折叠为底部抽屉 ---------- */
+@media (max-width: 1180px) {
+  .cal-page {
+    height: auto;
+    min-height: 0;
+  }
+
+  .cal-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cal-grid {
+    min-height: 500px;
+  }
+
+  .cal-week-view {
+    min-height: 480px;
+  }
+
+  .cal-toolbar .cal-panel-toggle {
+    display: inline-flex;
+  }
+
+  .cal-panel {
+    position: fixed;
+    left: calc(var(--sidebar-width) + var(--space-3));
+    right: var(--space-3);
+    bottom: var(--space-3);
+    width: auto;
+    max-height: 58vh;
+    z-index: 60;
+    box-shadow: var(--shadow-2);
+  }
+
+  .cal-panel .cal-panel-close {
+    display: inline-grid;
+  }
+
+  .cal-panel.is-collapsed {
+    display: none;
+  }
+}

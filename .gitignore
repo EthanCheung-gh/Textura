@@ -26,4 +26,8 @@ coverage/
 # 本地环境变量（*.local 已在上方忽略）
 .env
 
-# 说明：docs/screenshots/*.png 与 docs/screenshots/{flows,final-regression}/*.png 是文档与 QA 证据，保持入库。
+# 环境里其它工具生成的未跟踪产物（不删除、不提交）
+.VSCodeCounter/
+.merkle-snapshot.json
+
+# 说明：docs/screenshots/*.png 与 docs/screenshots/{flows,final-regression,calendar-acceptance,final-fixes}/*.png 是文档与 QA 证据，保持入库。

@@ -116,7 +116,7 @@ export function QuickCapture() {
     <Modal
       open={open}
       onClose={close}
-      title="快速收集"
+      title="收集到 GTD 收件箱"
       description="先记录，稍后再澄清。Enter 连续收集，⌘/Ctrl + Enter 收集并关闭。"
       width={560}
       initialFocusRef={inputRef}

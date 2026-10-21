@@ -1,0 +1,157 @@
+[
+  {
+    "flow": "a-notice-pointer-events",
+    "label": "连续添加 3 条全部成功（第 3 次点击未被吞）",
+    "ok": true,
+    "detail": [
+      {
+        "i": 0,
+        "noticesBefore": 0,
+        "hitBefore": "INPUT",
+        "stored": 1
+      },
+      {
+        "i": 1,
+        "noticesBefore": 1,
+        "hitBefore": "INPUT",
+        "stored": 1
+      },
+      {
+        "i": 2,
+        "noticesBefore": 2,
+        "hitBefore": "INPUT",
+        "stored": 1
+      }
+    ]
+  },
+  {
+    "flow": "a-notice-pointer-events",
+    "label": "第 3 次点击时 elementFromPoint 命中 input（此前为 .notice）",
+    "ok": true,
+    "detail": {
+      "thirdHit": {
+        "hitTag": "INPUT",
+        "hitCls": "input",
+        "notices": 2
+      },
+      "notices": 2
+    }
+  },
+  {
+    "flow": "a-notice-pointer-events",
+    "label": "通知卡片 pointer-events = none，中心点穿透到底层",
+    "ok": true,
+    "detail": {
+      "count": 3,
+      "pointerEvents": "none",
+      "noticeRect": {
+        "x": 1196,
+        "y": 831,
+        "w": 220,
+        "h": 46
+      },
+      "hitTag": "BUTTON",
+      "hitIsNotice": false,
+      "hitCls": "btn btn--secondary btn--sm btn--block"
+    }
+  },
+  {
+    "flow": "a-notice-pointer-events",
+    "label": "SOP 检查器「删除节点」在 2 条通知下可点击（真实鼠标点击命中按钮并删除成功）",
+    "ok": true,
+    "detail": {
+      "index": 2,
+      "probe": {
+        "rect": {
+          "x": 1113,
+          "y": 689,
+          "w": 94,
+          "h": 28
+        },
+        "inBodyViewport": true,
+        "bodyScroll": {
+          "top": 62,
+          "max": 62
+        },
+        "cx": 1160,
+        "cy": 703,
+        "hitTag": "SPAN",
+        "hitInsideButton": true,
+        "hitText": "删除节点",
+        "notices": 2,
+        "nodes": 5
+      },
+      "beforeSteps": 5,
+      "after": {
+        "nodes": 4,
+        "steps": 4,
+        "notices": 3
+      }
+    }
+  },
+  {
+    "flow": "b-calendar-narrow-panel",
+    "label": "1024 初始：面板收起、scrollWidth = 1024",
+    "ok": true,
+    "detail": {
+      "collapsed": true,
+      "toggle": "展开日程",
+      "width": 0,
+      "scrollWidth": 1024,
+      "clientWidth": 1024
+    }
+  },
+  {
+    "flow": "b-calendar-narrow-panel",
+    "label": "点日期自动展开面板并显示条目",
+    "ok": true,
+    "detail": {
+      "collapsed": false,
+      "width": 760,
+      "items": 3,
+      "visibleItems": 3,
+      "toggle": "收起日程",
+      "scrollWidth": 1024,
+      "overflowX": 0
+    }
+  },
+  {
+    "flow": "b-calendar-narrow-panel",
+    "label": "手动收起后再点日期保持收起（尊重用户意图）",
+    "ok": true,
+    "detail": {
+      "collapsed": {
+        "collapsed": true,
+        "toggle": "展开日程"
+      },
+      "afterManualCollapse": {
+        "collapsed": true,
+        "toggle": "展开日程",
+        "selected": "2026-10-22",
+        "visibleItems": 0
+      }
+    }
+  },
+  {
+    "flow": "b-calendar-narrow-panel",
+    "label": "点「展开日程」恢复面板且无横向溢出",
+    "ok": true,
+    "detail": {
+      "collapsed": false,
+      "width": 760,
+      "visibleItems": 3,
+      "toggle": "收起日程",
+      "scrollWidth": 1024,
+      "clientWidth": 1024
+    }
+  },
+  {
+    "flow": "b-calendar-narrow-panel",
+    "label": "恢复后点日期保持展开",
+    "ok": true,
+    "detail": {
+      "collapsed": false,
+      "selected": "2026-10-23"
+    }
+  }
+]

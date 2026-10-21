@@ -6,7 +6,7 @@ import type { Route } from './store';
 
 export const ROUTE_STORAGE_KEY = 'textura.route';
 
-export const ROUTE_IDS: Route[] = ['dashboard', 'okr', 'gtd', 'gantt', 'sop', 'settings'];
+export const ROUTE_IDS: Route[] = ['dashboard', 'calendar', 'okr', 'gtd', 'gantt', 'sop', 'settings'];
 
 export function isRoute(value: unknown): value is Route {
   return typeof value === 'string' && (ROUTE_IDS as string[]).includes(value);

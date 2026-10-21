@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Item } from '../../core/model';
 import { inboxItems, itemsOfKind, nextActions, somedayItems, waitingItems } from '../../core/selectors';
 import { useWorkspace } from '../../core/store';
+import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import type { IconName } from '../../ui/icons';
 import { Segmented } from '../../ui/Segmented';
@@ -114,6 +115,18 @@ export function GtdPage() {
     </span>
   );
 
+  const inboxHint = (
+    <>
+      <span
+        className="gtd-section-note"
+        title="收件箱条目来自「快速收集」，澄清后才能进入下一步。"
+      >
+        来自快速收集 · 澄清后进入下一步
+      </span>
+      {keyboardHint}
+    </>
+  );
+
   return (
     <div className="page gtd-page">
       <div className="page-header">
@@ -129,6 +142,16 @@ export function GtdPage() {
             size="sm"
             ariaLabel="GTD 视图切换"
           />
+          <Button
+            variant="primary"
+            size="md"
+            iconLeft={<Icon name="plus" size={14} />}
+            title="收集到收件箱 · 收集后需澄清（快捷键 ⌘/Ctrl+N）"
+            aria-label="收集到收件箱 · 收集后需澄清（快捷键 ⌘/Ctrl+N）"
+            onClick={() => setUi({ quickCaptureOpen: true })}
+          >
+            快速收集
+          </Button>
         </div>
       </div>
 
@@ -160,7 +183,7 @@ export function GtdPage() {
                 title="收件箱"
                 icon="inbox"
                 count={inbox.length}
-                hint={keyboardHint}
+                hint={inboxHint}
                 highlighted={highlight === 'inbox'}
                 onRef={(element) => {
                   sectionRefs.current.inbox = element;

@@ -240,7 +240,7 @@ export function CommandPalette() {
       {
         id: 'quick-capture',
         label: '快速收集',
-        hint: '⌘/Ctrl + N',
+        hint: '收集到 GTD 收件箱',
         icon: 'plus',
         keywords: ['收集', 'inbox'],
         run: () => state.setUi({ quickCaptureOpen: true, paletteOpen: false }),

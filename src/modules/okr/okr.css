@@ -7,21 +7,49 @@
   gap: var(--space-4);
 }
 
+/* ---------- 页头操作区 ---------- */
+.okr-page .page-header {
+  flex-wrap: wrap;
+}
+
+.okr-page .page-header-titles {
+  flex: 1 1 280px;
+  min-width: 240px;
+}
+
+.okr-page .page-actions.okr-header-actions {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: var(--space-2);
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.okr-header-actions .segmented,
+.okr-header-actions .btn {
+  flex: none;
+}
+
 /* ---------- 季度条 ---------- */
 .okr-periodbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .okr-periods {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex: 1 1 auto;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+.okr-periodbar > .btn {
+  flex: none;
 }
 
 .okr-period-chip {
@@ -76,11 +104,20 @@
   font-weight: 550;
 }
 
-.okr-period-tools {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+/* 窄屏：季度 chips 横向滚动，新建季度按钮保持可见 */
+@media (max-width: 1280px) {
+  .okr-periods {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  .okr-periods > .okr-period-chip {
+    flex: none;
+  }
 }
 
 /* ---------- 健康度摘要 ---------- */

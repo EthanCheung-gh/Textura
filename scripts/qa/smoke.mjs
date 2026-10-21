@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BASE_URL, sleep, withPage } from './lib.mjs';
 
-const ROUTES = ['dashboard', 'okr', 'gtd', 'gantt', 'sop', 'settings'];
+const ROUTES = ['dashboard', 'calendar', 'okr', 'gtd', 'gantt', 'sop', 'settings'];
 const SHOT_DIR = 'docs/screenshots';
 
 const LAYOUT_PROBE = `
@@ -204,6 +204,53 @@ async function run() {
     if (deps.pathCount < 2 || deps.hotCount < 2) {
       throw new Error(`依赖线高亮异常: paths=${deps.pathCount} hot=${deps.hotCount}`);
     }
+
+    // 日历 · 周视图
+    await page.goto(`${BASE_URL}/?route=calendar`, { route: 'calendar' });
+    await sleep(900);
+    await page.eval(`
+      const option = [...document.querySelectorAll('.cal-toolbar button')].find((el) => el.textContent.trim() === '周');
+      if (!option) throw new Error('日历周视图按钮缺失');
+      option.click();
+      return true;
+    `);
+    await sleep(900);
+    const weekShot = await page.screenshot(`${SHOT_DIR}/calendar-week.png`);
+    const weekDetail = await page.eval(`
+      const cols = [...document.querySelectorAll('.cal-week-col')];
+      return {
+        cols: cols.length,
+        cards: document.querySelectorAll('.cal-week-card').length,
+        spans: [...document.querySelectorAll('.cal-week-card-span')].slice(0, 4).map((el) => el.textContent.trim()),
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    `);
+    const weekIssues = page.issues.filter((issue) => issue.level === 'error' || issue.level === 'warning');
+    summary.extras.push({ name: 'calendar-week', shot: weekShot, detail: weekDetail, issues: weekIssues });
+    console.log(`[smoke] calendar-week captured -> ${weekShot} (cols=${weekDetail.cols}, errors: ${weekIssues.length})`);
+    if (weekDetail.cols !== 7) throw new Error(`周视图列数异常: ${weekDetail.cols}`);
+
+    // 日历 · 深色月视图
+    await page.eval(`
+      const option = [...document.querySelectorAll('.cal-toolbar button')].find((el) => el.textContent.trim() === '月');
+      if (!option) throw new Error('日历月视图按钮缺失');
+      option.click();
+      return true;
+    `);
+    await sleep(700);
+    await page.eval(`
+      const button = document.querySelector('button[aria-label="切换到深色主题"]');
+      if (!button) throw new Error('theme toggle missing');
+      button.click();
+      return true;
+    `);
+    await sleep(800);
+    const calDarkShot = await page.screenshot(`${SHOT_DIR}/calendar-dark.png`);
+    const calDarkLayout = await page.eval(LAYOUT_PROBE);
+    const calDarkIssues = page.issues.filter((issue) => issue.level === 'error' || issue.level === 'warning');
+    summary.extras.push({ name: 'calendar-dark', shot: calDarkShot, layout: calDarkLayout, issues: calDarkIssues });
+    console.log(`[smoke] calendar-dark captured -> ${calDarkShot} (errors: ${calDarkIssues.length})`);
+    await page.eval(`const b=document.querySelector('button[aria-label="切换到浅色主题"]'); if(b) b.click(); return true;`);
   });
 
   writeFileSync('docs/screenshots/smoke-report.json', JSON.stringify(summary, null, 2));

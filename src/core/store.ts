@@ -38,7 +38,7 @@ import {
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-export type Route = 'dashboard' | 'sop' | 'okr' | 'gtd' | 'gantt' | 'settings';
+export type Route = 'dashboard' | 'calendar' | 'sop' | 'okr' | 'gtd' | 'gantt' | 'settings';
 
 export interface UiState {
   route: Route;

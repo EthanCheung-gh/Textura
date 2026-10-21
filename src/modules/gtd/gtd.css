@@ -4,6 +4,16 @@
   gap: var(--space-4);
 }
 
+/* 1024×720 下允许页头换行，避免 Segmented + 快速收集被裁切。 */
+.gtd-page .page-header {
+  flex-wrap: wrap;
+}
+
+.gtd-page .page-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* ---------- 流程条 ---------- */
 .gtd-flowbar {
   display: grid;
@@ -161,8 +171,18 @@
 }
 
 .gtd-section-hint {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px var(--space-2);
   margin-left: var(--space-2);
   min-width: 0;
+}
+
+.gtd-section-note {
+  color: var(--text-faint);
+  font-size: 10.5px;
+  white-space: nowrap;
 }
 
 .gtd-section-action {

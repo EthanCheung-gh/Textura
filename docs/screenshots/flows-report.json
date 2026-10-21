@@ -47,7 +47,7 @@
         "label": "条目写入：tags=[qa] context=电脑 status=inbox clarified=false",
         "ok": true,
         "detail": {
-          "id": "act_b1544ca658",
+          "id": "act_fd08b119d4",
           "tags": [
             "qa"
           ],
@@ -262,7 +262,7 @@
         "ok": true,
         "detail": {
           "status": "done",
-          "completedAt": "2026-10-20T17:56:27.676Z"
+          "completedAt": "2026-10-21T03:37:29.172Z"
         }
       },
       {
@@ -484,7 +484,7 @@
         "ok": true,
         "detail": {
           "files": [
-            "textura-workspace-20261021-0156.json"
+            "textura-workspace-20261021-1137.json"
           ]
         }
       },

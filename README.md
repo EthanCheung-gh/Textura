@@ -1,11 +1,24 @@
 # Textura · 织理
 
 单机优先的结构化执行工作台。它把 SOP、OKR、GTD、甘特图放在**同一个任务内核**上：
-一条记录只存在一次，在四个视图里以不同形态出现。数据全部留在本机的一个 JSON 文件里。
+一条记录只存在一次，在六个视图里以不同形态出现。数据全部留在本机的一个 JSON 文件里。
 
 ![今日视图：聚合超期、今日到期与下一步](docs/screenshots/dashboard.png)
 
-## 四个视图
+## 日历
+
+公历与农历并排的日程视图：月视图是固定 6×7 网格（周一起始），格子里显示农历日、节日或节气，
+日程用领域色圆点标出（超过 3 项显示 `+N`）；周视图按 7 列展开，跨天条目显示「第 n/m 天」。
+右侧面板列出当天的条目，可直接勾完成、快速添加，或跳到甘特查看。
+
+![日历月视图：农历、节气与日程圆点](docs/screenshots/calendar.png)
+
+农历引擎零依赖自研：覆盖 1900-01-31 ～ 2100-12-31，支持闰月、干支 / 生肖、传统节日与 24 节气
+（节气按太阳视黄经计算）；超出范围时只显示公历并给出提示。
+
+![日历周视图：7 列日程与跨天条目的「第 n/m 天」](docs/screenshots/calendar-week.png)
+
+## 四个执行视图
 
 ### OKR —— 目标与关键结果的季度视图
 
@@ -39,7 +52,7 @@ KR 还能直接关联甘特 / GTD 里的项目与行动，目标与日常执行�
 四个独立工具最贵的地方不是订阅费，而是**同一件事要在四个地方各记一遍**：季度目标一套清单、
 下一步一个待办应用、排期一张表格、流程一份文档，任何一处改了，其余三处立刻过期。
 
-Textura 只有一个 `Item` 实体，四个视图只是读取它的不同数据块：
+Textura 只有一个 `Item` 实体，每个视图只是读取它的不同数据块：
 
 ```ts
 // src/core/model.ts（节选，注释为附加说明）
@@ -81,6 +94,15 @@ export interface Item {
 - 今日聚焦：超期 → 今日到期 → 无日期下一步，按此顺序合并去重，行内可直接勾完成。
 - 目标概览（当前季度，逐条进度条）、SOP 快速启动（最多 4 个，含最近运行结果）。
 - 最近活动：SOP 运行记录 + 最近完成条目，按时间倒序。
+- 空工作区引导：去 GTD 收集 / 创建第一个目标 / 创建第一个 SOP（收集入口统一在 GTD）。
+
+**日历**
+
+- 月视图：固定 6×7、周一起始，农历日 / 节日 / 节气标签，今天圆环、选中描边，日程圆点 + `+N`。
+- 周视图：周一到周日 7 列，跨天条目显示「第 n/m 天」，点星期标题切换当天、点卡片打开条目。
+- 右侧当日面板：农历全称、节日 / 节气 Badge、完成勾选、快速添加（回车保存）、「在甘特中查看」。
+- 年 / 月选择（1900–2100）与「上一段 / 今天 / 下一段」；方向键、Home / End、PageUp / PageDown 导航。
+- 深链 `?route=calendar`（可带 `?item=<id>` 直接选中条目）。
 
 **OKR**
 
@@ -120,10 +142,11 @@ export interface Item {
 **应用级**
 
 - 命令面板（`Ctrl/Cmd + K`）：命令、条目、领域统一搜索，带「最近使用」。
-- 快速收集（`Ctrl/Cmd + N`）：`#标签`、`@场景`、`!高能 / !低能`、`/今天 /明天 /本周` 语法，
-  连续录入与单条撤销。
+- 快速收集：GTD 收件箱的收集入口（GTD 页头「快速收集」按钮，弹窗标题为「收集到 GTD 收件箱」），
+  外加全局快捷键 `Ctrl/Cmd + N` 与命令面板命令；`#标签`、`@场景`、`!高能 / !低能`、
+  `/今天 /明天 /本周` 语法，连续录入与单条撤销。
 - 设置页：主题切换、存储路径与备份列表（恢复备份）、导入 / 导出 JSON、撤销 / 重做、重置为演示数据。
-- 快捷键帮助（`?`）、深色主题、视图深链（`?route=okr`、`?item=<id>`）与视图记忆。
+- 快捷键帮助（`?`）、深色主题、视图深链（`?route=calendar`、`?route=okr&item=<id>`）与视图记忆。
 - 数据保护：导入时拒绝父子环并给出环路径；加载时自动切断环、另存修复副本且不覆盖原文件；
   工作区版本高于当前应用时拒绝加载并保留副本；非法字段自动归一化，失效枚举回落并提示「已修正 N 处非法数据」。
 - 批量撤销：SOP 的拖拽 / 自动布局、OKR 的跨季度移动都走一次批量写入，一次手势或一条命令只产生一条历史，
@@ -135,7 +158,8 @@ export interface Item {
 ## 技术栈与架构
 
 Tauri v2（Rust 侧负责单文档原子写 + 30 份轮换备份）+ React 18.3 + TypeScript strict + Zustand 5 + Vite 7；
-SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，日期计算统一走 `date-fns` 4。
+SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，日历的农历 / 节气引擎零依赖自研，
+其余日期计算统一走 `date-fns` 4。
 没有路由库、没有 UI 组件库、没有 CSS 框架。生产构建启用 CSP（`script-src 'self'`，主题预置外置为
 `public/theme-init.js`），视图层有错误边界兜底。
 
@@ -167,6 +191,9 @@ npm run tauri:build  # 构建 deb 安装包
 首次启动（**首次安装**且工作区为空）会自动写入一份演示数据：3 个领域、1 个目标 + 3 个 KR、
 1 个 7 步 SOP、1 个「官网改版」项目 + 6 个行动、6 条收件箱等。主文件 / `.bak` / 轮换备份任已存在时不再播种，
 所以导入空工作区后重启会保持为空。清理演示数据的方式见 USER-GUIDE 的「数据安全与保护」章节。
+
+视图可以直接深链：`?route=calendar`、`?route=okr`、`?route=gtd&item=<id>` 等
+（合法路由：`dashboard` / `calendar` / `okr` / `gtd` / `gantt` / `sop` / `settings`）。
 
 ## 安装包
 
@@ -218,17 +245,24 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
    `@xyflow/react` 默认署名水印保留（移除需商业授权）。
 8. **验证边界**：真实 Tauri 窗口、自动保存、CSP 与 IPC 已在 Xvfb 下实机验证（`scripts/tauri-smoke.sh`），
    仅原生系统文件对话框（导出 / 导入的路径选择）未做端到端点击验证。
+9. **农历范围**：只覆盖 1900-01-31 ～ 2100-12-31，范围外只显示公历并提示；年 / 月选择器同样限定 1900–2100。
+10. **节气精度**：节气按太阳视黄经计算（分钟级），极少数交节时刻落在午夜前后的年份，与前一日历可能相差一天。
+11. **日历视图状态不跨刷新保留**：视图（月 / 周）与当前选中日期只记在模块内存里，切换视图再回来会保留，
+    刷新或重启后回到月视图 + 今天。
+12. **窄屏抽屉为覆盖式**：≤1180px 时当日面板变成底部覆盖抽屉，会遮住网格下半部分，不是挤压布局。
 
 ## 测试
 
 ```bash
-npm test                                        # 19 个测试文件 / 220 个用例（vitest run）
+npm test                                        # 21 个测试文件 / 304 个用例（vitest run）
 cargo test --manifest-path src-tauri/Cargo.toml  # Rust 持久化测试，13 个用例
 ```
 
 前端单测覆盖：模型归一化与环检测（`repo.test.ts`）、store 的 `updateItems` 批量写入与历史、
 selectors 树查询、甘特几何与吸附、GTD 逻辑、OKR 指标换算、SOP 布局 / 适配 / 运行推进、
-命令面板模糊匹配、快速收集语法、导入校验、设计令牌对比度（`tokens.test.ts`）。
+命令面板模糊匹配、快速收集语法、导入校验、设计令牌对比度（`tokens.test.ts`），
+以及日历的农历引擎（`calendar/lunar.test.ts`，48 例：闰月、干支、节日、节气基准与 2000–2050 逐日往返）
+与日历逻辑（`calendar/calendarLogic.test.ts`，35 例：6×7 网格、周区间、分桶、标签优先级、窄屏自动展开规则）。
 
 `cargo test` 覆盖（13 个用例）：round-trip 与 `.bak` 生成、主文件损坏回退、全部损坏回退空库、
 30 份备份轮换与恢复、低版本迁移、备份名路径穿越拒绝、导出（缩进 2 空格）与导入、`freshInstall` 判定、
@@ -242,17 +276,21 @@ npx vite --port 1430 --strictPort
 
 # 终端 B：逐个运行（需要 Node 22+ 与 /usr/bin/google-chrome）
 node scripts/qa/collector-selftest.mjs   # 自检：确认控制台 / 异常收集器真的在工作
-node scripts/qa/smoke.mjs                # 11 张截图 + 布局溢出 + 控制台错误
+node scripts/qa/smoke.mjs                # 15 张截图 + 布局溢出 + 控制台错误
 node scripts/qa/overlays.mjs             # 逐个打开弹层（收集、命令面板、澄清、导入…）
 node scripts/qa/secondary-views.mjs      # OKR 三视图 / GTD 两视图 / 甘特详情 / SOP 切换
 node scripts/qa/flows.mjs                # 8 条跨模块流程（收集→澄清、拖拽持久化、主题、导出…）
 node scripts/qa/regression.mjs           # 第二轮修复回归（甘特进度口径 / 页头、SOP 视口、导入撤销、深色对比度）
 node scripts/qa/final-regression.mjs     # 终验复核：含环加载、未来版本拒绝、空库导入后保持为空、批量撤销、归一化
+node scripts/qa/calendar-acceptance.mjs  # 日历 + 快速收集归属 + OKR 页头验收（月/周、农历标签、深链、面板行为）
+node scripts/qa/calendar-1024.mjs        # 窄屏日历截图（calendar-1024）与宽屏构图对照
+node scripts/qa/final-fixes.mjs          # P2 回归：通知浮层不吞点击、≤1180px 点日期自动展开且尊重手动收起
 ```
 
-`smoke.mjs` 产出 **11 张**截图并写入 `docs/screenshots/`：6 张主图（`dashboard` / `okr` / `gtd` /
-`gantt` / `sop` / `settings`）、2 张 1024×720（`dashboard-1024` / `gantt-1024`）、
-`dashboard-dark`、`sop-run`、`gantt-deps`；报告写入 `docs/screenshots/smoke-report.json` 与
+截图共 **15 张**，写入 `docs/screenshots/`：**7 张主图**（`dashboard` / `calendar` / `okr` /
+`gtd` / `gantt` / `sop` / `settings`）、2 张 1024×720（`dashboard-1024` / `gantt-1024`）、
+`dashboard-dark`、`sop-run`、`gantt-deps`、`calendar-week`、`calendar-dark`（以上 14 张由 `smoke.mjs` 生成），
+以及 `calendar-1024.mjs` 生成的 `calendar-1024`；报告写入 `docs/screenshots/smoke-report.json` 与
 `docs/screenshots/flows-report.json`。可用 `TEXTURA_BASE_URL` 与 `CHROME_BIN` 覆盖默认值。
 
 真实窗口冒烟（Xvfb + 截图 + 文件断言）：
@@ -286,7 +324,8 @@ Textura/
 │   ├── make_icon.py           生成应用图标
 │   ├── contrast-audit.mjs     设计令牌 WCAG 对比度审计（可单独运行）
 │   ├── tauri-smoke.sh         真实 Tauri 窗口冒烟（Xvfb + 截图 + 文件断言 + CSP/IPC 检查）
-│   └── qa/                    无头 Chrome 集成冒烟脚本（lib.mjs 为 CDP 客户端，app-boot.sh 为启动期验证）
+│   └── qa/                    无头 Chrome 集成冒烟脚本（lib.mjs 为 CDP 客户端，app-boot.sh 为启动期验证；
+│                              calendar-acceptance / calendar-1024 / final-fixes 为日历与入口调整的验收）
 ├── src/
 │   ├── app/                   应用外壳：AppShell 路由分发、Sidebar、TopBar、routes、RouteErrorBoundary
 │   ├── core/                  统一任务内核（模块只读）
@@ -301,6 +340,10 @@ Textura/
 │   ├── modules/
 │   │   ├── appshell/          应用级界面：命令面板、快速收集、设置页、快捷键帮助、导入导出
 │   │   ├── dashboard/         今日视图：聚焦列表、状态卡、目标 / SOP 概览、活动流
+│   │   ├── calendar/          日历视图：月份 / 周视图、当日面板、农历引擎与日历逻辑
+│   │   │   ├── lunar.ts       零依赖农历 / 24 节气引擎（1900–2100，lunarInfo 表 + 太阳视黄经）
+│   │   │   ├── calendarLogic.ts 6×7 网格、周区间、按日分桶、标签优先级、窄屏展开规则
+│   │   │   └── MonthGrid / WeekView / DayPanel / CalendarToolbar / itemDisplay
 │   │   ├── okr/               OKR 视图：季度条、卡片 / 表格 / 对齐、KR 指标草稿（metricDraft）与信心
 │   │   ├── gtd/               GTD 视图：收件箱、下一步、等待、某天、项目健康度、澄清、周回顾
 │   │   ├── gantt/             甘特视图：纯函数几何层 scale.ts、时间轴、左侧树、任务条、依赖

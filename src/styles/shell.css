@@ -321,7 +321,8 @@
 }
 
 .notice {
-  pointer-events: auto;
+  /* 纯展示通知：不能吞掉右下角控件的点击（容器和卡片都保持 none）。 */
+  pointer-events: none;
   min-width: 220px;
   max-width: 360px;
   padding: var(--space-3) var(--space-4);

@@ -404,7 +404,8 @@ export class Page {
     await this.goto(`${BASE_URL}/`, { route: null });
     await this.eval(`localStorage.clear(); return true;`);
     await this.goto(`${BASE_URL}/?route=${route}`, { route });
-    await this.waitFor(`document.querySelectorAll('.sidebar-nav .sidebar-link').length === 6`, {
+    // 侧栏视图数随版本增长（当前 7：今日/日历/OKR/GTD/甘特/SOP/设置），只断言已渲染。
+    await this.waitFor(`document.querySelectorAll('.sidebar-nav .sidebar-link').length >= 6`, {
       label: 'sidebar ready',
     });
     await sleep(350);

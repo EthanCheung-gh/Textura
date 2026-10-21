@@ -74,14 +74,18 @@ async function openCapture(page) {
   await sleep(450);
   const opened = await page.eval(`return !!document.querySelector('#quick-capture-input');`);
   if (opened) return 'ctrl+n';
+  // 快速收集入口已迁到 GTD 页头（顶栏不再有按钮）；先切到 GTD 再点。
+  await navTo(page, 'GTD');
   const clicked = await page.eval(`
-    const button = [...document.querySelectorAll('.topbar button')].find((el) => el.textContent.trim() === '快速收集');
-    if (!button) throw new Error('topbar 快速收集 button missing');
+    const button = [...document.querySelectorAll('.gtd-page .page-header button')]
+      .find((el) => el.textContent.trim() === '快速收集');
+    if (!button) throw new Error('GTD 页头「快速收集」按钮缺失');
     button.click();
     return true;
   `);
-  await sleep(450);
-  return clicked ? 'topbar-button' : 'none';
+  await page.waitFor(`!!document.querySelector('#quick-capture-input')`, { label: 'capture modal via GTD header' });
+  await sleep(300);
+  return clicked ? 'gtd-header-button' : 'none';
 }
 
 /** Real typing first; verify; fall back to a native setter + input event if the caret disagreed. */

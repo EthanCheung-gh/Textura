@@ -11,10 +11,10 @@
 │   AppShell（按 ui.route 分发）· Sidebar · TopBar · ROUTES       │
 │   RouteErrorBoundary（视图崩溃兜底，外壳不白屏）                │
 └───────────────┬───────────────────────────────────────────────┘
-                │  ui.route: 'dashboard' | 'okr' | 'gtd' | 'gantt' | 'sop' | 'settings'
+                │  ui.route: 'dashboard' | 'calendar' | 'okr' | 'gtd' | 'gantt' | 'sop' | 'settings'
 ┌───────────────▼───────────────────────────────────────────────┐
 │ 视图模块  src/modules/                                         │
-│   dashboard/  okr/  gtd/  gantt/  sop/  appshell/              │
+│   dashboard/  calendar/  okr/  gtd/  gantt/  sop/  appshell/  │
 │   只读 core；写操作一律调用 store 动作；领域计算一律调 selectors │
 └───────────────┬───────────────────────────────────────────────┘
                 │  useWorkspace(selector) / getWorkspace()
@@ -80,11 +80,12 @@
 | `done` | 完成 | 完成统计；甘特进度显示 100%；`completedAt` 由 store 维护 |
 | `dropped` | 放弃 | 甘特隐藏；项目健康度把 done 与 dropped 都算「已收尾」，但 `rollupProgress` 只把 done 计入完成比 |
 
-### 2.4 四个视图如何消费同一份数据
+### 2.4 各视图如何消费同一份数据
 
 | 视图 | 读 | 写 |
 | --- | --- | --- |
 | 今日 | `overdueItems`、`dueTodayItems`、`nextActions`、`inboxItems`、`objectivesOfPeriod` + `rollupProgress`、`sopGraph`、`completedAt`、`runs` | `toggleDone`、`createItem`（目标 / SOP 快捷创建）、`select`、`setUi` |
+| 日历 | `scheduledItemsInRange`（当前区间）、`gantt.start/end`、`status`、`areaId` | `createItem`（当天快速添加）、`toggleDone`、`select`、`setUi` |
 | OKR | `objectivesOfPeriod`、`childrenOf`（KR）、`okr.metric/confidence`、`edgeTargetsOf(…, 'okr')` | 目标 / KR 增删改、`okr.metric`、`okr.confidence`、`okr.period`（移动 / 复制季度）、`okr` 边（关联执行项） |
 | GTD | `inboxItems`、`nextActions`、`waitingItems`、`somedayItems`、`gtd.capturedAt/context/energy/waitingFor`、`gantt.end` | `updateItem`（标题、标签、场景、能量、截止日期、领域）、`setStatus`、`createItem`（升级为项目 / 转为行动）、`deleteItems` |
 | 甘特 | `gantt.start/end`、`status`、`gantt.progress`、`depends` 边、`rollupProgress`（分组汇总） | `gantt.start/end`（拖拽、日期输入）、`gantt.progress`、`status`、`areaId`、`depends` 边、新建行动 |
@@ -248,7 +249,65 @@ base-uri 'self'; form-action 'none'
   `saveState = 'error'` 则取消重新加载并提示，避免丢掉刚提交的编辑）、**查看数据目录**
   （读取 `storageInfo().dataDir` 并尝试写入剪贴板）。
 
-## 4. 模块边界与所有权
+## 4. 日历模块设计
+
+### 4.1 职责划分
+
+| 文件 | 职责 |
+| --- | --- |
+| `CalendarPage.tsx` | 视图状态（月 / 周、选中日、游标年月、面板开合）、路由跳转、创建与勾选 |
+| `calendarLogic.ts` | 纯函数：6×7 网格、周区间、按日分桶、跨天序号、标签优先级、相对日期、窄屏展开规则 |
+| `lunar.ts` | 零依赖农历 / 节气引擎（见 4.2），输入输出都是 `YYYY-MM-DD` 字符串 |
+| `MonthGrid` / `WeekView` / `DayPanel` / `CalendarToolbar` | 展示与交互；不直接读写 store |
+| `itemDisplay.ts` | 条目 → 图标 / 状态色 / 目标路由的映射 |
+
+数据来源只有一条：`scheduledItemsInRange(workspace, from, to)`（区间含边界），
+再用 `visibleItems` 过滤掉 `dropped`。日历不维护第二套索引，也不缓存工作区。
+
+### 4.2 农历引擎（`lunar.ts`）
+
+- **月序数据**：1900–2100 每年一个 `lunarInfo` 十六进制数（低 4 位闰月月份、`0x10000` 闰月大小、
+  `0x8000..0x10` 十二个月大小），基准日 `1900-01-31` = 农历 1900 年正月初一。
+- **日序号**：所有日期先转成「UTC 民用日序号」（`Date.UTC` 计算的整数天），不碰本地时区，
+  因此任意 `TZ` 下结果一致；`dayNumberFromKey` / `keyFromDayNumber` / `addDaysToKey` 是唯一入口。
+- **年起点预计算**：启动时累加每年天数得到 `YEAR_START_DAYS`（覆盖 1900–2101 起点），
+  换算时先二分查找农历年，再在年内逐月扣减——单次换算 O(log 200 + 12)。
+- **节气**：以太阳视黄经为目标（小寒 285°，每节气 +15°）做牛顿迭代；视黄经用 Meeus 低精度公式
+  加长周期行星摄动，叠加 ΔT（Espenak–Meeus）把力学时换算为民用时，再按北京时间（UTC+8）取日期。
+  每年结果缓存在 `termCache`，同一年的 24 个节气只算一次。
+- **节日**：非闰月的「月-日」查表（春节 / 元宵 / 龙抬头 / 端午 / 七夕 / 中元 / 中秋 / 重阳 / 腊八 / 小年），
+  除夕按「腊月最后一天」判定（廿九或三十都可能），清明复用节气结果。
+- **干支 / 生肖**：按农历年取（春节换年），不是公历 1 月 1 日。
+- **范围**：`1900-01-31` ～ `2100-12-31`；范围外 `solarToLunar` 返回 `null`，UI 只显示公历并提示。
+
+节气是天文近似而非查表：分钟级精度足以决定「哪一天」，但交节时刻极靠近午夜时，
+与部分日历可能相差一天，这一点在 README 的已知限制里明确写出。
+
+### 4.3 按日分桶与跨天条目
+
+- `itemSpan(item)`：取 `gantt.start` / `gantt.end`，缺一端时按单日处理，反向自动交换。
+- `bucketItemsByDay(items, from, to)`：把每个条目推进它覆盖的每一天（`from`/`to` 之外的片段裁掉），
+  桶内用 `sortDayItems` 排序：跨天条目优先 → 开始日期 → 标题（模型没有时刻字段）。
+- `spanDayIndex(item, key)`：给出「第 n/m 天」里的 n；周视图与当日面板都用它。
+- 月视图每格最多画 3 个圆点，其余折叠成 `+N`，避免 42 个格子被文字撑爆。
+
+### 4.4 标签与无障碍
+
+- `lunarLabelOf` 的优先级：传统节日 > 节气 > 农历日；农历初一显示月名（「九月」），其余显示日名（「廿三」）。
+- 每个格子带 `aria-label`（公历 + 星期 + 农历 + 节日/节气 + 今天），键盘焦点跟随选中日移动。
+- 月视图键盘：方向键 ±1 / ±7 天、`Home` / `End` 本周首末、`PageUp` / `PageDown` 上下月、`Enter` 进入面板。
+
+### 4.5 视图状态与窄屏策略
+
+- 视图（月 / 周）与选中日期存在模块级 `calendarMemory` 里：切换路由再回来会恢复，
+  但**不写 store / URL / localStorage**，刷新后回到「月视图 + 今天」。
+  取舍是避免把纯展示状态塞进 `ui` 与深链，代价是刷新不记忆。
+- 面板默认开合由 `matchMedia('(max-width: 1180px)')` 决定；`shouldAutoOpenPanel(panelOpen, width, userCollapsed)`
+  只在「面板已收起 + 窄屏 + 用户本次会话没手动收起」三条同时成立时自动展开，手动收起后尊重用户意图。
+- ≤1180px 时 `.cal-panel` 变成 `position: fixed` 的底部抽屉，覆盖网格而非挤压布局；
+  宽屏则是并排右栏。
+
+## 5. 模块边界与所有权
 
 | 路径 | 所有者 | 说明 |
 | --- | --- | --- |
@@ -256,25 +315,39 @@ base-uri 'self'; form-action 'none'
 | `src/main.tsx`、根配置、`docs/contract.md` | Phase A（冻结） | 只读 |
 | `src/modules/sop/**` | sop Worker | 画布、检查器、运行、布局 |
 | `src/modules/okr/**` | okr Worker | 季度、卡片 / 表格 / 对齐、指标与执行项 |
-| `src/modules/gtd/**` | gtd Worker | 收件箱、澄清、下一步、等待、周回顾 |
+| `src/modules/gtd/**` | gtd Worker | 收件箱、澄清、下一步、等待、周回顾；页头「快速收集」入口 |
 | `src/modules/gantt/**` | gantt Worker | 时间轴、树、任务条、依赖、详情 |
+| `src/modules/calendar/**` | calendar Worker | 月 / 周视图、当日面板、农历与节气引擎 |
 | `src/modules/dashboard/**` | appshell Worker | 今日聚合视图 |
-| `src/modules/appshell/**` | appshell Worker | 命令面板、快速收集、设置页、快捷键 |
+| `src/modules/appshell/**` | appshell Worker | 命令面板、快速收集弹窗、设置页、快捷键 |
 | `src-tauri/**` | Phase A（冻结） | 模块不得修改 Rust 持久化 |
+
+### 5.1 产品边界：收集只在 GTD
+
+「快速收集」是 GTD 收集阶段的入口，不是一个通用的「全局新建」：
+
+- 唯一的界面入口是 **GTD 页头的「快速收集」按钮**（primary，弹窗标题「收集到 GTD 收件箱」）；
+- `⌘/Ctrl + N`、`⌘/Ctrl + ⇧ + N` 与命令面板里的「快速收集」是**全局动作**，因为它们服务的是
+  「随手记下来」的时机，要求先切到 GTD 反而会丢失想法；
+- 顶栏与今日页不再放收集按钮；今日页空态只用「去 GTD 收集」把用户带到 GTD 再打开弹窗；
+- 弹窗组件仍挂在 `AppShell`（受 `ui.quickCaptureOpen` 控制），避免每个视图各挂一份。
+
+这条边界的收益是「收集 = 进收件箱」在界面上只有一个含义；代价是从今日页收集要多一次路由跳转，
+由空态引导与快捷键兜住。
 
 为什么模块只读 core：
 
 - **单一事实来源**。进度汇总（`rollupProgress`）、树遍历（`childrenOf` / `ancestorsOf` / `descendantsOf`）、
-  排期查询（`scheduledItemsInRange` / `overdueItems`）只有一份实现，四个视图不可能对「什么是完成」
+  排期查询（`scheduledItemsInRange` / `overdueItems`）只有一份实现，任何视图都不可能对「什么是完成」
   或「什么算超期」给出不同答案。
 - **迁移可控**。字段变更只需改 `model.ts` + `repo.migrateWorkspace` + Rust `model.rs`，
-  阅读代码时不必搜遍六个模块找同名字段的手写拷贝。
+  阅读代码时不必搜遍七个模块找同名字段的手写拷贝。
 - **并行开发不冲突**。每个模块独占目录，公共改动必须回到契约层评审，避免两个 Worker 同时改
   `store.ts` 互相踩。
 
-## 5. 关键设计决策与权衡
+## 6. 关键设计决策与权衡
 
-### 5.1 单文档原子写，而不是 SQLite
+### 6.1 单文档原子写，而不是 SQLite
 
 **选择**：整份 `Workspace` 序列化成一个 JSON，临时文件 + `fsync` + `rename` 覆盖，另有 `.bak` 与 30 份轮换备份。
 
@@ -283,14 +356,14 @@ base-uri 'self'; form-action 'none'
 `cargo test` 能完整覆盖。
 
 **代价**：写入是 O(整个工作区)，没有部分更新与并发写入；两个进程同时打开会互相覆盖（后写赢）。
-突破到万级条目时需要换存储（见 §6）。
+突破到万级条目时需要换存储（见 §7）。
 
-### 5.2 不用 react-router
+### 6.2 不用 react-router
 
 **选择**：`ui.route` 是 store 里的字符串，`src/core/routeState.ts` 负责 `?route=` / `?item=` 深链与
 `localStorage['textura.route']` 记忆。
 
-**理由**：桌面应用只有六个平级视图，没有嵌套路由、没有 URL 参数驱动的数据加载；路由状态与
+**理由**：桌面应用只有七个平级视图，没有嵌套路由、没有 URL 参数驱动的数据加载；路由状态与
 `okrPeriod`、`selectedId`、`inspectorOpen` 属于同一类 UI 状态，放在同一个 store 里可以一起断言、
 一起持久化、一起被命令面板改写。深链只用于「从外部打开某个视图 / 某条记录」，用
 `history.replaceState` 同步即可，不需要路由库。
@@ -298,19 +371,19 @@ base-uri 'self'; form-action 'none'
 **代价**：没有自动的代码分割与路由级懒加载；视图切换是同步渲染整个页面（当前页面组件量级下无感）。
 将来若要加「浏览器前进后退」，需要自己实现 popstate 映射。
 
-### 5.3 不用 UI 组件库
+### 6.3 不用 UI 组件库
 
 **选择**：`src/ui/*` 手写九个原语（Button / IconButton / Modal / Field / Badge / Progress / EmptyState /
 Segmented / Icon），颜色、间距、圆角、阴影全部来自 `src/styles/tokens.css`。
 
 **理由**：产品需要「暖纸感」的克制视觉与中文排版，组件库的默认密度和交互（弹层、焦点陷阱、
 密集表格）几乎都要覆盖重写；九个原语的组件代码约 600 行，能保证键盘可达与 `aria-*` 一致，
-并让六个模块共用同一套 focus ring 与间距节奏。
+并让七个模块共用同一套 focus ring 与间距节奏。
 
 **代价**：没有现成的虚拟列表、日期选择器、可访问树控件；复杂交互（甘特拖拽、画布）仍需自行实现并
 自行保证可访问性（例如任务条用 `role="button"` + 键盘选中）。
 
-### 5.4 SOP 用 React Flow，甘特自己写
+### 6.4 SOP 用 React Flow，甘特自己写
 
 **选择**：SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`；甘特完全手写
 （`gantt/scale.ts` 纯函数 + 绝对定位任务条 + 一段 SVG 依赖线）。
@@ -322,18 +395,18 @@ React Flow 已经把这些做对，自己写会花掉大部分工期。甘特需
 
 **代价**：两个视图的技术栈不一致，需要分别理解；React Flow 的默认署名水印必须保留（商业授权才能移除）。
 
-### 5.5 统一内核，而不是四个子系统
+### 6.5 统一内核，而不是四个子系统
 
 **选择**：一个 `Item`、一个 store、一份历史、一份持久化。
 
-**理由**：四个视图回答的是同一个问题「现在该做什么」，只是视角不同。分开建模就得写四套同步逻辑，
+**理由**：这些视图回答的是同一个问题「现在该做什么」，只是视角不同。分开建模就得写四套同步逻辑，
 而同步逻辑一定会漂移。统一之后，「OKR 的 KR 关联甘特的行动」这种跨视图关系只是加一条 `okr` 边。
 
 **代价**：`Item` 是宽表，字段按 `kind` 可选（`okr?` / `gtd?` / `gantt?` / `sop?`），类型上无法保证
 「action 一定有 gantt」；为此 store 在 `createItem` 里补默认值、`repo.migrateWorkspace` 做兜底，
 模块侧仍需判空。将来字段继续增加时应考虑按 `kind` 收窄为可辨识联合。
 
-### 5.6 SOP 初始视口给「可读下限」，而不是一味 fit
+### 6.6 SOP 初始视口给「可读下限」，而不是一味 fit
 
 **选择**：`sop/fit.ts` 的 `computeReadableViewport` 设置 zoom 下限 0.7（手动缩放仍可到 0.25），
 低于下限时放弃「一屏看全」，改为从左上角 margin 开始，保证流程起点可见；宽而扁的旧坐标会先用
@@ -343,9 +416,9 @@ dagre 生成一份只影响显示的纵向预览。
 先保证「能读」，再让用户自己缩放，比「能看全但看不清」更有用。
 
 **代价**：首次打开可能看不到流程尾部；预览布局与已保存坐标不一致，第一次拖动时需要把预览坐标
-一次性落盘（一次 `updateItems`，一次 `Ctrl+Z` 回退，见 §5.8 与 README 的已知限制）。
+一次性落盘（一次 `updateItems`，一次 `Ctrl+Z` 回退，见 §6.8 与 README 的已知限制）。
 
-### 5.7 甘特进度「done 恒为 100%，但不写回」
+### 6.7 甘特进度「done 恒为 100%，但不写回」
 
 **选择**：`displayProgress(item)`：`status === 'done'` 返回 100，否则取 `gantt.progress`；
 详情面板在已完成时禁用进度滑杆，不修改底层数值。
@@ -356,7 +429,7 @@ dagre 生成一份只影响显示的纵向预览。
 **代价**：甘特条的 100% 与 `gantt.progress` 可能不一致（数据里是 70，条形是满的），需要在详情面板
 用一行说明「已完成条目进度按 100% 显示」。
 
-### 5.8 批量写入（`updateItems`），而不是 N 次 `updateItem`
+### 6.8 批量写入（`updateItems`），而不是 N 次 `updateItem`
 
 **选择**：`updateItems(patches, { recordHistory })` 只压一次历史、写一个 `updatedAt`、排一次防抖保存；
 SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
@@ -368,7 +441,7 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 这三件事（`store.test.ts` 有专门断言）；调用方必须把语义上属于同一动作的修改合并成一批，
 否则一次拖动又会被拆成多步。
 
-### 5.9 Rust 强类型校验 + 前端宽容归一化
+### 6.9 Rust 强类型校验 + 前端宽容归一化
 
 **选择**：写盘前由 serde 强类型兜底（非法数值直接拒绝保存），读入时由前端做字段夹紧与枚举回落，
 并生成修正摘要。
@@ -380,7 +453,7 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 **代价**：同一套取值域在 TS 与 Rust 各维护一份（契约是唯一来源），加字段时要同步两边；
 前端归一化会掩盖上游写入的 bug，只能靠「已修正 N 处非法数据」的提示与控制台摘要暴露。
 
-## 6. 性能与规模假设
+## 7. 性能与规模假设
 
 当前设计的前提是「一个人的工作区」：
 
@@ -392,6 +465,7 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 | 渲染 | 每个页面订阅整个 `workspace` | 千级条目、单视图百级节点 | 引入细粒度 selector / 分页 / 虚拟列表 |
 | 甘特 | 时间轴只渲染可视行（±400px 预取），**左侧树未虚拟化**，表头按整个区间生成 | 日视图跨度 1 年 ≈ 365 列 | 表头虚拟化 + 左侧树虚拟化 |
 | SOP 画布 | React Flow 渲染全部节点与边 | 数百节点 | 折叠子流程 / 分页画布 / 只渲染视口内节点 |
+| 日历 | 42 格 + 7 列，农历换算 O(log 200 + 12)，节气按年缓存 | 单日数百条仍可读（圆点折叠为 `+N`） | 单日条目极多时需要按状态分组或分页 |
 | 历史 | 80 份整份快照（结构化克隆） | 5,000 条 × 80 步 ≈ 数百 MB 内存 | 改为写操作日志或增量补丁 |
 | 前端产物 | 单个主 chunk 约 650 KiB 未压缩 | 桌面端本地加载，无网络成本 | 需要首屏更快时再拆分路由 chunk |
 
@@ -406,9 +480,9 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 - **写放大**：每次保存都是整份序列化 + `.bak` 复制 + 轮换副本写入，约 1 万条时单次保存的文件 IO
   会达到数 MB 量级；Rust 侧用 `spawn_blocking` 把这段工作移出 IPC 线程，但磁盘写入量本身无法避免。
 
-## 7. 扩展指南
+## 8. 扩展指南
 
-### 7.1 新增一个视图
+### 8.1 新增一个视图
 
 按顺序改动（前四项属于 `src/core` / `src/app`，需要契约层评审）：
 
@@ -435,7 +509,7 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 - 视图内的渲染异常应能在 `RouteErrorBoundary` 下恢复，不要在模块内 `throw` 到外壳之外。
 - 新增纯函数逻辑时同时加 `*.test.ts`（vitest 覆盖 `src/**/*.test.ts`）。
 
-### 7.2 新增一个顶层字段
+### 8.2 新增一个顶层字段
 
 例如给 `Item` 加 `recurrence?: { rule: string }`。改动顺序固定，避免落盘后丢数据：
 
@@ -449,7 +523,7 @@ SOP 的拖动 / 自动布局与 OKR 的跨季度移动都改用它。
 5. **Rust 侧**：`src-tauri/src/model.rs` 对应结构体加字段，务必带 `#[serde(default)]`
    （该文件里所有结构体都已用 `default`，新增字段要保持同一风格），否则旧文件反序列化失败；
    若字段有取值域（如 1–10），要同时决定 Rust 是「拒绝」还是「前端夹紧」。
-6. **演示数据**：`src/core/fixtures.ts`，让新字段在四个视图里立刻可见。
+6. **演示数据**：`src/core/fixtures.ts`，让新字段在日历、甘特与 GTD 等视图里立刻可见。
 7. **测试**：`src/core/store.test.ts`（createItem 默认值与补丁合并）、`repo.test.ts`（归一化与修正摘要）、
    `selectors.test.ts`、必要时 `fixtures.test.ts`；Rust 侧在 `storage.rs` 的测试里补一条 round-trip。
 

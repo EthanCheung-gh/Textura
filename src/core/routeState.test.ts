@@ -76,3 +76,16 @@ describe('isRoute', () => {
     expect(isRoute(1)).toBe(false);
   });
 });
+
+describe('calendar route', () => {
+  it('supports deep links, memory and URL syncing', () => {
+    expect(routeFromSearch('?route=calendar')).toBe('calendar');
+    expect(resolveInitialRoute('?route=calendar', 'gtd')).toBe('calendar');
+    expect(resolveInitialRoute('', 'calendar')).toBe('calendar');
+    expect(routeFromStored('calendar')).toBe('calendar');
+    expect(routeWithSearch('?item=obj_activation', 'calendar')).toBe(
+      '?item=obj_activation&route=calendar',
+    );
+    expect(ROUTE_IDS.indexOf('calendar')).toBe(1);
+  });
+});
