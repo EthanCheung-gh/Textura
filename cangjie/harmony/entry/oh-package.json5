@@ -1,0 +1,13 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Textura HarmonyOS entry module",
+  "dependencies": {
+    // Types for the NAPI module libSDL3.so exposes; the .so itself is staged in entry/libs by
+    // cangjie/scripts/harmony/stage_libs.sh.
+    "libSDL3.so": "file:./src/main/cpp/types/libSDL3",
+    // Official ArkTS-facing Cangjie loader. Types live here; the .so itself is staged in
+    // entry/libs/arm64-v8a by the same script.
+    "libark_interop_loader.so": "file:./src/main/cangjie/loader"
+  }
+}

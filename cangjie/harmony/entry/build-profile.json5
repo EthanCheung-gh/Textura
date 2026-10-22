@@ -1,0 +1,38 @@
+{
+  "apiType": "stageMode",
+  "buildOption": {
+    "resOptions": {
+      "copyCodeResource": {
+        "enable": false
+      }
+    },
+    // The SDL3, SDL3_ttf and Cangjie host libraries are cross-built ahead of time by
+    // cangjie/scripts/harmony/build_ohos.sh and staged into entry/libs/arm64-v8a by
+    // cangjie/scripts/harmony/stage_libs.sh. CMake only builds the small C startup shim; rebuilding
+    // SDL here would duplicate what the pinned cross-build already proves.
+    "externalNativeOptions": {
+      // Produces libmain.so: the C shim that forwards SDL's entry points into the staged Cangjie
+      // host library (libtextura_host.so). The Cangjie runtime itself is started by ArkTS.
+      "path": "./src/main/cpp/CMakeLists.txt",
+      "arguments": "-DCMAKE_PLATFORM_NO_VERSIONED_SONAME=1",
+      "cppFlags": "",
+      "abiFilters": [ "arm64-v8a" ]
+    }
+  },
+  "buildOptionSet": [
+    {
+      "name": "release",
+      "arkOptions": {
+        "obfuscation": {
+          "ruleOptions": {
+            "enable": false,
+            "files": [ "./obfuscation-rules.txt" ]
+          }
+        }
+      }
+    }
+  ],
+  "targets": [
+    { "name": "default" }
+  ]
+}

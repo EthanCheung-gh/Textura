@@ -1,0 +1,13 @@
+{
+  "app": {
+    // Distinct from the reference project's bundle so a locally installed test build can never
+    // upgrade the PixCap package. See cangjie/docs/HARMONY.md §7 for the signing consequence.
+    "bundleName": "com.ethancheung.textura",
+    "vendor": "EthanCheung",
+    "versionCode": 100,
+    "versionName": "0.1.0-cangjie-r1",
+    "buildVersion": "1",
+    "icon": "$media:layered_image",
+    "label": "$string:app_name"
+  }
+}

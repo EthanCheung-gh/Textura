@@ -1,0 +1,6 @@
+{
+  "name": "libark_interop_loader.so",
+  "types": "./libark_interop_loader.d.ts",
+  "version": "1.0.0",
+  "description": "ArkTS-facing loader that boots the Cangjie runtime on an ArkTS-bound thread and dlopen()s a Cangjie shared library."
+}
