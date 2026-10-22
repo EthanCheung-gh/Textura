@@ -422,3 +422,13 @@ Textura/
 [@xyflow/react](https://reactflow.dev/)（流程画布）、[@dagrejs/dagre](https://github.com/dagrejs/dagre)（分层布局）、
 [date-fns](https://date-fns.org/)（日期计算）、clsx。
 `@xyflow/react` 的署名水印按上游要求保留，见上文「已知限制」。
+
+## 仓颉重写
+
+同一套产品另有**仓颉原生重写**，放在 [`cangjie/`](cangjie/README.md)：CUI 0.9.6 + SDL3 绘制，
+七条路由全部实现，可与 Web 版 1440×900 截图做像素比对，并带一条鸿蒙 HAP 打包链
+（当前未签名、未真机验证）。Web 版与本目录的源码互不影响。
+
+- 入口与快速开始：[`cangjie/README.md`](cangjie/README.md)
+- 像素验收协议与实测证据：[`cangjie/docs/PARITY.md`](cangjie/docs/PARITY.md)、[`cangjie/docs/PARITY-RESULTS.md`](cangjie/docs/PARITY-RESULTS.md)
+- 鸿蒙链路与已知风险：[`cangjie/docs/HARMONY.md`](cangjie/docs/HARMONY.md)

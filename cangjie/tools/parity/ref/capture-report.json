@@ -1,0 +1,153 @@
+{
+  "anchor": "2026-03-16",
+  "anchorTimestamp": 1773626400000,
+  "font": "Noto Sans CJK SC",
+  "baseUrl": "http://localhost:1430",
+  "shots": [
+    {
+      "route": "dashboard",
+      "theme": "light",
+      "shot": "ref/dashboard-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "calendar",
+      "theme": "light",
+      "shot": "ref/calendar-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "okr",
+      "theme": "light",
+      "shot": "ref/okr-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "gtd",
+      "theme": "light",
+      "shot": "ref/gtd-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "gantt",
+      "theme": "light",
+      "shot": "ref/gantt-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "sop",
+      "theme": "light",
+      "shot": "ref/sop-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "settings",
+      "theme": "light",
+      "shot": "ref/settings-light.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "dashboard",
+      "theme": "dark",
+      "shot": "ref/dashboard-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "calendar",
+      "theme": "dark",
+      "shot": "ref/calendar-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "okr",
+      "theme": "dark",
+      "shot": "ref/okr-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "gtd",
+      "theme": "dark",
+      "shot": "ref/gtd-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "gantt",
+      "theme": "dark",
+      "shot": "ref/gantt-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "sop",
+      "theme": "dark",
+      "shot": "ref/sop-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    },
+    {
+      "route": "settings",
+      "theme": "dark",
+      "shot": "ref/settings-dark.png",
+      "viewport": [
+        1440,
+        900
+      ],
+      "fontFamily": "\"Noto Sans CJK SC\", sans-serif"
+    }
+  ],
+  "workspace": {
+    "path": "workspace.json",
+    "sha256": "62e62460e2eecb67a2898310bec260db4e732727e35992afc0bfad3963611f07",
+    "items": 30
+  }
+}
