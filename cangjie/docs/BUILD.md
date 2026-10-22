@@ -103,22 +103,22 @@ TEXTURA_PARITY_TODAY=2026-03-16 node cangjie/tools/parity/capture_ref.mjs
 
 ```bash
 cd cangjie
-./scripts/parity.sh                 # light，7 条路由 -> tools/parity/out/
-TEXTURA_PARITY_THEMES="light dark" ./scripts/parity.sh
+./scripts/parity.sh --theme both     # 7 条路由 × light/dark = 14 张 -> tools/parity/out/
 
-# 验收门（三档判据）；退出码 0 = 全部通过
-python3 tools/parity/metrics.py tools/parity/ref tools/parity/out
+# 验收门（三层 AND）；退出码 0 = 全部通过
+./scripts/diff.sh --theme both
 
-# 出图复核（side-by-side / 热力图）；用 diff.py 的原始层阈值判定，只作定位
-./scripts/diff.sh light
+# 出图复核（side-by-side / 热力图）；只作定位，判定看 diff.sh
+python3 tools/parity/diff.py tools/parity/ref tools/parity/out --report-dir tools/parity/out/diffs
 ```
 
-七条路由全部是真实业务视图，三档判据 14/14 通过（`ΔRGB≤32` 95.44%–98.46%、1px 模糊 SSIM
-0.9538–0.9885、结构 ≤1.5px）。完整数字、两次运行 sha256 与残差定位见 `docs/PARITY-RESULTS.md`；
-阈值与理由见 `docs/PARITY.md §2.1`。
+七条路由全部是真实业务视图，三档判据 14/14 通过（`ΔRGB≤32` 95.39%–98.46%、1px 模糊 SSIM
+0.9529–0.9885、结构 ≤1.5px），在仓库内 72 字符路径下测得。完整数字、两次运行 sha256 与残差定位见
+`docs/PARITY-RESULTS.md`；阈值与理由见 `docs/PARITY.md §2.1`，门禁 CLI/字段见 `§9`。
 
-> `./scripts/diff.sh` 用的是 `diff.py` 的原始层默认阈值（98% + SSIM 0.95），按新协议会返回非 0，
-> 它现在只是**定位工具**。验收以 `metrics.py` 的退出码为准。
+> `./scripts/diff.sh` 就是 §2.1 的三层门（结构 + 模糊 SSIM + 原始 ≤32），退出码 0 才算通过。
+> `metrics.py` 只聚合视觉 + 原始两档；`diff.py` 是定位工具，它按旧的原始层 98% 默认阈值打印的
+> `FAIL` **不是验收结论**。
 
 自比（确定性）：
 

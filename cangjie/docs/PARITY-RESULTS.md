@@ -3,26 +3,29 @@
 本文件是 `docs/PARITY.md` 验收协议的**证据附件**：只记录可复现的实测数字、命令与残差定位结论。
 协议本身（CLI、容差、确定性要求）在 `docs/PARITY.md`；两者冲突时以 `docs/PARITY.md` 为准，并修本文件。
 
-测量时间：2026-10-23。测量目录：`~/.cache/cj-final-1/`（从空快照 rsync 出的独立工作树，**不在仓库内构建**，
-因为 `/tmp` 只剩 2.6 G；所有临时文件经 `TMPDIR=~/.cache/tmp`）。
+测量时间：2026-10-23（settings 长路径修复后的最终复跑）。测量目录：仓库工作树 `cangjie/` 直接构建，
+`--workspace` 是**仓库内 72 字符绝对路径** `/home/ethan/CodeRepo/sandbox/Textura/cangjie/tools/parity/workspace.json`；
+所有临时文件经 `TMPDIR=~/.cache/tmp`。修复前必须在 57 字符短路径快照目录（`~/.cache/cj-final-1`）里测，
+那段历史数据保留在 §5 与 §7.3 作为对照。
 
 ## 0. 结论速览
 
 | 层 | 指标 | 阈值 | 14 张结果 |
 |---|---|---|---|
-| 视觉主指标 | 1px 高斯模糊后 SSIM | ≥ 0.95 | **14/14 通过**，最低 0.9538（sop-light） |
-| 原始像素 | `ΔRGB ≤ 32` 像素占比 | ≥ 95% | **14/14 通过**，最低 95.44%（settings-light） |
+| 视觉主指标 | 1px 高斯模糊后 SSIM | ≥ 0.95 | **14/14 通过**，最低 0.9529（settings-light） |
+| 原始像素 | `ΔRGB ≤ 32` 像素占比 | ≥ 95% | **14/14 通过**，最低 95.39%（settings-light） |
 | 结构 | 长直线配准最大偏差 | ≤ 1px | 12/14 ≤ 0.5px；gtd-light 1.5px、okr/settings/sop 1.0px |
 | 结构 | 全局最佳位移 | (0, 0) | **14/14 = (0,0)**，无系统性 1px 偏移 |
 | 确定性 | 两次独立运行 sha256 | 完全一致 | **14/14 一致**（同一 argv 拼写，见 §5） |
-| 构建 | `CLEAN=1 ./scripts/build.sh` | 成功 | 成功，2 分 51 秒，最大 RSS ≈ 976 MiB |
+| 构建 | `CLEAN=1 ./scripts/build.sh` | 成功 | 成功（新鲜克隆 149.78 s，最大 RSS ≈ 976 MiB） |
 | 测试 | `cjpm test` | 全绿 | 547/547 通过，0 失败 0 错误 |
 
 原始像素 SSIM（未模糊）**不作为**通过条件：14 张里只有 6 张 ≥ 0.95，其余落在 0.886–0.935。原因见 §3.3。
 
-> 前提：上表的 14/14 是在 `~/.cache/cj-final-1`（`--workspace` 57 字符）下测的。`settings` 视图会显示
-> 该路径，**长度 ≥64 字符时会折行并把下方内容下移 ~24px**，settings 两张随即 FAIL（blur 0.905）。
-> 细节、阈值与修法见 §5「确定性边界」与 §7.3；在仓库内直接构建（72 字符）会命中这个问题。
+> 前提：上表的 14/14 是 settings 长路径缺陷修复后、在**仓库内目录**（`--workspace` 72 字符）测的。
+> 修复前 `settings` 的路径行不做省略，长度 ≥64 字符时会折行并把下方内容下移 ~24px，两张随即 FAIL
+> （blur 0.905）。该缺陷已在 commit `a0c7a81` 修复（单行 + 中间省略 + tooltip），修复前后对照见 §5/§7.3，
+> 视图细节见 `docs/SETTINGS-VIEW.md`。
 
 ## 1. 环境
 
@@ -49,29 +52,27 @@ python3 -c "import hashlib;print(hashlib.sha256(open('tools/parity/workspace.jso
 node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(JSON.stringify(JSON.parse(f.readFileSync('tools/parity/workspace.json','utf8')))).digest('hex'))"
 ```
 
-## 2. 从零验证（独立工作树）
+## 2. 从零验证（新鲜克隆）
 
 ```bash
 export TMPDIR=~/.cache/tmp
-rsync -a --delete --exclude 'target/' --exclude 'tools/parity/out/' \
-      --exclude 'third_party/CUI/target/' --exclude 'third_party/cangjie-sdl/target/' \
-      --exclude 'harmony/out/' --exclude 'harmony/entry/libs/' \
-      ~/CodeRepo/sandbox/Textura/cangjie/ ~/.cache/cj-final-1/
-cd ~/.cache/cj-final-1
+git clone --branch feat/cangjie-rewrite ~/CodeRepo/sandbox/Textura ~/.cache/cj-clone-final
+cd ~/.cache/cj-clone-final/cangjie
 CLEAN=1 ./scripts/build.sh          # 全量重建
 cjpm test                           # 7 个测试包
 ```
 
-实测：
+实测（2026-10-23 收尾，克隆内 `--workspace` 69 字符）：
 
 | 项 | 结果 |
 |---|---|
-| 快照体积（不含 target/out） | 32 MB，802 个 `.cj` |
-| `CLEAN=1 ./scripts/build.sh` | 成功，**2:50.67 wall**，最大 RSS 999 848 KiB |
-| 产物 | `target/release/bin/textura`，20 167 064 B |
-| warning | 编译器分阶段输出共 110 条，按 `(文件,行号)` 去重后 **99 处**：`third_party/` 28 处（CUI 27 + cangjie-sdl 1），**`src/` 71 处** |
+| 克隆内容 | 802 个 `.cj`、14 张 `ref/*.png`，工作树干净、无 `target/` |
+| `CLEAN=1 ./scripts/build.sh` | 成功，**149.78 s wall**，最大 RSS 999 860 KiB |
+| 产物 | `target/release/bin/textura` |
+| warning | 编译器分阶段输出按 `(文件,行号)` 去重后 **99 处**：`third_party/` 28 处（CUI 27 + cangjie-sdl 1），**`src/` 71 处** |
 | `cjpm test` | **547/547 通过**，0 失败、0 错误、0 跳过；7 个测试包（core.data 106、calendar.logic 117、gtd.logic 78、okr.logic 77、gantt.logic 76、sop.logic 64、dashboard.logic 29） |
-| `cjpm test` 耗时 | 首次（含测试目标编译）约 3 分 18 秒；缓存后 17 秒（测试自身执行 ≈0.9 秒） |
+| `cjpm test` 耗时 | 全量（含测试目标编译）171.65 s；缓存后约 17 秒 |
+| `parity.sh --theme both` + `diff.sh --theme both` | **14/14 PASS，退出码 0**（§7.6） |
 
 > **与预期不符的事实**：原计划“warning 只应来自 third_party”**未成立**。71 处 warning 来自本仓 `src/`
 > （okr 34、sop 16、gtd 12、gantt 5、settings 3、calendar 1），全部属于 `unused import` /
@@ -83,16 +84,17 @@ cjpm test                           # 7 个测试包
 命令：
 
 ```bash
-cd ~/.cache/cj-final-1
-export TMPDIR=~/.cache/tmp
-TEXTURA_PARITY_THEMES="light dark" ./scripts/parity.sh          # 14 张 -> tools/parity/out/
-python3 tools/parity/metrics.py tools/parity/ref tools/parity/out --json ~/.cache/cj-metrics.json
+cd ~/CodeRepo/sandbox/Textura/cangjie
+export TMPDIR=~/.cache/tmp && source scripts/env.sh
+./scripts/parity.sh --theme both                                # 14 张 -> tools/parity/out/
+./scripts/diff.sh --theme both                                  # 三层门；报告 tools/parity/out/gate-report.json
 python3 tools/parity/diff.py    tools/parity/ref tools/parity/out \
-        --report-dir ~/.cache/cj-diffs --min-pass-ratio 0.95    # 旁路：side-by-side + 热力图
+        --report-dir ~/.cache/cj-diffs --min-pass-ratio 0.95    # 旁路：side-by-side + 热力图（只定位，不判定）
 ```
 
-`tools/parity/metrics.py`（本轮新增，仅 Pillow + numpy）同时给出原始与 1px 高斯两套指标、结构配准与
-最大残差区块；`diff.py` 保持原有 CLI 不变，仍产出 `*-side.png` / `*-diff.png` 供人工复核。
+`tools/parity/gate.py`（`scripts/diff.sh` 的实现）按 `docs/PARITY.md §2.1` 的三层判据给出 PASS/FAIL、
+退出码与 JSON；度量全部来自 `tools/parity/metrics.py`（原始层 + 1px 高斯层 + 结构层 + 最大残差区块，
+仅 Pillow + numpy）。`diff.py` 保持原有冻结 CLI，仍产出 `*-side.png` / `*-diff.png` 供人工复核。
 
 ### 3.1 原始像素（未模糊）
 
@@ -110,10 +112,15 @@ python3 tools/parity/diff.py    tools/parity/ref tools/parity/out \
 | gantt-dark | 30.47 | 2.06 | 209 | 98.46 | 0.9678 | PASS |
 | sop-light | 9.04 | 4.20 | 220 | 96.24 | 0.8883 | PASS¹ |
 | sop-dark | 9.08 | 3.78 | 209 | 96.47 | 0.8865 | PASS¹ |
-| settings-light | 10.18 | 4.74 | 220 | 95.44 | 0.9132 | PASS¹ |
-| settings-dark | 10.12 | 4.06 | 217 | 95.85 | 0.9154 | PASS¹ |
+| settings-light | 10.24 | 4.80 | 220 | 95.39 | 0.9119 | PASS¹ |
+| settings-dark | 10.18 | 4.11 | 217 | 95.81 | 0.9141 | PASS¹ |
 
 ¹ 原始 SSIM < 0.95，按协议**只看 ≤32 占比**（≥95%）判定通过；SSIM 未达标的原因见 §3.3。
+
+> **与上一版（settings 修复前）的差异**：只有 settings 两行参与变化，量级 ≤0.06pp / ≤0.0013 SSIM——
+> light 10.18→10.24、95.44→95.39、0.9132→0.9119；dark 10.12→10.18、95.85→95.81、0.9154→0.9141。
+> 其余 12 张与 `tools/parity/out/gate-report.json` 一致到最后一位。变化原因是路径行由「折行 + 全字符」
+> 改为「单行 + 中间省略」，墨迹本身不同（§7.3），不是渲染回归。
 
 `gantt` 的“差异像素%”高达 17–30%，但 mean ΔRGB 只有 2.0–2.2、≤32 占比 98.4%：甘特是整窗自绘网格，
 每个格子边线都被 CUI 画成 2px 软化边（§4.3），差异像素多但幅度极小。**差异像素占比不能单独作为判据**。
@@ -136,16 +143,15 @@ python3 tools/parity/diff.py    tools/parity/ref tools/parity/out \
 | gantt-dark | 0.9872 | 99.61 | PASS |
 | sop-light | **0.9538** | 98.12 | PASS |
 | sop-dark | 0.9543 | 98.29 | PASS |
-| settings-light | **0.9541** | 97.86 | PASS |
-| settings-dark | 0.9565 | 98.24 | PASS |
+| settings-light | **0.9529** | 97.78 | PASS |
+| settings-dark | 0.9552 | 98.15 | PASS |
 
-余量最小的两张是 `sop-light 0.9538` 与 `settings-light 0.9541`，距 0.95 只有 0.4%——
+余量最小的两张是 `settings-light 0.9529` 与 `sop-light 0.9538`，距 0.95 只有 0.3–0.4%——
 它们的残差来源已定位到具体控件（§6），不是全局性偏差。
 
-> **本表的可复现前提**：`--workspace` 传的是 `/home/ethan/.cache/cj-final-1/tools/parity/workspace.json`
-> （57 字符）。`settings` 视图会把这条路径原样显示出来，**长度 ≥64 字符时该行会折行**，整个下方内容
-> 下移约 24px，settings 立刻掉到 blur SSIM 0.905 / 边缘覆盖 82%（见 §5 的「确定性边界」）。这不是渲染噪声，也不是
-> 视图逻辑错误，而是一个**真实的布局脆弱点**，已登记为 §7.3，需要修。
+> **本表的前提**：`--workspace` 是仓库内 72 字符绝对路径，settings 长路径缺陷已修（commit `a0c7a81`），
+> 因此不需要短路径目录。修复前同样的仓库路径会把 settings 打到 blur SSIM 0.905 / 边缘覆盖 82%
+> （历史数据见 §5「确定性边界」与 §7.3）。
 
 ### 3.3 为什么原始像素不能用 98%
 
@@ -234,14 +240,18 @@ gtd 的 9–10 条“单侧水平线”（y ≈ 258 / 364 / 381 / 487 / 504 / 66
 ## 5. 确定性：两次独立运行
 
 ```bash
-cd ~/.cache/cj-final-1 && source scripts/env.sh
-WS="$PWD/tools/parity/workspace.json"
+cd ~/CodeRepo/sandbox/Textura/cangjie && source scripts/env.sh
+mkdir -p ~/.cache/cj-run2
+WS="$PWD/tools/parity/workspace.json"                          # 72 字符，仓库内绝对路径
 for theme in light dark; do for route in dashboard calendar okr gtd gantt sop settings; do
   xvfb-run -a -s "-screen 0 1440x900x24" ./target/release/bin/textura \
     --workspace "$WS" --route "$route" --theme "$theme" \
     --width 1440 --height 900 --snapshot ~/.cache/cj-run2/$route-$theme.png
 done; done
-sha256sum tools/parity/out/*.png > /tmp/a; sha256sum ~/.cache/cj-run2/*.png > /tmp/b   # 逐行改名后 diff
+for f in tools/parity/out/*-*.png; do b=${f##*/}
+  [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$(sha256sum ~/.cache/cj-run2/$b | cut -d' ' -f1)" ] \
+    && echo "SAME $b" || echo "DIFF $b"
+done
 ```
 
 结果：**14/14 逐字节一致**。抽样（全部哈希见下表）：
@@ -259,26 +269,35 @@ sha256sum tools/parity/out/*.png > /tmp/a; sha256sum ~/.cache/cj-run2/*.png > /t
 | gantt-dark | `52ae55a3df71e44a6231a9ae5c9ced62889f03c8cc799e5c4ee86e921195cbc5` |
 | sop-light | `c1dedad47079177a5636f30fbec41e5fd9cc89468d9381d476403249f31451bd` |
 | sop-dark | `d4995331dce631a76ab5291c9d3ca0ae5b61d6ad20cd20638022e85da783be4f` |
-| settings-light | `4cd42e4bf445cb9b953ea7398584220d775e982889597b9e52a8eb73b0ee6bd4` |
-| settings-dark | `28221e115bc169a5d600b09d2733b7391d0113e47a8a3aae5240b8ec00d3b587` |
+| settings-light | `053e1d74e56ac2da0bb276f8577bb33283aa14dfb859a57e5dae42c0fc792d86` |
+| settings-dark | `46ac0c943cc0b5d1bf00590e5701c5c3996e354127bd7771a5813702fdc8d32b` |
+
+settings 两张的哈希随长路径修复改变（旧值 `4cd42e4b…` / `28221e11…` 属于修复前的折行版）；其余 12 张不变。
 
 > **确定性边界（实测踩到的两个坑）**
 >
 > 1. **`--workspace` 的字符串拼写会进入画面。** `settings` 视图的“数据目录 / 工作区文件”行直接显示
 >    `store.path()`。用相对路径 `tools/parity/workspace.json` 与绝对路径各跑一次，`settings-light` 会有
 >    0.13% 像素不同（1712 px，bbox x≈480–792 / y≈466–504），SSIM 0.9950。
-> 2. **`--workspace` 的长度同样会进入画面（更严重）。** 该行在参考图里是单行；字符串变长后 CUI 会折行，
->    下方整块下移 ~24px。同一二进制、同一 workspace 内容，只改路径长度：
+> 2. **`--workspace` 的长度同样会进入画面，但已不影响版式（历史缺陷，commit `a0c7a81` 修复）。**
+>    该行在参考图里是单行；修复前字符串变长后 CUI 会折行，下方整块下移 ~24px。修复后是单行 + 中间
+>    省略，同一二进制、同一 workspace 内容、只改路径长度时：
 >
-> | `--workspace` 长度 | settings-light 结果 |
-> |---:|---|
-> | 28 字符（`/home/ethan/.cache/p/ws.json`） | 差异 10.07%，原始 SSIM 0.9175，**blur 0.9582**，边缘 95.89% → PASS |
-> | 57 字符（`…/cj-final-1/tools/parity/workspace.json`） | 差异 10.18%，原始 SSIM 0.9132，**blur 0.9541**，边缘 95.94% → PASS |
-> | 64 字符（`…/cj-verify/cangjie/tools/parity/workspace.json`） | 差异 15.58%，原始 SSIM 0.8640，**blur 0.9063**，边缘 81.77% → **FAIL** |
-> | 72 字符（仓库内 `…/Textura/cangjie/tools/parity/workspace.json`） | 差异 15.63%，原始 SSIM 0.8634，**blur 0.9054**，边缘 81.97% → **FAIL** |
+> | `--workspace` 长度 | 修复前 settings-light（历史数据） | 修复后 settings-light（本轮实测） |
+> |---:|---|---|
+> | 28 字符（`/home/ethan/.cache/p/ws.json`） | 差异 10.07%，原始 SSIM 0.9175，**blur 0.9582**，边缘 95.89% → PASS | blur **0.9582**，raw ≤32 95.53%，边缘 94.79% → PASS |
+> | 57 字符（修复前 `…/cj-final-1/…`；修复后 `…/cj-paths/pppppppppppppp/workspace.json`） | 差异 10.18%，原始 SSIM 0.9132，**blur 0.9541**，边缘 95.94% → PASS | blur **0.9538**，raw 95.43%，边缘 93.01% → PASS |
+> | 64 字符 | 差异 15.58%，原始 SSIM 0.8640，**blur 0.9063**，边缘 81.77% → **FAIL** | blur **0.9533**，raw 95.41%，边缘 92.72% → PASS |
+> | 72 字符（仓库内 `…/Textura/cangjie/tools/parity/workspace.json`） | 差异 15.63%，原始 SSIM 0.8634，**blur 0.9054**，边缘 81.97% → **FAIL** | blur **0.9529**，raw 95.39%，边缘 92.46% → PASS |
+> | 96 字符 | 未测（已越过 57–64 折行阈值，按同一机制必然 FAIL） | blur **0.9526**，raw 95.40%，边缘 92.39% → PASS |
+> | 200 字符 | 未测（同上） | blur **0.9528**，raw 95.39%，边缘 92.44% → PASS |
 >
-> 折行阈值在 57–64 字符之间。**结论**：只要 argv 完全一致就逐字节一致；但 `settings` 的 parity 数字
-> 依赖构建目录的绝对路径长度，长路径（包括在仓库内直接构建）会让它掉出阈值。处置见 §7.3。
+> 修复后四种长度以上的版式逐行一致：把 28/57/64/96/200 字符的截图与 72 字符截图逐像素相减，差异
+> 全部落在值行 bbox（x 480–877 / y 466–504），卡片分隔线与页面高度零位移。修复前的修法说明与
+> 更细的几何对照见 `docs/SETTINGS-VIEW.md §1–§2`。
+>
+> **结论**：只要 argv 完全一致就逐字节一致；路径长度不再影响 settings 的通过与否（最低 0.9526，仍有
+> 0.26% 余量），只有路径**拼写**会改变值行那几个像素。
 
 ## 6. 逐路由最大残差区块定位
 
@@ -326,19 +345,36 @@ sha256sum tools/parity/out/*.png > /tmp/a; sha256sum ~/.cache/cj-run2/*.png > /t
 - 字形边缘色边：LCD 次像素 vs 灰度 AA（§3.3）。不可消除。
 - gantt 差异像素占比 17–30%：格子线极多，软化后每个格子贡献 2 行差异像素；mean ΔRGB 仅 2.0。
 
-### 7.3 settings：工作区路径行折行（真实缺陷，待修）
+### 7.3 settings：工作区路径行（历史缺陷，commit `a0c7a81` 已修）
 
-`settings` 的“数据目录 / 工作区文件”两行把 `store.path()` 原样渲染，且**允许折行**。参考图里它们是单行
-（Web 用 `text-overflow: ellipsis` 的省略号策略）。因此：
+**历史缺陷**：`settings` 的“数据目录 / 工作区文件”两行把 `store.path()` 原样渲染且**允许折行**。
+参考图里它们是单行（Web 用 `text-overflow: ellipsis` 的省略号策略），所以：
 
 - `--workspace` 长度 ≤57 字符：单行，settings 通过（blur 0.954–0.958）。
 - 长度 ≥64 字符（含**仓库内**的 `…/Textura/cangjie/tools/parity/workspace.json`，72 字符）：折成两行，
-  下方“存储概况 / 立即保存 / 导入导出”整块下移 ~24px，settings 掉到 blur 0.905、边缘覆盖 82%。
+  下方“存储概况 / 立即保存 / 导入导出”整块下移 ~24px，settings 掉到 blur 0.905、边缘覆盖 82% → FAIL。
 
-这不是“渲染差异”，是布局没做省略号截断。**修法**（下一轮）：
-`src/views/settings/settings.cj` 里那两行改为单行 + 中段省略（保留盘符/尾部文件名），或按容器宽度裁剪；
-修好后上面四种路径长度应给出同一组数字。修之前，parity 必须在**短路径快照目录**里跑
-（如 `~/.cache/cj-final-1`，57 字符），并在证据里写明路径长度。
+**修复**（commit `a0c7a81`，`fix(cangjie): ellipsize long workspace paths in the settings view`）：
+
+- `src/views/settings/widgets.cj` 的 `KeyValueRow` 把值改成**单行 + 中间省略**（`ellipsizeMiddle()`，
+  保留目录头与文件名尾部），行高恒为 19.25，未截断时行为不变；
+- 被截断时悬停显示完整值的 tooltip，信息不丢；
+- 值列宽 = `min(行宽 × 68%, 行宽 − 标签宽 − 16)`，1440×900 下约 58 个半角字符。
+
+**修复前后对照**（同一二进制、同一 workspace 内容，只改 `--workspace` 路径长度；数据表在 §5）：
+
+| | 修复前（历史数据） | 修复后（本轮实测） |
+|---|---|---|
+| 28–57 字符 | 单行，blur 0.9582 / 0.9541 | blur 0.9582 / 0.9538 |
+| 64 字符 | 折行，blur 0.9063 → FAIL | blur 0.9533，PASS |
+| 72 字符（仓库内） | 折行，blur 0.9054 → FAIL | blur 0.9529，PASS |
+| 96 / 200 字符 | 未测（同一机制必然 FAIL） | blur 0.9526 / 0.9528，PASS |
+
+修复后 28/57/64/96/200 字符的截图与 72 字符截图逐像素相减，差异只落在值行 bbox（x 480–877 / y 466–504），
+卡片边界与页面高度零位移。几何细节、阈值推导与 200 字符压力测试见 `docs/SETTINGS-VIEW.md §1–§2`。
+
+**对验收的影响**：parity 不再需要短路径目录，仓库内 72 字符路径直接跑就是 14/14（§0）；`settings`
+两张的像素指标比修复前低 0.0012–0.0013 SSIM、0.04–0.05pp（值行墨迹变了），仍在阈值内。
 
 ### 7.4 `src/` 编译 warning（71 处，未修）
 
@@ -358,19 +394,19 @@ sha256sum tools/parity/out/*.png > /tmp/a; sha256sum ~/.cache/cj-run2/*.png > /t
 
 ### 7.6 新鲜克隆自检（2026-10-23）
 
-把提交后的仓库重新 `git clone` 到 `~/.cache/cj-v3`（工作树干净、无 `target/`），在克隆里从零构建：
+把分支重新 `git clone` 到 `~/.cache/cj-clone-final`（工作树干净、无 `target/` 与 `out/`，克隆内
+`--workspace` 为 **69 字符**绝对路径），在克隆里从零构建并跑完整门禁：
 
 | 步骤 | 结果 |
 |---|---|
-| `git clone --branch feat/cangjie-rewrite ~/CodeRepo/sandbox/Textura ~/.cache/cj-v3` | 802 个 `.cj`、14 张 `ref/*.png`、`git status` 干净 |
-| `CLEAN=1 ./scripts/build.sh` | 成功，**164.87 s wall**，最大 RSS 999 384 KiB |
-| `cjpm test` | **547/547 通过**，0 失败 0 错误 |
-| 14 张截图（`--workspace` 用 28 字符短路径 `~/.cache/p/ws.json`）+ `metrics.py` | **14/14 通过**（settings-light 10.07% / blur 0.9582）〔在 `~/.cache/cj-v2` 的同一提交代码上实测〕 |
-| 同上但用克隆内路径（64 字符） | **12/14**，FAIL 固定为 `settings-light/dark` |
+| `git clone --branch feat/cangjie-rewrite ~/CodeRepo/sandbox/Textura ~/.cache/cj-clone-final` | 802 个 `.cj`、14 张 `ref/*.png`、`git status` 干净 |
+| `CLEAN=1 ./scripts/build.sh` | 成功，**149.78 s wall**，最大 RSS 999 860 KiB；warning 去重 99 处（`src/` 71 + `third_party/` 28），与 §2 一致 |
+| `cjpm test` | **547/547 通过**，0 失败 0 错误（171.65 s） |
+| `./scripts/parity.sh --theme both` + `./scripts/diff.sh --theme both`（克隆内 69 字符路径） | **14/14 PASS，退出码 0** |
 
-结论：**提交后的仓库自洽**——构建、547 个测试、14 张像素证据都能从零复现。唯一不随仓库走的是
-settings 对构建目录绝对路径长度的敏感性（§7.3）：克隆路径本身刚好越过了折行阈值，所以在克隆目录里
-直接跑 `scripts/parity.sh` 会得到 12/14，换到短路径目录即为 14/14。
+结论：**提交后的仓库自洽**——构建、547 个测试、14 张像素证据都能从零复现，而且**不再依赖构建目录的
+路径长度**：克隆路径 69 字符 > 旧折行阈值 64，修复前这里必然是 12/14（`settings-light/dark` FAIL），
+现在直接 14/14。settings 的路径行只改变值行那几个像素（§7.3）。
 
 ## 8. 复跑清单（接手者照着跑一遍即可复现本文件的全部数字）
 
@@ -378,25 +414,22 @@ settings 对构建目录绝对路径长度的敏感性（§7.3）：克隆路径
 export TMPDIR=~/.cache/tmp
 mkdir -p ~/.cache/tmp && cd ~/CodeRepo/sandbox/Textura/cangjie
 
-# 关键：快照目录要短。settings 会显示 --workspace 全路径，≥64 字符就折行（§7.3）。
-# ~/.cache/cj-final-1 → 57 字符，是本文件全部数字的测量条件。
-rsync -a --delete --exclude 'target/' --exclude 'tools/parity/out/' \
-      --exclude 'third_party/CUI/target/' --exclude 'third_party/cangjie-sdl/target/' \
-      ./ ~/.cache/cj-final-1/
-cd ~/.cache/cj-final-1
+# 不需要短路径目录：settings 的路径行已单行省略（§7.3）。下面的 72 字符仓库路径就是测量条件。
+echo ${#PWD}/tools/parity/workspace.json    # 72
 CLEAN=1 ./scripts/build.sh                                   # §2
 cjpm test                                                    # §2
-TEXTURA_PARITY_THEMES="light dark" ./scripts/parity.sh        # §3 的 14 张
-python3 tools/parity/metrics.py tools/parity/ref tools/parity/out --json ~/.cache/cj-metrics.json
-python3 tools/parity/metrics.py tools/parity/ref tools/parity/out   # 期望 summary 14/14
-echo ${#PWD}/tools/parity/workspace.json    # 期望 57
+./scripts/parity.sh --theme both                             # §3 的 14 张
+./scripts/diff.sh --theme both                               # 三层门；期望 14/14 PASS、退出码 0
+python3 tools/parity/diff.py tools/parity/ref tools/parity/out --report-dir ~/.cache/cj-diffs
 ```
 
-预期输出最后一行：
+预期输出：
 
 ```text
-summary: 14/14 pairs pass (blurred SSIM>=0.95, raw ΔRGB<=32 >=95%)
+gate: 14/14 PASS (theme=both, routes=all) [structure: ruleΔ≤1.5px, shift=(0,0), edge≥90% | visual: blur SSIM≥0.95 | raw: ΔRGB≤32 ≥95%]
+gate: verdict PASS (exit 0)
 ```
 
-退出码 0。任一 pair 落到阈值外，脚本返回 1 并打印该 pair 的行。
-在**长路径**目录里复跑时，期望值是 `12/14`，FAIL 的两张固定是 `settings-light/dark`（§7.3）。
+退出码 0。任一 pair 落到阈值外，`gate.py` 返回 1 并打印该 pair 的失败档位与原因。
+`gate-report.json` 会写在 `tools/parity/out/`（已 gitignore），字段说明见 `docs/PARITY.md §9.5`。
+

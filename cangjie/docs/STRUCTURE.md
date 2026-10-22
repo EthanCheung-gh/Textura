@@ -30,7 +30,7 @@
 | `third_party/cangjie-sdl/` | `sdl` | vendored SDL3 绑定 + `.sdl3` 宿主库 + `.sdl3-ohos` 鸿蒙库 | 只读 |
 | `third_party/CUI/` | `cui` | vendored CUI 0.9.6 | 只读 |
 | `assets/fonts/` | — | 字体说明与后续可嵌入字体 | — |
-| `tools/parity/` | — | 参考图、workspace.json、diff.py、metrics.py、截图脚本 | — |
+| `tools/parity/` | — | 参考图、workspace.json、gate.py（三层门）、metrics.py、diff.py、截图脚本 | — |
 | `harmony/` | — | 鸿蒙工程（AppScope/entry/host）+ HAP 打包链，状态见 `docs/HARMONY.md` | — |
 
 ### 依赖方向（不得反向）

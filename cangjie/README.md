@@ -16,15 +16,17 @@ cangjie-sdl 的 SDL3 绑定；目标有两个：在 1440×900 下与 Web 版逐�
 | 领域内核（Item/Edge/Area/Run、workspace 读写、selectors、日期/季度） | ✅ | `docs/CORE-API.md` |
 | 设计令牌 / 基础控件 / 图标集 | ✅ | `docs/UI-KIT.md` |
 | 单元测试 | ✅ 547 个用例全绿（7 个测试包） | `cjpm test` |
-| Parity（7 路由 × light/dark） | ✅ 14/14 通过（模糊 SSIM 0.9538–0.9885；`ΔRGB≤32` 95.44%–98.46%） | `docs/PARITY-RESULTS.md` || 截图确定性 | ✅ 14/14 两次独立运行逐字节一致 | `docs/PARITY-RESULTS.md §5` |
+| Parity（7 路由 × light/dark） | ✅ 14/14 通过（三层门：结构 + blur SSIM≥0.95 + raw ΔRGB≤32≥95%；blur 0.9529–0.9885，raw 95.39%–98.46%） | `docs/PARITY-RESULTS.md` |
+| 截图确定性 | ✅ 14/14 两次独立运行逐字节一致 | `docs/PARITY-RESULTS.md §5` |
 | 鸿蒙 HAP 构建 | ✅ `BUILD SUCCESSFUL`，≈29 MB（25 + 8 个 `.so`） | `docs/HARMONY.md §5` |
 | HAP 签名 / 安装 | ❌ 未签名（本机无 `com.ethancheung.textura` 的调试 profile） | `docs/HARMONY.md §7.1` |
 | 真机运行 | ❌ 未验证（`hdc list targets` 为空） | `docs/HARMONY.md §6` |
 
 一句话：**桌面侧已完成并有像素证据；鸿蒙侧构建链完整但停在「无设备 + 无签名材料」。**
 
-> Parity 的 14/14 有一个前提：在**短路径**快照目录里跑（`--workspace` 57 字符）。`settings` 的路径行
-> 没做省略号截断，≥64 字符会折行并让该路由掉出阈值（已知缺陷 7b）。在仓库内直接构建（72 字符）会命中。
+> Parity 直接在仓库内构建目录跑（`--workspace` 72 字符）就是 14/14：`settings` 的路径行已改为单行中间
+> 省略（悬停 tooltip 显示全文），28–200 字符路径的 blur SSIM 稳定在 ≈0.952–0.958、版式逐行一致，
+> 详见 `docs/SETTINGS-VIEW.md`。
 
 ## 2. 快速开始
 
@@ -65,20 +67,24 @@ CLI 全参数、退出码与“为什么 `--snapshot` 传的是 `.png` 而 CUI �
 
 ```bash
 cd cangjie && source scripts/env.sh
-TEXTURA_PARITY_THEMES="light dark" ./scripts/parity.sh    # 14 张 -> tools/parity/out/（约 35 秒）
+./scripts/parity.sh --theme both                          # 14 张 -> tools/parity/out/（约 30 秒）
 
-# 验收门：结构 ≤1px + 1px 高斯模糊 SSIM ≥0.95 + 原始 ΔRGB≤32 ≥95%
-python3 tools/parity/metrics.py tools/parity/ref tools/parity/out
-#   -> summary: 14/14 pairs pass (blurred SSIM>=0.95, raw ΔRGB<=32 >=95%)   退出码 0
+# 验收门（三层 AND，退出码 0 才算过）：
+#   结构（长直线偏差 ≤1.5px、全局位移 (0,0)、边缘 1px 覆盖 ≥90%）
+#   + 1px 高斯模糊 SSIM ≥0.95 + 原始 ΔRGB≤32 ≥95%
+./scripts/diff.sh --theme both
+#   -> gate: 14/14 PASS ... ; gate: verdict PASS (exit 0)
 
-# 出图复核（side-by-side + 差异热力图）；判定用的是原始层阈值，只作定位
+# 出图复核（side-by-side + 差异热力图）；只作定位，判定看 diff.sh
 python3 tools/parity/diff.py tools/parity/ref tools/parity/out --report-dir tools/parity/out/diffs
 ```
 
 - 参考图 oracle 在 `tools/parity/ref/`（Chromium 截图，1440×900、DPR=1、`Noto Sans CJK SC`、锚点
   `2026-03-16`），必须入库；`tools/parity/out/` 是生成物，已 gitignore。
-- **在短路径目录里跑**（例如 `~/.cache/cj-final-1`，`--workspace` 57 字符）。`settings` 会显示这个路径，
-  长路径会折行导致该路由 FAIL（已知缺陷 7b，`docs/PARITY-RESULTS.md §7.3`）。
+- 门禁实现与 JSON 字段见 `docs/PARITY.md §9`；`metrics.py` 只聚合视觉 + 原始两档，完整三层结论以
+  `scripts/diff.sh`（内部 `tools/parity/gate.py`）为准。
+- `settings` 的长路径行已截断（单行 + 中间省略 + tooltip），构建目录路径长度不再影响门禁，
+  详见 `docs/SETTINGS-VIEW.md`。
 - 实测数字、两次运行 sha256、逐路由最差残差块定位：`docs/PARITY-RESULTS.md`。
 - 重跑参考图需要 Web 版能构建：`docs/BUILD.md §5`。
 
@@ -115,7 +121,7 @@ cangjie/
 │   └── views/<name>/       七个视图，各自 <name>/logic/ 放纯算法 + 测试
 ├── third_party/            CUI 0.9.6、cangjie-sdl（只读，见 third_party/README.md）
 ├── harmony/                鸿蒙工程（AppScope / entry / host / scripts 的产物落点）
-├── tools/parity/           ref/（oracle）、workspace.json、diff.py、metrics.py、capture_ref.mjs
+├── tools/parity/           ref/（oracle）、workspace.json、gate.py、metrics.py、diff.py、capture_ref.mjs
 ├── docs/                   见 §6
 └── assets/fonts/           字体说明
 ```
@@ -175,7 +181,7 @@ cangjie/
 | 5 | **`libcangjie-trace.so` 无来源** | 运行时按名 dlopen，找不到 | 已知风险 R5，通常只打一条 warn，不影响启动（HARMONY §7.4） |
 | 6 | **SOP 检查器字段不可键入** | CUI 无绝对定位容器，自绘面板挂不了 `TextField`；Area/输入框是绘制态 | 重命名、改字段值不可用；勾选/增删/类型 chip/复制/删除/运行都可用（SOP-VIEW §4.4） |
 | 7 | **settings 内容偏离参考图** | 文案 `importDocument` vs Web `replaceWorkspace`；CUI 多一个「清空工作区…」按钮 | 产品决策项，见 PARITY-RESULTS §7.1 |
-| 7b | **settings 路径行会折行** | 「工作区文件」行没做省略号截断，`--workspace` ≥64 字符时折行并把下方内容下移 ~24px，该路由 parity 掉到 FAIL | **真实缺陷，待修**（改单行 + 中段省略）；修之前 parity 必须在短路径目录跑，见 PARITY-RESULTS §7.3 |
+| 7b | ~~**settings 路径行会折行**~~（已修） | 曾因「工作区文件 / 数据目录」行没做省略截断，`--workspace` ≥64 字符时折行并把下方内容下移 ~24px，该路由 parity 直接 FAIL | commit `a0c7a81` 起改为单行 + 中间省略 + tooltip；28/57/64/96/200 字符实测 blur ≈0.952–0.958、版式逐行一致（`docs/SETTINGS-VIEW.md §2`，`docs/PARITY-RESULTS.md §7.3`） |
 | 8 | **1px 线锐度不同** | 位置 ≤1px，但 CUI 把 1px 线画成 2px 半强度软边 | 渲染层特性，模糊后消失；不属结构失败 |
 | 9 | **字形 AA 模型不同** | Chromium LCD 次像素（彩边）vs FreeType 灰度 | 不可消除，是原始像素指标只要求 95% 的原因 |
 | 10 | **71 处 `src/` 编译 warning** | 全是 unused import/variable/unreachable pattern | 不影响产物；清理需另开任务 |
@@ -230,5 +236,6 @@ $HDC shell ls -l /data/app/el2/100/base/com.ethancheung.textura/files/textura/
 | `docs/SHELL.md` | 外壳几何、路由契约、命令面板、快速收集 |
 | `docs/{CALENDAR,OKR,GTD,GANTT,SOP,DASHBOARD}-LOGIC.md` | 六个视图的算法层 |
 | `docs/{GANTT,SOP}-VIEW.md` | 两个自绘视图的实现与已知差异 |
+| `docs/SETTINGS-VIEW.md` | 设置视图的移植来源、长路径截断策略与 metric 说明 |
 | `docs/HARMONY.md` | 鸿蒙链路：交叉编译、打包闭包、签名、真机验收、风险 |
 | `third_party/README.md` | vendored 依赖 pin 与补丁登记 |
