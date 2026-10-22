@@ -41,6 +41,15 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "Textura <dev@textura.app>"
+    "publisher": "Textura <dev@textura.app>",
+    "license": "Apache-2.0",
+    "licenseFile": "../LICENSE",
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/doc/textura/copyright": "../LICENSE"
+        }
+      }
+    }
   }
 }

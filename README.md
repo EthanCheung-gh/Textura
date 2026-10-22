@@ -416,7 +416,7 @@ Textura/
 
 ## 许可证与致谢
 
-以 MIT 许可证发布，见 [LICENSE](LICENSE)。
+以 **Apache License 2.0**（© 2026 EthanCheung）发布，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
 
 这个项目站在这些开源工作上：React、Zustand、Vite、TypeScript、Tauri、
 [@xyflow/react](https://reactflow.dev/)（流程画布）、[@dagrejs/dagre](https://github.com/dagrejs/dagre)（分层布局）、

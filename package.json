@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Textura · 织理 — 结构化执行工作台",
+  "license": "Apache-2.0",
+  "author": "EthanCheung",
   "scripts": {
     "dev": "vite --port 1420 --strictPort",
     "build": "tsc --noEmit && vite build",
