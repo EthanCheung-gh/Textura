@@ -455,6 +455,74 @@ class WarningText <: Widget {
 /* ------------------------------------------------------------------ */
 
 /**
+ * Middle ellipsis for single-line values, keeping the tail (the file name) readable.
+ *
+ * The Web build lets `.settings-row-value` wrap (`word-break: break-all`, appshell.css:406-413)
+ * because its two values are short (`localStorage`, `textura.workspace.v1`). A desktop
+ * workspace path is unbounded, and a wrapped row grows by 17.25px and pushes every card below
+ * it, so the port truncates instead — the reference card geometry then holds for any path
+ * length (see docs/SETTINGS-VIEW.md).
+ */
+func ellipsizeMiddle(
+    ctx: UiContext,
+    text: String,
+    limit: Float32,
+    sizePx: Float32,
+    weight: Int64,
+    family: ?String
+): String {
+    if (measureText(ctx, text, sizePx, weight, family) <= limit) {
+        return text
+    }
+    let runes = text.toRuneArray()
+    if (runes.size <= 2) {
+        return text
+    }
+    let marker = "…"
+    let budget = max(0.0, limit - measureText(ctx, marker, sizePx, weight, family))
+    var head: Int64 = 0
+    var tail: Int64 = runes.size - 1
+    var lastFit = ""
+    // Grow the tail first (file name), then the head, alternating while the run still fits.
+    var takeTail = true
+    while (head <= tail) {
+        let candidate = middleSlice(runes, head, tail, marker)
+        if (measureText(ctx, candidate, sizePx, weight, family) > budget) {
+            break
+        }
+        lastFit = candidate
+        if (takeTail) {
+            tail -= 1
+        } else {
+            head += 1
+        }
+        takeTail = !takeTail
+    }
+    if (lastFit.isEmpty()) {
+        marker
+    } else {
+        lastFit
+    }
+}
+
+/** `head..<head` prefix + `…` + `tail..<end` suffix. */
+func middleSlice(runes: Array<Rune>, head: Int64, tail: Int64, marker: String): String {
+    let sb = StringBuilder()
+    var index: Int64 = 0
+    while (index < head) {
+        sb.append(runes[index])
+        index += 1
+    }
+    sb.append(marker)
+    index = tail
+    while (index < runes.size) {
+        sb.append(runes[index])
+        index += 1
+    }
+    sb.toString()
+}
+
+/**
  * `.settings-row` (appshell.css:393-413): `display: flex; align-items: baseline;
  * justify-content: space-between; gap: 16px; font-size: 12.5px` with a mono
  * 11.5px value capped at `max-width: 68%` and right aligned.
@@ -468,6 +536,7 @@ class KeyValueRow <: Widget {
     private let label: String
     private let value: String
     private var frame = Rect.zero()
+    private var truncated: Bool = false
 
     init(tokens: ThemeTokens, label: String, value: String) {
         this.tokens = tokens
@@ -477,17 +546,16 @@ class KeyValueRow <: Widget {
     }
 
     public func measure(ctx: UiContext, available: Size): Size {
+        let _ = ctx
         let width = max(1.0, available.w)
-        let labelWidth = measureText(ctx, label, TextSize.controlSmall, 400, Option<String>.None)
-        let valueLimit = min(width * 0.68, max(1.0, width - labelWidth - tokens.space.s4))
-        let lines = wrapText(ctx, value, valueLimit, TextSize.caption, 400, Some(fontMono()), true)
         let labelLine = lineBoxHeight(TextSize.controlSmall, LH_BODY)
         let valueLine = lineBoxHeight(TextSize.caption, LH_BODY)
         // `.settings-row { align-items: baseline }`: the 11.5px mono value is pushed 2px down so
         // its baseline matches the 12.5px label, so the row box is 19.25 tall. The 2px is the
         // measured Chromium baseline delta between `--font-mono` (11.5) and the UI font (12.5)
         // on the parity host (reference rows sit at 436.4 / 461.7 / 486.9 / 512.2, pitch 25.25).
-        Size(width, max(labelLine, VALUE_BASELINE_DROP + valueLine * Float32(lines.size)))
+        // The value is always one line (ellipsized), so the row height is content-independent.
+        Size(width, max(labelLine, VALUE_BASELINE_DROP + valueLine))
     }
 
     public func layout(_: UiContext, rect: Rect): Unit {
@@ -506,12 +574,25 @@ class KeyValueRow <: Widget {
             pointSize: fpSize(ctx, TextSize.controlSmall), style: textStyleOf(400))
         let labelWidth = measureText(ctx, label, TextSize.controlSmall, 400, Option<String>.None)
         let valueLimit = min(frame.w * 0.68, max(1.0, frame.w - labelWidth - tokens.space.s4))
-        let lines = wrapText(ctx, value, valueLimit, TextSize.caption, 400, Some(fontMono()), true)
-        drawTextLines(ctx, lines, frame.x, frame.y + VALUE_BASELINE_DROP + valueHalf, frame.w, TextSize.caption,
+        let shown = ellipsizeMiddle(ctx, value, valueLimit, TextSize.caption, 400, Some(fontMono()))
+        truncated = shown != value
+        drawTextLines(ctx, [shown], frame.x, frame.y + VALUE_BASELINE_DROP + valueHalf, frame.w, TextSize.caption,
             lineBoxHeight(TextSize.caption, LH_BODY), 400, colour.text, TextAlign.Trailing, Some(fontMono()))
     }
 
-    public func handle(_: UiContext, _: UiEvent): Bool {
+    public func handle(ctx: UiContext, event: UiEvent): Bool {
+        // A truncated value still has to be readable: hovering shows the full text (the Web
+        // build relies on `word-break` wrapping, which would change the card height here).
+        if (!truncated) {
+            return false
+        }
+        match (event) {
+            case UiEvent.MouseMove(x, y) =>
+                if (frame.contains(x, y)) {
+                    ctx.showTooltip(value, frame)
+                }
+            case _ => ()
+        }
         false
     }
 }
