@@ -1,0 +1,437 @@
+package cui.core
+
+import std.collection.ArrayList
+import sdl.{Rect, Size, UiEvent}
+
+/*
+ * Declarative builder support.
+ *
+ * The UI tree is described with trailing-lambda blocks (see VStack, HStack, Panel).
+ * Each concrete widget registers itself with the innermost open block by calling
+ * `emit` from its constructor, so a block such as
+ *
+ *     VStack {
+ *         Label("Title")
+ *         Button("OK") { => save() }
+ *     }
+ *
+ * collects the Label and Button as the stack's children with no explicit array.
+ * Ordinary control flow works inside a block because each statement simply runs:
+ *
+ *     VStack {
+ *         for (row in rows) { buttonRow(row) }
+ *         if (expanded) { detailPanel() }
+ *     }
+ *
+ * The stack of open blocks is process-private and allocation-reused. CUI's SDL UI/build protocol
+ * is single-threaded; workers hand results to that thread through DesktopApp.post. Every block
+ * balances its push and pop through `buildChildren`.
+ */
+private struct FocusDeclarationRange {
+    let start: Int64
+    let end: Int64
+
+    init(start: Int64, end: Int64) {
+        this.start = start
+        this.end = end
+    }
+}
+
+private class BuildBlock {
+    let widgets = ArrayList<Widget>()
+    var nextFocusDeclaration: Int64
+    var lastFocusStart: Int64
+
+    init(nextFocusDeclaration: Int64) {
+        this.nextFocusDeclaration = nextFocusDeclaration
+        this.lastFocusStart = nextFocusDeclaration
+    }
+}
+
+private let openBlocks = ArrayList<BuildBlock>()
+var activeStateStore: ?StateStore = None // cjcheck-ignore: global-var # CUI builds on one SDL UI thread; workers use DesktopApp.post
+
+/*
+ * Register a freshly constructed widget with the enclosing builder block. Every widget
+ * constructor calls this. Outside any block (for example a widget built to be stored
+ * and reused) it is a no-op, so widgets stay ordinary values. Pass an existing widget
+ * to place it explicitly: `VStack { for (w in built) { emit(w) } }`.
+ */
+public func emit(widget: Widget): Unit {
+    if (!openBlocks.isEmpty()) {
+        let block = openBlocks[openBlocks.size - 1]
+        let end = currentFocusDeclarationCount()
+        block.widgets.add(widget)
+        block.lastFocusStart = block.nextFocusDeclaration
+        block.nextFocusDeclaration = end
+    }
+}
+
+/*
+ * A modifier is evaluated immediately after the expression that emitted its child. Find
+ * that exact child in the active block and replace it with the decorated node. Searching
+ * backwards also keeps modifiers safe when a stored widget is decorated after another
+ * declaration in the same block.
+ */
+protected func replaceLastEmission(original: Widget, replacement: Widget): Unit {
+    if (openBlocks.isEmpty()) {
+        return
+    }
+    let block = openBlocks[openBlocks.size - 1]
+    var i = block.widgets.size - 1
+    while (i >= 0) {
+        if (let Some(candidate) <- (block.widgets[i] as Object)) {
+            if (let Some(source) <- (original as Object)) {
+                if (refEq(candidate, source)) {
+                    block.widgets[i] = replacement
+                    return
+                }
+            }
+        }
+        i -= 1
+    }
+    // The original was never emitted into this block (a stored widget decorated inside a
+    // later block). Append the decorated node at the decoration point — overwriting the
+    // last element here would silently destroy an unrelated sibling.
+    block.widgets.add(replacement)
+    let current = currentFocusDeclarationCount()
+    block.lastFocusStart = current
+    block.nextFocusDeclaration = current
+}
+
+/* Owner-preserving focus fragment attached to an emitted value; stored widgets return None. */
+func focusFragmentForEmission(widget: Widget): ?FocusSnapshot {
+    if (openBlocks.isEmpty()) {
+        return None
+    }
+    let block = openBlocks[openBlocks.size - 1]
+    if (block.widgets.isEmpty() || !sameWidgetIdentity(block.widgets[block.widgets.size - 1], widget)) {
+        return None
+    }
+    let range = FocusDeclarationRange(block.lastFocusStart, block.nextFocusDeclaration)
+    if (range.start < 0 || range.end <= range.start) {
+        return None
+    }
+    match (currentStateStoreIfActive()) {
+        case Some(store) => Some(store.focusFragmentBetween(range.start, range.end))
+        case None => None
+    }
+}
+
+/*
+ * Run a builder block and return every widget it declares, in order.
+ */
+private func buildChildrenRaw(body: () -> Unit): Array<Widget> {
+    let block = BuildBlock(currentFocusDeclarationCount())
+    openBlocks.add(block)
+    try {
+        body()
+    } finally {
+        openBlocks.remove(at: openBlocks.size - 1)
+    }
+    block.widgets.toArray()
+}
+
+func currentFocusDeclarationCount(): Int64 {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.focusDeclarationCount()
+        case None => -1
+    }
+}
+
+private func sameWidgetIdentity(left: Widget, right: Widget): Bool {
+    match (left as Object) {
+        case Some(leftObject) => match (right as Object) {
+            case Some(rightObject) => refEq(leftObject, rightObject)
+            case None => false
+        }
+        case None => false
+    }
+}
+
+private func buildChildRaw(body: () -> Unit): Widget {
+    let children = buildChildrenRaw(body)
+    match (children.size) {
+        case 0 => EmptyView()
+        case 1 => children[0]
+        case _ => Stack(Axis.Vertical, children)
+    }
+}
+
+/*
+ * Builds one ordinary declarative body through the automatic composition graph. `kind` is part of
+ * positional identity, preventing unlike neighbouring container bodies from aliasing after a
+ * conditional branch changes. Keyed/ForEach adds the stable item identity around this scope.
+ */
+protected func buildChildren(kind: String, body: () -> Unit): Array<Widget> {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.composeChildren(kind, {=> buildChildrenRaw(body)})
+        case None => buildChildrenRaw(body)
+    }
+}
+
+/* Compatibility path for application-defined widgets; built-in widgets pass a semantic kind. */
+protected func buildChildren(body: () -> Unit): Array<Widget> {
+    buildChildren("Body", body)
+}
+
+/*
+ * Run a builder block that wraps a single child. No declaration yields an empty
+ * placeholder; several are stacked vertically.
+ */
+protected func buildChild(kind: String, body: () -> Unit): Widget {
+    let children = buildChildren(kind, body)
+    match (children.size) {
+        case 0 => EmptyView()
+        case 1 => children[0]
+        case _ => Stack(Axis.Vertical, children)
+    }
+}
+
+/* Compatibility path for application-defined widgets; built-in widgets pass a semantic kind. */
+protected func buildChild(body: () -> Unit): Widget {
+    buildChild("Body", body)
+}
+
+/** Builds an application root while retaining and pruning its keyed local state. */
+protected func buildRoot(body: () -> Unit, stateStore: StateStore): Widget {
+    let previous = activeStateStore
+    activeStateStore = Some(stateStore)
+    stateStore.beginBuild()
+    try {
+        let root = try {
+            buildAutomaticRootChild(body, stateStore)
+        } catch (error: Exception) {
+            throw rollbackUiFailure(error, {=> stateStore.cancelBuild()})
+        }
+        stateStore.finishBuildBody()
+        let cleanupFailure = try {
+            stateStore.finishBuild()
+        } catch (error: Exception) {
+            throw rollbackUiFailure(error, {=> stateStore.cancelBuild()})
+        }
+        match (cleanupFailure) {
+            case Some(error) => throw error
+            case None => root
+        }
+    } finally {
+        activeStateStore = previous
+    }
+}
+
+/* Keeps the implicit zero/one/many-child root wrapper inside the automatic scope it represents. */
+private func buildAutomaticRootChild(body: () -> Unit, stateStore: StateStore): Widget {
+    stateStore.composeChildren("Root", {=> [buildChildRaw(body)]})[0]
+}
+
+/** Builds one identity scope without changing the normal widget collection rules. */
+protected func buildKeyedChild(key: String, body: () -> Unit): Widget {
+    match (currentStateStoreIfActive()) {
+        case Some(store) =>
+            store.pushScope(key)
+            try {
+                buildChild("Keyed", body)
+            } finally {
+                store.popScope()
+            }
+        case None => buildChild("Keyed", body)
+    }
+}
+
+/** Builds or reuses one explicit retained subtree in the active StateStore. */
+func buildRetainedChild(
+    key: String,
+    revision: UInt64,
+    cachePaint: Bool,
+    body: () -> Unit,
+    hasExternalRevision!: Bool
+): RetainedRecord {
+    match (currentStateStoreIfActive()) {
+        // RetainedSubtree is already an explicit restart boundary. Nesting an automatic boundary
+        // here would steal its State dependencies and hide explicit revision changes from its
+        // established diagnostic and invalidation contract.
+        case Some(store) => store.retainWidget(key, revision, cachePaint, {=> buildChildRaw(body)},
+            hasExternalRevision: hasExternalRevision)
+        case None => RetainedRecord(revision, cachePaint, buildChildRaw(body))
+    }
+}
+
+/** Throws `IllegalStateException` when no application root is being built. */
+protected func currentStateStore(): StateStore {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store
+        case None => throw IllegalStateException("rememberState must be called while building a DesktopApp view")
+    }
+}
+
+/** Returns the active build store without requiring that the caller is inside a build. */
+func currentStateStoreIfActive(): ?StateStore {
+    match (activeStateStore) {
+        case Some(store) where store.acceptingBuildDeclarations => Some(store)
+        case _ => None
+    }
+}
+
+/** Retains implicit control state when building an app and falls back for headless use. */
+protected func localState<T>(key: String, initial: () -> T): State<T> {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.remember<T>(key, initial)
+        case None => State<T>(initial())
+    }
+}
+
+/**
+ * Throws `IllegalArgumentException` when a required control id is empty, with one consistent message.
+ * Every id-taking control routes its check here so the guard and its wording live in a single place
+ * (previously each control inlined its own copy).
+ */
+protected func requireControlId(id: String, kind: String): Unit {
+    if (id.isEmpty()) {
+        throw IllegalArgumentException("${kind} id must not be empty")
+    }
+}
+
+/*
+ * Resolves a control's identity from an optional explicit key (the unified `key!` parameter). A
+ * given key is used verbatim after a non-empty check; when absent, the identity is auto-derived by
+ * declaration order within the current `Keyed` scope. This is the single seam behind every control's
+ * optional identity: state that must survive structural change passes an explicit key, everything
+ * else lets build order name it.
+ */
+protected func resolveControlKey(key: ?String, kind: String): String {
+    match (key) {
+        case Some(value) =>
+            requireControlId(value, kind)
+            value
+        case None => controlIdentity(kind)
+    }
+}
+
+/*
+ * A focus/press identity for a control that declared no explicit id. During a build the
+ * identity is scoped by `Keyed` and deduplicated in declaration order, so identical
+ * default names (two icon-only buttons, two "确定" buttons) never share interaction
+ * state. Outside a build the base name is returned unchanged.
+ */
+protected func controlIdentity(base: String): String {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.uniqueControlId(base)
+        case None => base
+    }
+}
+
+/*
+ * Records `id` as a keyboard-focus stop in build (declaration) order. Focusable controls
+ * call this once their identity is known, so the shell can walk them with Tab / Shift+Tab.
+ * Outside a build it is a no-op, keeping headless widget construction side-effect free.
+ */
+protected func registerFocusable(id: String): Unit {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.registerFocusable(FocusTarget(currentMountScope(store).elementId, id))
+        case None => ()
+    }
+}
+
+/*
+ * Assigns a build-order identity and registers it as a focus stop in one step. Public so
+ * application-defined widgets can join the Tab order exactly like built-in controls: call it in
+ * the constructor with a stable base name, then pair `ctx.hasFocus(id)` / `ctx.showFocusRing(id)`
+ * in `handle` / `draw` (see `examples/disclosure` for a complete custom row).
+ */
+public func focusableControlIdentity(base: String): String {
+    let id = controlIdentity(base)
+    registerFocusable(id)
+    id
+}
+
+/** Drops `id` from the current build's focus ring (no-op outside a build). */
+protected func unregisterFocusable(id: String): Unit {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.unregisterFocusable(id)
+        case None => ()
+    }
+}
+
+/** The number of focus stops the current build has registered so far (0 outside a build). */
+protected func focusableCountNow(): Int64 {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.focusableCount()
+        case None => 0
+    }
+}
+
+/** The focus stops registered since `start` in the current build; empty outside a build. */
+protected func focusablesSince(start: Int64): Array<String> {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.focusablesFrom(start)
+        case None => []
+    }
+}
+
+/** Keeps the focus ring consistent when a control's `.key(...)` overrides its auto id. */
+protected func reregisterFocusable(previous: String, replacement: String): Unit {
+    match (currentStateStoreIfActive()) {
+        case Some(store) => store.reregisterFocusable(previous, replacement)
+        case None => ()
+    }
+}
+
+/** Concatenates the focus stops of `children` in declaration order (container helper). */
+protected func collectFocusableIds(children: Array<Widget>): Array<String> {
+    let ids = ArrayList<String>()
+    for (child in children) {
+        for (id in child.focusableIds()) {
+            ids.add(id)
+        }
+    }
+    ids.toArray()
+}
+
+/*
+ * Claims the pointer shape for `id` when a MouseMove falls inside `frame`. Controls call
+ * this at the top of `handle` without consuming the event, so hover propagates to every
+ * layer and the shell resolves the top-most claim (see `UiContext.claimHover`). Public for
+ * application-defined widgets, which pair it with `ctx.isHovered(id)` in `draw`.
+ */
+public func claimHoverIfInside(ctx: UiContext, event: UiEvent, frame: Rect, id: String, shape: CursorShape): Unit {
+    match (event) {
+        case UiEvent.MouseMove(x, y) =>
+            if (frame.contains(x, y)) {
+                ctx.claimHover(id, shape)
+            }
+        case _ => ()
+    }
+}
+
+/*
+ * Zero-size filler used where a child is required but none was declared. It never
+ * emits, so `buildChild` can create it while an outer block is still open.
+ */
+class EmptyView <: Widget {
+    public func measure(_: UiContext, _: Size): Size {
+        Size.zero()
+    }
+
+    public func layout(_: UiContext, _: Rect): Unit {}
+
+    public func draw(_: UiContext): Unit {}
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+
+    public func pointerEventScope(): PointerEventScope {
+        PointerEventScope.LayoutBounds
+    }
+}
+
+/*
+ * The shared body of a control's `key(...)` modifier: validates the explicit identity and
+ * swaps the auto-generated focus registration for it. Returns the validated id so the
+ * caller's only remaining work is storing it and returning itself for chaining.
+ */
+protected func rekeyControl(previous: String, value: String, kind: String): String {
+    requireControlId(value, kind)
+    reregisterFocusable(previous, value)
+    value
+}
