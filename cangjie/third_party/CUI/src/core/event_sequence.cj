@@ -27,8 +27,12 @@ protected func dispatchEventRecord(
     complete: (UiEvent) -> Unit
 ): Unit {
     context.beginEvent(record.metadata)
+    // TEXTURA-CUI-P08: a touch-driven backend reports a primary press as `RawCode(0|1)`; fold it
+    // into `Left` once, here, so every control protocol (built-in and application-defined) sees
+    // one spelling. See `pointer_buttons.cj`.
+    let event = normalizePointerButton(record.event)
     try {
-        dispatchWithCompletion(record.event, prepare, route, complete)
+        dispatchWithCompletion(event, prepare, route, complete)
     } finally {
         context.endEvent()
     }

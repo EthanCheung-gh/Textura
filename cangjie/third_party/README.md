@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -32,6 +32,20 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 ## CUI 补丁
 
 `CUI-P01-hosted-frame-step` 已包含在源码里，位置 `CUI/src/desktop/desktop_app.cj`。它把阻塞的 `run()` 循环拆成宿主可逐帧驱动的 `beginHostedRun` / `step` / `endHostedRun`，供鸿蒙 XComponent `OnFrame` 使用。不要删除或重命名这些方法。
+
+### CUI-P08-pointer-button-normalization（本仓新增，最小补丁）
+
+- 位置：`CUI/src/core/pointer_buttons.cj`（新增 `normalizePointerButton`）+
+  `CUI/src/core/event_sequence.cj`（`dispatchEventRecord` 入口归一）。
+- 现象：桌面 SDL 后端把主键报成 `MouseButton.Left`，而触摸驱动的后端（鸿蒙 XComponent 上的手指）
+  报 `MouseButton.RawCode(0)`（SDL 的"无按键信息"）或 `RawCode(1)`（左键真实码）。CUI 内建控件的
+  协议写死 `Left`，于是按钮/分段/输入框/下拉全部"点不动"，而 hover 与滚轮正常 —— 最难定位的一类输入 bug。
+- 改动：事件进入框架时**一次**归一：`RawCode(0|1)` → `Left`（`MouseDown`/`MouseUp` 都做），
+  中间键/右键/滚轮轴原样保留。`DesktopApp` 与 `WidgetTestHost` 共用 `dispatchEventRecord`，所以
+  真机路径与主机测试走同一条归一；应用层 `textura.ui.isPrimaryPointerButton` 仍接受原始码，双保险。
+- 影响：不改变桌面行为（本来就是 `Left`）；不改变布局与像素。门禁测试
+  `src/shell/pointer_gate_test.cj` 禁止生产源码再直接匹配 `MouseButton.Left`。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01..P07 同流程），并在本表登记版本。
 
 ### CUI-P07-hosted-failure-accessor（本仓新增，只读诊断出口）
 
