@@ -287,7 +287,12 @@ public class SidebarView <: Widget {
                 }
                 hoveredRow = next
                 return next >= 0
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(button, x, y) =>
+                // `isPrimaryPointerButton`: a touch-first backend may deliver `RawCode(0|1)` instead
+                // of `MouseButton.Left` (see its doc comment), and a nav row must still respond.
+                if (!isPrimaryPointerButton(button)) {
+                    return false
+                }
                 var index = 0
                 while (index < navRects.size) {
                     if (navRects[index].contains(x, y)) {

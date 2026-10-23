@@ -65,19 +65,35 @@ public let NOTICE_LIFETIME_MS: Int64 = 5000
  * `localStorage` replacement for the desktop build:
  * `$HOME/.textura/ui-prefs.json` keeps the last route, theme and palette recents.
  * It is only written in interactive mode — `--snapshot` runs never touch it.
+ *
+ * The path is `$HOME`-relative on the desktop, but a host whose process environment has no usable
+ * `HOME` (a HarmonyOS HAP: the process starts in a read-only directory and the sandbox is elsewhere)
+ * must pass its own absolute path with `load(path)`. Writing is still best-effort — a read-only
+ * location never breaks the shell — but a failure is now *recorded* in `lastWriteError` instead of
+ * being swallowed: the device build reports it through the host probe, because "preferences never
+ * persist and nobody notices" was exactly how the last route silently stopped round-tripping.
  */
 public class ShellPreferences {
     public var route: String = ""
     public var theme: String = ""
     public var recent: Array<PaletteRecentRef> = []
     public let path: String
+    /** True when the most recent `persist()` reached the filesystem. */
+    public var lastWriteOk: Bool = false
+    /** Exception text of the most recent failed `persist()`; empty when it succeeded. */
+    public var lastWriteError: String = ""
 
     private init(path: String) {
         this.path = path
     }
 
     public static func load(): ShellPreferences {
-        let prefs = ShellPreferences(preferencesPath())
+        ShellPreferences.load(preferencesPath())
+    }
+
+    /** Loads from an explicit path — what a host with its own sandbox layout needs. */
+    public static func load(path: String): ShellPreferences {
+        let prefs = ShellPreferences(path)
         try {
             let text = String.fromUtf8(File.readFrom(prefs.path))
             match (parseJson(text)) {
@@ -125,17 +141,31 @@ public class ShellPreferences {
             ("theme", JsonValue.JsonString(theme)),
             ("recent", JsonValue.JsonArray(recentRows.toArray()))
         ])
-        try {
-            let parent = match (path.lastIndexOf("/")) {
-                case Some(index) => path[0..index]
-                case None => "."
-            }
-            if (!parent.isEmpty()) {
+        lastWriteOk = false
+        lastWriteError = ""
+        let parent = match (path.lastIndexOf("/")) {
+            case Some(index) => path[0..index]
+            case None => "."
+        }
+        if (!parent.isEmpty()) {
+            // Cangjie 1.2.0's `Directory.create` FAILS when the directory already exists
+            // ("The input path `…` is already exists."). Sharing one try block with the write below
+            // made that the normal case: the folder is created by the first run, so every later
+            // preference write aborted before touching the file — silently, because the exception was
+            // swallowed. On the device that looked like "the app always reopens on the dashboard".
+            try {
                 Directory.create(parent, recursive: true)
+            } catch (_: Exception) {
+                // Already there (or not creatable): the write is the authoritative check.
             }
+        }
+        try {
             File.writeTo(path, writeJson(document).toArray())
-        } catch (_: Exception) {
-            // Preferences are a convenience; a read-only HOME must not break the shell.
+            lastWriteOk = true
+        } catch (error: Exception) {
+            // Preferences are a convenience; a read-only HOME must not break the shell. The reason is
+            // kept for diagnostics — see the class comment.
+            lastWriteError = error.message
         }
     }
 }
@@ -191,6 +221,12 @@ public class ShellRuntime {
     public var paletteQueryMemory: String = ""
     public var captureSession: ArrayList<CaptureEntry> = ArrayList<CaptureEntry>()
     public let prefs: ShellPreferences
+    /**
+     * Called when this runtime changes something the shell paints but the store does not own (the
+     * autosave phase shown in the sidebar footer). `ShellHost` points it at its CUI revision, so a
+     * `saving → saved → idle` transition repaints instead of freezing on "正在保存…".
+     */
+    public var onVisualChange: ?(() -> Unit) = None
     private var noticeDeadlines: ArrayList<(String, Int64)> = ArrayList<(String, Int64)>()
 
     public init(prefs: ShellPreferences, store: AppStore) {
@@ -238,6 +274,7 @@ public class ShellRuntime {
     /** `FrameHandler` callback: advance the autosave state machine and expire notices. */
     public func tick(store: AppStore, info: FrameInfo): Unit {
         elapsedMs = Int64(info.elapsedMs)
+        let phaseBefore = savePhase
         if (savePhase == SAVE_SAVING && elapsedMs >= saveDeadline) {
             if (store.save()) {
                 savePhase = SAVE_SAVED
@@ -247,6 +284,11 @@ public class ShellRuntime {
             savedUntil = elapsedMs + SAVE_FLASH_MS
         } else if (savePhase == SAVE_SAVED && elapsedMs >= savedUntil) {
             savePhase = SAVE_IDLE
+        }
+        if (savePhase != phaseBefore) {
+            // The footer's save indicator is runtime state, not store state: without this the shell
+            // would keep showing whatever it rendered last (it is not a CUI State either).
+            visualChanged()
         }
         let notices = store.notices.value()
         for ((id, deadline) in noticeDeadlines) {
@@ -264,7 +306,13 @@ public class ShellRuntime {
         }
     }
 
-    /** Persists route/theme changes and the palette recents list (interactive only). */
+    /**
+     * Persists route/theme changes and the palette recents list (interactive only).
+     *
+     * A failed write is retried on the next build instead of being remembered as done: the sandbox
+     * directory can appear one frame late (a fresh install), and `lastPersisted*` is the only state
+     * that would otherwise keep the shell from ever trying again.
+     */
     public func persistUi(route: String, theme: String, enabled: Bool): Unit {
         if (!enabled) {
             return
@@ -272,17 +320,31 @@ public class ShellRuntime {
         if (route == lastPersistedRoute && theme == lastPersistedTheme) {
             return
         }
-        lastPersistedRoute = route
-        lastPersistedTheme = theme
+        let previousRoute = prefs.route
+        let previousTheme = prefs.theme
         prefs.route = route
         prefs.theme = theme
         prefs.persist()
+        if (prefs.lastWriteOk) {
+            lastPersistedRoute = route
+            lastPersistedTheme = theme
+        } else {
+            prefs.route = previousRoute
+            prefs.theme = previousTheme
+        }
     }
 
     public func rememberRecent(ref: PaletteRecentRef, enabled: Bool): Unit {
         prefs.recent = pushRecentRef(ref, prefs.recent)
         if (enabled) {
             prefs.persist()
+        }
+    }
+
+    private func visualChanged(): Unit {
+        match (onVisualChange) {
+            case Some(notify) => notify()
+            case None => ()
         }
     }
 }

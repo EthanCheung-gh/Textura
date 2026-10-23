@@ -330,3 +330,25 @@ public func tokenProbe(label: String): Unit {
         }
     }.fillWidth()
 }
+
+/*
+ * `true` when a pointer button should be treated as the primary (left) button.
+ *
+ * Every pointer handler in this tree is written as `MouseDown(MouseButton.Left, …)`, which is what
+ * the desktop SDL backend sends. A pointer backend that cannot name the button — touch-driven
+ * pointer emulation, the HarmonyOS port under a finger — delivers `MouseButton.RawCode(code)` with
+ * code 0 (the SDL "unknown" value) or 1 (the real left-button code) instead, so the pattern never
+ * matches and presses land nowhere while hover and scrolling keep working.
+ *
+ * `RawCode(0)` is accepted deliberately: it is SDL's "no button information" value, and on a
+ * touch-first device a press that reached the widget tree at all is a primary press. `RawCode(1)`
+ * is the real button number. Anything else (2 = middle, 3 = right, 4/5 = wheel axes) stays
+ * unhandled, exactly as before. The probe records each aliased press (`docs/DEVICE-NOTES.md` §1).
+ */
+public func isPrimaryPointerButton(button: MouseButton): Bool {
+    match (button) {
+        case MouseButton.Left => true
+        case MouseButton.RawCode(code) => code == 0 || code == 1
+        case _ => false
+    }
+}

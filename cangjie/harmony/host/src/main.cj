@@ -27,7 +27,7 @@ import std.env.*
 import std.fs.{Directory, exists}
 import cui.*
 import sdl.Fonts
-import sdl.system.ApplicationPaths
+import sdl.system.{ApplicationPaths, PerformanceClock}
 import textura.core.data.*
 import textura.shell.*
 
@@ -45,6 +45,8 @@ private let APP_FAILURE: Int32 = 2
 private let FONT_APP_NAME: String = "fonts"
 private let STATE_APP_NAME: String = "textura"
 private let WORKSPACE_FILE: String = "workspace.json"
+/* `$HOME/.textura/` in the desktop layout, i.e. `<sandbox>/.textura/` on the device. */
+private let PREFS_DIR: String = ".textura/"
 
 /* Initial window size. The XComponent owns the real surface and the openharmony backend resizes
  * the window to it, so these numbers are only the first-frame hint (and the shell's initial
@@ -71,6 +73,9 @@ public func textura_host_error(): CString {
 
 /* DesktopApp enforces a one-run lifecycle, so the single instance lives here for the callbacks. */
 private var hostedApp: ?DesktopApp = None
+/* The shell the hosted run is rendering; only used to report sandbox facts through the probe. */
+private var hostedShell: ?ShellHost = None
+private var prefsReported: Bool = false
 
 /** True once a hosted run is live; the shim uses it to keep the log line honest. */
 @C
@@ -88,42 +93,80 @@ private func looksLikeFontFile(name: String): Bool {
     lower.endsWith(".ttf") || lower.endsWith(".ttc") || lower.endsWith(".otf")
 }
 
+/* Fonts shipped in the HarmonyOS image, world-readable and present on this device's firmware.
+ * Absolute paths never pass through SDL's rawfile layer. */
+private let PLATFORM_FONT_PATHS: Array<String> = [
+    "/system/fonts/HarmonyOS_Sans_SC.ttf",
+    "/system/fonts/NotoSansCJK-Regular.ttc",
+    "/system/fonts/HarmonyOS_Sans.ttf"
+]
+
 /*
  * Registers a CJK-capable font before the first frame.
  *
  * CUI/SDL_ttf opens fonts through a real filesystem path, so a font inside the HAP's rawfile is
- * unreachable. The host therefore looks for a font the operator side-loaded into the app sandbox
- * (`<filesDir>/fonts`, i.e. SDL_GetPrefPath, which is also what `hdc file send` targets) and
- * registers the first one it finds as "textura-ui". Without such a file it falls back to the
- * platform CJK family (see cangjie/docs/HARMONY.md §7.5).
+ * unreachable: SDL resolves a relative path against the rawfile root and an absolute one against
+ * the filesystem. Two sources are therefore tried in order — a font the operator side-loaded into
+ * the app sandbox (`<filesDir>/fonts`, i.e. SDL_GetPrefPath, which is also what `hdc file send`
+ * targets), then a font from the device image itself (`PLATFORM_FONT_PATHS`). Whichever opens is
+ * registered as "textura-ui" and made the default.
+ *
+ * Falling back to a bare family *name* is not enough: the bootstrap chain cannot turn a name into a
+ * file without a loaded system catalog, so SDL_ttf reports "No usable font" and SDL_AppInit fails
+ * before frame 1 (see cangjie/docs/HARMONY.md §7.1c).
  */
 private func configureHostFont(): Unit {
     let fallbackFamily = "HarmonyOS Sans SC"
     let fontDir = try {
         ApplicationPaths.preferencePath("textura", FONT_APP_NAME)
     } catch (_: Exception) {
+        ""
+    }
+    if (!fontDir.isEmpty() && registerSideLoadedFont(fontDir)) {
         return
     }
+    // Device image fonts, opened by real path. SDL_ttf resolves a registered path through the
+    // ordinary filesystem, so nothing here needs the HAP to carry a rawfile. Ordered by CJK
+    // coverage: the SC face is the one the shell's Chinese labels are shaped with.
+    for (path in PLATFORM_FONT_PATHS) {
+        if (registerFontPath(path)) {
+            return
+        }
+    }
+    // Last resort: a family name only. The bootstrap chain cannot resolve a bare name to a file, so
+    // this path stays dead on a HarmonyOS image that exposes fonts no other way — screen shots of
+    // such a launch show SDL_AppInit aborting with "No usable font".
+    Fonts.setDefault(Some(fallbackFamily))
+}
+
+/* Registers `path` as the UI family when the file is present; returns whether it took effect. */
+private func registerFontPath(path: String): Bool {
+    if (!looksLikeFontFile(path) || !exists(path)) {
+        return false
+    }
+    try {
+        Fonts.register("textura-ui", path)
+        Fonts.setDefault(Some("textura-ui"))
+        return true
+    } catch (_: Exception) {
+        return false
+    }
+}
+
+/* Operator side-loaded directory (`hdc file send` into <filesDir>/fonts): the only way to run a
+ * font the device image does not ship. Returns whether a font was registered from it. */
+private func registerSideLoadedFont(fontDir: String): Bool {
     let entries = try {
         Directory.readFrom(fontDir)
     } catch (_: Exception) {
-        Fonts.setDefault(Some(fallbackFamily))
-        return
+        return false
     }
     for (info in entries) {
-        if (!looksLikeFontFile(info.name)) {
-            continue
-        }
-        let path = fontDir + info.name
-        try {
-            Fonts.register("textura-ui", path)
-            Fonts.setDefault(Some("textura-ui"))
-            return
-        } catch (_: Exception) {
-            continue
+        if (registerFontPath(fontDir + info.name)) {
+            return true
         }
     }
-    Fonts.setDefault(Some(fallbackFamily))
+    false
 }
 
 /* ------------------------------------------------------------ sandbox paths (HarmonyOS app dir) */
@@ -166,12 +209,35 @@ private func prepareSandbox(): ?String {
     } catch (_: Exception) {
         return None
     }
+    // The preference directory is created here, once and idempotently, instead of being left to
+    // `File.writeTo`'s best-effort path: the shell treats a write failure as "retry next build", and a
+    // directory that each attempt has to create is one more thing that can fail per frame. Both are
+    // cheap (the existence check makes `Directory.create` a no-op) and the whole sandbox layout is
+    // then decided in one place.
+    try {
+        let prefsDir = "${dir}${PREFS_DIR}"
+        if (!exists(prefsDir)) {
+            Directory.create(prefsDir, recursive: true)
+        }
+    } catch (_: Exception) {
+        // A failure here shows up as `prefs wrote=false` in the probe, not as a broken shell.
+    }
+    // `ShellPreferences.load(path)` is called with this same directory by `buildShellHost`, so HOME is
+    // only a convenience for anything else in the process; it is not what the preferences rely on.
     try {
         setVariable("HOME", dir)
     } catch (_: Exception) {
         ()
     }
     dir
+}
+
+/* Preferences live next to the workspace, in the sandbox: `<sandbox>/.textura/ui-prefs.json`. */
+private func preferencesFile(dir: ?String): String {
+    match (dir) {
+        case Some(value) => "${value}${PREFS_DIR}ui-prefs.json"
+        case None => "ui-prefs.json"
+    }
 }
 
 /* -------------------------------------------------------------- workspace + shell construction */
@@ -192,7 +258,7 @@ private func buildShellHost(dir: ?String, viewportWidth: Int64, viewportHeight: 
         case Some(value) => "${value}${WORKSPACE_FILE}"
         case None => WORKSPACE_FILE
     }
-    let prefs = ShellPreferences.load()
+    let prefs = ShellPreferences.load(preferencesFile(dir))
     let store = AppStore(clock: SystemClock())
     var loadError: ?String = None
     try {
@@ -236,6 +302,9 @@ public func SDL_AppInit(appstate: CPointer<Unit>, argc: Int32, argv: CPointer<Un
         // Fonts first: CUI resolves its default family on the first text node of the first frame.
         configureHostFont()
         let sandbox = prepareSandbox()
+        // Diagnostics (probe.cj) write into the same sandbox; off unless an operator created the
+        // flag file, so this cannot change a normal run.
+        probeConfigure(sandbox)
         let host = buildShellHost(sandbox, Int64(WINDOW_WIDTH), Int64(WINDOW_HEIGHT))
         // The theme for the window chrome comes from the store, so a persisted dark preference also
         // paints the very first frame dark instead of flashing light.
@@ -248,10 +317,23 @@ public func SDL_AppInit(appstate: CPointer<Unit>, argc: Int32, argv: CPointer<Un
             WindowSpec("织理 Textura", WINDOW_WIDTH, WINDOW_HEIGHT, supersample: 1),
             theme: theme
         )
+        // Store → CUI invalidation bridge (see `ShellHost.revision`). This is what makes a tap that
+        // `store.setRoute` accepts actually repaint: before it, the sidebar navigated the store while
+        // CUI's retained tree kept the old route, because no CUI `State` read had changed.
+        host.armStoreBridge({action => app.deliver(action)})
         app.beginHostedRun {
-            buildShell(host)
+            // Capture-phase root listener: records the pointer/key events CUI routes, before any
+            // widget can consume them (probe.cj — inert unless the diagnostic build/flag enables it).
+            EventListener(phase: EventPhase.Capture, scope: EventScope.Global,
+                onEvent: {ctx, event =>
+                    probeEvent(ctx, event)
+                    EventOutcome.Continue
+                }) {
+                buildShell(host)
+            }
         }
         hostedApp = app
+        hostedShell = Some(host)
         return APP_CONTINUE
     } catch (e: Exception) {
         recordHostError("${e}")
@@ -266,11 +348,31 @@ public func SDL_AppInit(appstate: CPointer<Unit>, argc: Int32, argv: CPointer<Un
 @C
 public func SDL_AppIterate(appstate: CPointer<Unit>): Int32 {
     match (hostedApp) {
-        case Some(app) => if (app.step()) {
-            APP_CONTINUE
-        } else {
-            APP_SUCCESS
-        }
+        case Some(app) =>
+            // Wall time of one hosted frame, measured outermost so it includes input dispatch,
+            // build, layout and present. The probe only stores samples when it is enabled.
+            let countersBefore = probeCounters()
+            let textBefore = probeTextWork()
+            let started = PerformanceClock.counter()
+            let cont = app.step()
+            probeFrame(started, PerformanceClock.counter(), countersBefore, textBefore,
+                app.lastFrameUsedPartialDamage(), app.lastFrameCost())
+            // Preferences are written during a build, so by the second frame the first attempt has
+            // happened and its outcome can be reported once.
+            if (!prefsReported) {
+                match (hostedShell) {
+                    case Some(host) =>
+                        prefsReported = true
+                        probePrefs(host.runtime.prefs.path, host.runtime.prefs.lastWriteOk,
+                            host.runtime.prefs.lastWriteError, host.store.ui.value().route)
+                    case None => ()
+                }
+            }
+            if (cont) {
+                APP_CONTINUE
+            } else {
+                APP_SUCCESS
+            }
         case None => APP_FAILURE
     }
 }
@@ -292,4 +394,5 @@ public func SDL_AppQuit(appstate: CPointer<Unit>, result: Int32): Unit {
         case None => ()
     }
     hostedApp = None
+    hostedShell = None
 }

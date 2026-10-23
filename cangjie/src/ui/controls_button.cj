@@ -248,14 +248,16 @@ public class ButtonView <: Widget {
         }
         match (event) {
             case UiEvent.MouseMove(_, _) => claimHoverIfInside(ctx, event, frame, id, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
-                if (frame.contains(x, y)) {
+            // `isPrimaryPointerButton` also accepts a backend that cannot name the button
+            // (`RawCode(0|1)`); see its doc comment in `ui.cj`.
+            case UiEvent.MouseDown(button, x, y) =>
+                if (isPrimaryPointerButton(button) && frame.contains(x, y)) {
                     ctx.focus(id, viaKeyboard: false)
                     ctx.press(id)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
-                if (ctx.isPressed(id)) {
+            case UiEvent.MouseUp(button, x, y) =>
+                if (isPrimaryPointerButton(button) && ctx.isPressed(id)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
                         onClick()
@@ -415,14 +417,16 @@ public class IconButtonView <: Widget {
         }
         match (event) {
             case UiEvent.MouseMove(_, _) => claimHoverIfInside(ctx, event, frame, id, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
-                if (frame.contains(x, y)) {
+            // `isPrimaryPointerButton` also accepts a backend that cannot name the button
+            // (`RawCode(0|1)`); see its doc comment in `ui.cj`.
+            case UiEvent.MouseDown(button, x, y) =>
+                if (isPrimaryPointerButton(button) && frame.contains(x, y)) {
                     ctx.focus(id, viaKeyboard: false)
                     ctx.press(id)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
-                if (ctx.isPressed(id)) {
+            case UiEvent.MouseUp(button, x, y) =>
+                if (isPrimaryPointerButton(button) && ctx.isPressed(id)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
                         onClick()

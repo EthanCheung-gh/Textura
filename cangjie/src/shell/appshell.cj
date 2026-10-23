@@ -28,6 +28,20 @@ public class ShellHost {
     public let loadError: ?String
     public let viewportWidth: Int64
     public let viewportHeight: Int64
+    /**
+     * The one CUI `State` the shell root reads, so that a store write can invalidate the tree.
+     *
+     * `AppStore.state` / `AppStore.ui` are `core.data` cells, not CUI states: writing them marks
+     * nothing dirty in CUI's incremental retained graph, and `buildShell` is only re-executed when a
+     * CUI `State` read inside its scope changes. On the device that meant a click could navigate the
+     * store (`store.ui().route == "calendar"`, the row even took focus) while the window kept the old
+     * route forever — the sidebar's `onNavigate` ran, the shell never rebuilt (see
+     * `docs/DEVICE-NOTES.md` §5). This revision is the missing link; see `armStoreBridge`.
+     */
+    public let revision: State<Int64>
+
+    private var revisionDelivery: ?((() -> Unit) -> Unit) = None
+    private var bridgeArmed: Bool = false
 
     public init(
         store: AppStore,
@@ -45,6 +59,45 @@ public class ShellHost {
         this.loadError = loadError
         this.viewportWidth = viewportWidth
         this.viewportHeight = viewportHeight
+        this.revision = State<Int64>(0)
+    }
+
+    /**
+     * Wires every store cell that can change what the shell paints to `revision`.
+     *
+     * Deliberately global: `buildShell` reads the store directly in a dozen places (route, theme,
+     * workspace, notices, save phase), and views read `store.state` on their own. Routing each
+     * mutation through its own view would leave the next reader of a new fact silently stale, so one
+     * revision covers the whole shell and any store write repaints it. The cost is a full shell
+     * rebuild per store write, which is what the Web build's React re-render does anyway.
+     *
+     * `deliver` runs a closure on the UI thread (`DesktopApp.deliver`): inline during a frame, posted
+     * when a store write happens on a worker. Idempotent — the entry point calls it once per run.
+     */
+    public func armStoreBridge(deliver: (() -> Unit) -> Unit): Unit {
+        if (bridgeArmed) {
+            return
+        }
+        bridgeArmed = true
+        revisionDelivery = Some(deliver)
+        let pump: () -> Unit = {=> this.pumpRevision()}
+        store.state.subscribe {_ => pump()}
+        store.ui.subscribe {_ => pump()}
+        store.notices.subscribe {_ => pump()}
+        runtime.onVisualChange = pump
+    }
+
+    /** Reads the bridge revision: the CUI dependency `buildShell` establishes at its root. */
+    public func revisionToken(): Int64 {
+        revision.value
+    }
+
+    private func pumpRevision(): Unit {
+        let bump: () -> Unit = {=> revision.value = revision.value + 1}
+        match (revisionDelivery) {
+            case Some(deliver) => deliver(bump)
+            case None => bump()
+        }
     }
 
     public func route(): Route {
@@ -376,6 +429,11 @@ func noticeRows(notices: Array<Notice>): Array<NoticeRow> {
  * purely event-driven (and the parity snapshot path never ticks).
  */
 public func buildShell(host: ShellHost): Unit {
+    // Read the bridge revision *first*, before any declarative scope is opened: this is the CUI
+    // dependency that makes `AppStore` writes repaint the shell (see `ShellHost.revision`). Nothing
+    // else in this function may run ahead of it, or a store write could arrive before the tree
+    // declared that it depends on the write.
+    let _ = host.revisionToken()
     let store = host.store
     let ui = store.ui.value()
     let theme = themeByName(ui.theme)

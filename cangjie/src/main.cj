@@ -123,6 +123,10 @@ main(): Int64 {
     )
     // `.shell { min-width: 1024px }` + a 640px minimum height for the chrome + one card row.
     app.setMinimumSize(1024, 640)
+    // Store → CUI invalidation (see `ShellHost.revision`): without it a click changes the store and
+    // the retained tree keeps rendering the previous route. `deliver` keeps a store write made on a
+    // worker thread off the UI thread's States.
+    host.armStoreBridge({action => app.deliver(action)})
     app.run {
         if (cli.exitAfterFrame && cli.snapshot.isNone()) {
             // FrameHandler keeps the loop awake for one extra frame, then the second frame

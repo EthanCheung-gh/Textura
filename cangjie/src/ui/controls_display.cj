@@ -391,8 +391,8 @@ public class SegmentedView <: Widget {
                     claimHoverIfInside(ctx, event, itemFrameAt(ctx, index), "${id}:${index}", CursorShape.Interactive)
                     index += 1
                 }
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
-                if (frame.contains(x, y)) {
+            case UiEvent.MouseDown(button, x, y) =>
+                if (isPrimaryPointerButton(button) && frame.contains(x, y)) {
                     ctx.focus(id, viaKeyboard: false)
                     var index = 0
                     while (index < items.size) {

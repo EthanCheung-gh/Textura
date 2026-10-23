@@ -217,8 +217,8 @@ public class ModalHost <: Widget {
                 if (!isRepeat) {
                     onDismiss()
                 }
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
-                if (!panelRect.contains(x, y)) {
+            case UiEvent.MouseDown(button, x, y) =>
+                if (isPrimaryPointerButton(button) && !panelRect.contains(x, y)) {
                     // Modal.tsx: only a backdrop mousedown dismisses.
                     onDismiss()
                 } else {
