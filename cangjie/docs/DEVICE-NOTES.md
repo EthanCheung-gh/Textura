@@ -720,3 +720,128 @@ Enter 提交 + Esc 取消 + 初值 + 校验错误。点击画布上的「输入�
 
 真机 8 项输入矩阵与「七路由 × 每路由 ≥3 控件」点击表见交付报告；本文件只记录可复跑的命令与
 判据（截图 + `ev#` 里的 `focus`/`hover` 变化），不复制一次性截图路径。
+
+---
+
+## 18. 全屏 / 窗口缩放自适应（本轮）
+
+### 18.1 症状与根因
+
+真机上把窗口放大/全屏后，页面仍按启动时的尺寸排版：日历网格停在 900 高度、SOP 画布
+不随窗口变高、甘特主体高度不变。根因在壳层：
+
+```text
+ShellHost.viewportWidth/Height   // 构造时捕获的 let（launch argv）
+        ↓ 每帧
+ViewContext(store, theme, today, viewportWidth, viewportHeight, …)
+        ↓
+calendarPageHeight(ctx.height) / SOP measure(windowHeight) / gantt pageBodyHeight(ctx.height)
+```
+
+窗口尺寸变化只更新了 `UiContext.viewportWidth/Height`（CUI `DesktopApp.stepFrame` 每帧从
+`window.width/height` 拷贝），而 `ViewContext` 一直用构造时那一对旧值。
+
+### 18.2 修法：每帧同步视口
+
+- `ShellHost.viewportWidth/Height` 改为可变，新增 `syncViewport(width, height)`：值变化时
+  返回 true，并对 0/负值夹到 1。
+- 新增零尺寸 `ViewportSyncView`（`src/shell/appshell.cj`），声明在 shell 根 `ZStack` 里：
+  `layout(ctx)` 把 `ctx.viewportWidth/Height` 写回 host；变化时 `ctx.requestFrame()`。
+- `ViewContext` 在 build 阶段构造，所以**收到新尺寸的那一帧仍按旧尺寸画一次**，下一帧
+  build 读到新值后所有页面重算。桌面连续 resize 无感；真机全屏切换会多一帧。
+- 视口来源：`UiContext.viewportWidth/Height`。OHOS 上 `SdlWindow` 创建后立刻
+  `refreshSize()` 回读真实窗口（`third_party/cangjie-sdl/src/window.cj:153`），
+  `SDL_EVENT_WINDOW_RESIZED` 时再次回读（`desktop_app.cj:829`）；XComponent surface 的
+  尺寸就是窗口尺寸，因此**全屏时以 surface 为准**，启动参数只是请求值。
+- 页面侧不需要新状态：`calendar.cj` 的 `calendarPageHeight(ctx.height)`、`sop.cj` 的
+  `measure(windowHeight)`、`gantt.cj` 的 `pageBodyHeight(ctx.height)`、`gtd.cj` 的
+  `pageWidth(ctx.width)` 都从每帧的 `ViewContext` 取值。
+
+### 18.3 窄窗口断点（对齐 Web `@media`）
+
+| 位置 | Web 规则 | 实现 |
+|---|---|---|
+| GTD 两栏 | `@media (max-width:1180px)` → 单列（gtd.css:941） | 页宽 < **892**（=1180−240−48）时单列；同时头栏动作组折到标题下方（避免「快速收集」被推出内容区） |
+| GTD 流程条 | `@media (max-width:820px)` → 2 列 | 1024 视口仍 4 列（与 Web 一致），未改 |
+| 设置两栏 | `@media (max-width:1180px)` → 单列（appshell.css:600） | `ctx.width ≤ 1180` 时 `VStack` 单列，两栏卡片内容由同一组闭包复用 |
+| 甘特工具栏 | `@media (max-width:1180px)` 隐藏「已排期」、区间字号 12（gantt.css:1017） | `buildToolbar(compact:)`；1024 下三个右侧按钮不再越界 |
+| 日历提示条 | `.cal-hint { flex-wrap: wrap }` | 放不下时正文折到第二行，`measure` 返回 2 行高 |
+| SOP 检查器 | `.sop-inspector-body { overflow-y:auto }` | body 裁剪 + 滚轮滚动（`inspectorScroll`），字段不再画到运行历史卡上 |
+
+### 18.4 两尺寸复核（Xvfb）
+
+```bash
+cd cangjie && source scripts/env.sh
+./scripts/parity.sh --width 1440 --height 900 --out tools/parity/out-1440
+./scripts/parity.sh --width 1024 --height 640 --out tools/parity/out-1024
+```
+
+`parity.sh` 本轮新增 `--width/--height`（默认仍是 1440×900，不影响门禁）。
+
+| 检查项 | 1440×900 | 1024×640 |
+|---|---|---|
+| 侧栏宽度 | 240 | 240（`SIDEBAR_WIDTH`，未参与 flex） |
+| 横向溢出 | 无 | 无（七个路由目视 + `narrow_layout_test` 断言语义矩形都在 1024 内） |
+| 内容区宽度 | 1152 | 736（=1024−240−48） |
+| 页面高度 | 由 `ctx.height` 推导（日历/SOP/甘特满高） | 同上，收到 640 后重算 |
+| 1px 线 | 门禁 `ruleΔ ≤ 1.5px`，14/14 | 目视无错位/双线 |
+
+结论：1024 下 GTD/设置折单列、甘特工具栏收紧、日历提示折行；SOP 检查器在 1024×640 下
+需滚轮才能看到 Area 字段（与 Web `overflow-y:auto` 一致），不是裁切丢失。
+
+### 18.5 两个选择器
+
+**日历年 / 月**（`src/views/calendar/select.cj`）
+
+- 年份列表 1900–2100（与 `calendarLogic.ts:352` 一致）。旧实现打开时固定从 1900 开始，看不到
+  当年；现在 `calSelectInitialScroll` 把当前值滚到窗口中间，2026 打开即可见并高亮。
+- 月份 1–12 完整：可见行数 12（旧值 8，九月–十二月不可见），弹层高 12×26+8=320px，
+  下方放不下时自动翻到字段上方。
+- 主机测试：`src/views/calendar/select_test.cj`（月份 12 项、年份 201 项、默认窗口含今年、
+  点击年字段后 open 且窗口含 2026）。
+
+**SOP 领域（Area）**（`src/views/sop/sop_area_picker.cj`）
+
+- 点击检查器的 Area 字段 → Overlay 弹出「未指定」+ `workspace.areas`（带领域色点），
+  下方放不下时翻到上方并夹在窗口内。
+- Up/Down 移动、Enter/Space 写回、Esc/Tab 关闭、滚轮移动、点击浮层外关闭。
+- 写回 `store.updateItem(..., withAreaId(...))`，画布节点与列表的颜色标记立即更新。
+
+### 18.6 真机全屏复测（待用户执行）
+
+设备逻辑视口实测 **1930×1020**（§2）。`uinput` 无法稳定拖动窗口边缘，因此全屏复测需要手工：
+
+1. 打开应用 → 任何路由（建议 SOP）→ 把窗口拖到最大/全屏；
+2. 检查：侧栏仍 240；内容区右边缘贴住窗口（无横向滚动条）；日历网格/SOP 画布/甘特主体
+   随窗口变高；滚动条只出现在内容区；
+3. 退出全屏恢复原尺寸，再检查页面高度回到原值（证明两个方向都重新排版）。
+
+### 18.7 本轮真机构建与阻塞项
+
+- 交叉编译：`scripts/harmony/build_ohos.sh` 成功（`ELF 64-bit LSB shared object, ARM aarch64`，
+  `SDL_AppInit/AppEvent/AppIterate/AppQuit` 导出，NEEDED 闭包完整）。
+- 打包（最终 HEAD 源）：`rm -rf /tmp/cj-harmony/cangjie/harmony/entry/build` → `stage_libs.sh` →
+  `assemble_hap.sh --no-sync` → `entry-default-signed.hap`（29 947 308 B，
+  sha256 `099d35b6d71cbcb7…`），**`STATUS: installable`**，签名 profile 的
+  `bundle-name=com.ethancheung.textura` 且 `device-ids` 含本机 UDID。
+- 安装：`hdc install -r …entry-default-signed.hap` → `install bundle successfully`。
+- **启动被锁屏阻塞**：首次 `aa start` 返回
+  `10106102 The device screen is locked during the application launch, unlock screen failed`；
+  解锁尝试只唤醒了屏幕，`uitest dumpLayout` 显示 `bundleName=com.ohos.sceneboard`，锁屏文案
+  「使用指纹或密码解锁」。第二次 `aa start` 返回 `start ability successfully.` 且
+  `pidof com.ethancheung.textura` = 31459（进程已起），但前台仍是锁屏，**无法截图/注入点击**。
+  因此本轮**没有**拿到 SOP 描述 / Area 下拉 / 日历选择器 / OKR 关联执行项的真机截图。
+
+解锁后的复跑命令（设备一侧）：
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+# 截图（后缀必须是 .jpeg；拿到后转 PNG 入库）
+$HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg
+$HDC file recv /data/local/tmp/shot.jpeg cangjie/docs/assets/harmony/
+```
+
+需要补的 4 张截图：SOP 描述可编辑（SOP 设置 → 描述 → 浮层）、Area 下拉（列表含
+「未指定/产品/运营/个人」）、日历年份/月份（2026 与 1–12 全量）、OKR 关联执行项（多行候选 +
+勾选 + 确认后 KR 行出现该执行项）。

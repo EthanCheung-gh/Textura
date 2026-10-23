@@ -20,6 +20,10 @@ ALL_ROUTES=(dashboard calendar okr gtd gantt sop settings)
 THEMES="${TEXTURA_PARITY_THEMES:-light}"
 ROUTES=(${TEXTURA_PARITY_ROUTES:-${ALL_ROUTES[*]}})
 ROUTES_SET=0
+# Window/canvas size (logical pixels). The pixel gate always compares the 1440x900 set;
+# the other sizes are used for the responsive-layout review (docs/DEVICE-NOTES.md §18).
+WIDTH="${TEXTURA_PARITY_WIDTH:-1440}"
+HEIGHT="${TEXTURA_PARITY_HEIGHT:-900}"
 
 usage() {
   cat <<'EOF'
@@ -30,6 +34,8 @@ Usage: scripts/parity.sh [options]
   --route NAME              route filter; repeatable or comma-separated
                             (default: all 7, or $TEXTURA_PARITY_ROUTES)
   --out PATH                output directory (default: tools/parity/out)
+  --width N                 window width in logical pixels (default 1440)
+  --height N                window height in logical pixels (default 900)
   -h, --help                show this help
 EOF
 }
@@ -67,6 +73,14 @@ while [[ $# -gt 0 ]]; do
     --out=*)
       OUT="${1#*=}"
       shift
+      ;;
+    --width)
+      WIDTH="${2:?--width needs a value}"
+      shift 2
+      ;;
+    --height)
+      HEIGHT="${2:?--height needs a value}"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -111,8 +125,8 @@ mkdir -p "$OUT"
 for theme in $THEMES; do
   for route in "${ROUTES[@]}"; do
     echo "== $route-$theme"
-    xvfb-run -a -s "-screen 0 1440x900x24" \
+    xvfb-run -a -s "-screen 0 ${WIDTH}x${HEIGHT}x24" \
       "$BIN" --workspace "$WORKSPACE" --route "$route" --theme "$theme" \
-      --width 1440 --height 900 --snapshot "$OUT/$route-$theme.png"
+      --width "$WIDTH" --height "$HEIGHT" --snapshot "$OUT/$route-$theme.png"
   done
 done
