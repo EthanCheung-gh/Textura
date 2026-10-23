@@ -25,6 +25,7 @@ func buildToolbar(
     total: Int64,
     inspectorOpen: Bool,
     zoomSelection: Bindable<Int64>,
+    compact!: Bool = false,
     onPrev!: () -> Unit,
     onNext!: () -> Unit,
     onToday!: () -> Unit,
@@ -48,13 +49,22 @@ func buildToolbar(
         }.hug()
 
         // GanttToolbar.tsx:64-66 —— `.gantt-range-label { font-size: 12.5px; color: text-muted }`
-        Label(rangeLabel).fontSize(fp(TOOLBAR_RANGE_SIZE)).foregroundColor(tokens.color.textMuted)
+        // gantt.css:1017 `@media (max-width: 1180px)` 把字号收到 12，并隐藏「已排期」计数，
+        // 让日/周/月、导航、区间与右侧三个按钮在 1024 窗口里仍排成一行（不横向溢出）。
+        Label(rangeLabel).fontSize(fp(if (compact) {
+            12.0
+        } else {
+            TOOLBAR_RANGE_SIZE
+        })).foregroundColor(tokens.color.textMuted)
             .padding(vp(tokens.space.s1), vp(0.0), vp(0.0), vp(0.0))
 
         Spacer()
 
         // GanttToolbar.tsx:70-72 —— `.gantt-count { font-size: 11.5px; color: text-faint }`
-        Label("${scheduled}/${total} 已排期").fontSize(fp(TOOLBAR_COUNT_SIZE)).foregroundColor(tokens.color.textFaint)
+        if (!compact) {
+            Label("${scheduled}/${total} 已排期").fontSize(fp(TOOLBAR_COUNT_SIZE))
+                .foregroundColor(tokens.color.textFaint)
+        }
 
         Ui.button(theme, "新建任务", onCreate, variant: ButtonVariant.Primary, size: ControlSize.Sm,
             iconLeft: IconGlyph.Plus)

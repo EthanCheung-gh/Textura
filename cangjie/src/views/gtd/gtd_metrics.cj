@@ -26,6 +26,13 @@ let PAGE_GAP: Float32 = 16.0
 let LAYOUT_GAP: Float32 = 16.0
 let LAYOUT_LEFT_FR: Float32 = 1.65
 let LAYOUT_RIGHT_FR: Float32 = 1.0
+/**
+ * 页面可用宽度低于此值时两栏改单栏。
+ *
+ * gtd.css:941 `@media (max-width: 1180px) { .gtd-layout { grid-template-columns: 1fr } }`；
+ * 1180 视口对应的内容宽 = 1180 − 240 侧栏 − 2×24 内边距 = 892（1440 → 1152 仍是两栏）。
+ */
+let STACK_BREAKPOINT: Float32 = 892.0
 // gtd.css:106 `.gtd-column { gap: var(--space-4) }`
 let COLUMN_GAP: Float32 = 16.0
 

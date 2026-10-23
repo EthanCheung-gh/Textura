@@ -26,8 +26,14 @@ public class ShellHost {
     public let today: String
     public let interactive: Bool
     public let loadError: ?String
-    public let viewportWidth: Int64
-    public let viewportHeight: Int64
+    /**
+     * Live window size in logical pixels, refreshed from `UiContext` on every frame (see
+     * [ViewportSyncView]). Views derive their page height from it (`ViewContext.height`), so a
+     * window resize — including an OHOS surface/floating-window/fullscreen change — re-lays the
+     * pages out instead of keeping the size captured at launch.
+     */
+    public var viewportWidth: Int64
+    public var viewportHeight: Int64
     /**
      * The one CUI `State` the shell root reads, so that a store write can invalidate the tree.
      *
@@ -122,6 +128,29 @@ public class ShellHost {
             case Some(value) => value
             case None => Route.Dashboard
         }
+    }
+
+    /**
+     * Copies the live window size into [viewportWidth]/[viewportHeight] and reports whether it
+     * changed. `ViewContext` is built before layout, so the frame that adopts a new size still
+     * paints one pass at the previous size; the caller requests another frame, and every page
+     * (`ViewContext.width/height` → calendar/SOP/gantt page heights, GTD column budget) is then
+     * laid out for the new window. A page never reads a size captured at construction.
+     *
+     * The source is `UiContext.viewportWidth/Height`, which the driver refreshes from the real
+     * window every frame; on HarmonyOS that window is sized from the XComponent surface
+     * (`third_party/cangjie-sdl/src/window.cj` reads it back after creation), so a fullscreen or
+     * resized surface wins over the size the app asked for.
+     */
+    public func syncViewport(width: Float32, height: Float32): Bool {
+        let nextWidth = max(Int64(1), Int64(width))
+        let nextHeight = max(Int64(1), Int64(height))
+        if (nextWidth == viewportWidth && nextHeight == viewportHeight) {
+            return false
+        }
+        viewportWidth = nextWidth
+        viewportHeight = nextHeight
+        true
     }
 
     public func themeName(): String {
@@ -608,6 +637,8 @@ public func buildShell(host: ShellHost): Unit {
                 NoticeLayerView(tokens, noticeRows(store.notices.value()))
                 // Consumes `ShellHost.pendingFocus` and nothing else; zero-sized and invisible.
                 FocusRequestView(host)
+                // Keeps `ViewContext.width/height` in step with the real window (resize / fullscreen).
+                ViewportSyncView(host)
             }.fillWidth().fillHeight().background(tokens.color.bg)
         }
         buildCommandPalette(host, theme, ui.paletteOpen, paletteQuery, paletteActive)
@@ -651,6 +682,41 @@ class FocusRequestView <: Widget {
 
     public func layout(ctx: UiContext, _: Rect): Unit {
         host.applyFocusRequest(ctx)
+    }
+
+    public func draw(_: UiContext): Unit {}
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+}
+
+/**
+ * Zero-sized widget that keeps `ShellHost.viewport` equal to the live window size.
+ *
+ * `ViewContext` is constructed during build, where no `UiContext` exists, so the size has to be
+ * carried across frames: `layout` copies it in, and a changed size requests one more frame so the
+ * next build (and therefore every `ViewContext.height` consumer: calendar page height, SOP page
+ * height, gantt row budget, GTD column width) sees the new window. The alternative — reading the
+ * size in `ViewContext` from a captured value — is exactly the bug this replaces (docs/DEVICE-NOTES.md
+ * §18: pages kept the launch height after the window grew).
+ */
+class ViewportSyncView <: Widget {
+    private let host: ShellHost
+
+    init(host: ShellHost) {
+        this.host = host
+        emit(this)
+    }
+
+    public func measure(_: UiContext, _: Size): Size {
+        Size.zero()
+    }
+
+    public func layout(ctx: UiContext, _: Rect): Unit {
+        if (host.syncViewport(ctx.viewportWidth, ctx.viewportHeight)) {
+            ctx.requestFrame()
+        }
     }
 
     public func draw(_: UiContext): Unit {}

@@ -31,6 +31,12 @@ import textura.views.settings.logic.*
  *     records the preference (`ui.theme`) and tells the user it applies after a restart.
  */
 
+/**
+ * `@media (max-width: 1180px) { .settings-grid { grid-template-columns: minmax(0,1fr) } }`
+ * (appshell.css:600): below this viewport width the two card columns stack into one.
+ */
+let SETTINGS_STACK_BREAKPOINT: Float32 = 1180.0
+
 /** `.settings-page` badge in the page header — `SettingsPage.tsx:210-212`. */
 struct BadgeSpec {
     let text: String
@@ -195,8 +201,12 @@ func card(
                 //  different advance cannot change where the description wraps.
                 Paragraph(desc, sizePx: 11.5, lineHeightPx: 17.825, ink: c.textFaint, maxWidthPx: 293.59).padding(0.0,
                     2.0, 0.0, 0.0)
-            }.hug()
-            Spacer()
+            }
+                // 标题列吃掉头部剩余宽度：窄窗口（1024）下描述换行，而不是把右侧控件挤到卡片外
+                // （`.settings-card-head { justify-content: space-between }` 的 flex-shrink 行为）。
+                // 没有 `Spacer`：flex 列本身就是两端对齐的填充者，两个 flex 兄弟会把剩余宽度对半分。
+                .hug()
+                .flex()
             match (trailing) {
                 case Some(build) => build()
                 case None => ()
@@ -470,9 +480,11 @@ public func render(ctx: ViewContext): Unit {
         // remainder, so the CSS 1.25fr/1fr share is expressed as weights that already carry
         // the gap: share = 631.111 / (1152 - 16) = 0.554033. At the parity width this lands on
         // the exact CSS column boxes (631.111 / 504.889).
-        HStack(spacing: vp(tokens.space.s4)) {
-            /* ---- left column: appearance / storage / transfer ---- */
-            Flexible(weight: 0.554033) {
+        // `.settings-grid { grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) }` at wide
+        // widths; `@media (max-width: 1180px)` collapses it to one column (appshell.css:326,600).
+        // Both columns are built by closures so the narrow branch reuses the exact same cards.
+        let leftColumn: () -> Unit = {
+            =>
                 VStack(spacing: vp(tokens.space.s4)) {
                     card(theme, tokens, "外观", if (isDark) {
                         IconGlyph.Moon
@@ -539,8 +551,8 @@ public func render(ctx: ViewContext): Unit {
                     )
                 }.hug().fillWidth()
             }
-            /* ---- right column: maintenance / about ---- */
-            Flexible(weight: 0.445967) {
+        let rightColumn: () -> Unit = {
+            =>
                 VStack(spacing: vp(tokens.space.s4)) {
                     card(
                         theme,
@@ -616,7 +628,21 @@ public func render(ctx: ViewContext): Unit {
                         })
                 }.hug().fillWidth()
             }
-        }.crossAxisAlignment(CrossAxisAlignment.Start).hug().fillWidth()
+        if (Float32(ctx.width) <= SETTINGS_STACK_BREAKPOINT) {
+            VStack(spacing: vp(tokens.space.s4)) {
+                leftColumn()
+                rightColumn()
+            }.hug().fillWidth()
+        } else {
+            HStack(spacing: vp(tokens.space.s4)) {
+                Flexible(weight: 0.554033) {
+                    leftColumn()
+                }
+                Flexible(weight: 0.445967) {
+                    rightColumn()
+                }
+            }.crossAxisAlignment(CrossAxisAlignment.Start).hug().fillWidth()
+        }
     }.hug().fillWidth()
 
     /* ---------------- import source (desktop fallback) ---------------- */

@@ -164,30 +164,48 @@ public func render(ctx: ViewContext): Unit {
 /** `.page-header`（shell.css:270-290）：标题列 + 右侧分段与快速收集。 */
 func gtdPageHeader(scene: GtdScene): Unit {
     let tokens = scene.tokens
+    // `@media (max-width: 1180px)` 下 Web 的头栏会 flex-wrap：动作组折到标题下方。
+    // CUI 的 HStack 不折行，窄窗口里它会把「快速收集」推出内容区（1024 实测 x=1035）。
+    if (pageWidth(scene.ctx, tokens) < STACK_BREAKPOINT) {
+        VStack(spacing: vp(HEADER_ACTIONS_GAP)) {
+            GtdPageTitles(tokens, "GTD · 织理", "收集、澄清、组织、回顾、执行 —— 让每件事都有归处。")
+            HStack(spacing: vp(HEADER_ACTIONS_GAP)) {
+                gtdHeaderActions(scene)
+            }.hug()
+        }.crossAxisAlignment(CrossAxisAlignment.Start).hug().fillWidth()
+        return
+    }
+    // Wide layout keeps the original flat row (titles / spacer / segmented / quick capture) so
+    // the 1440×900 pixel baseline stays byte-identical.
     HStack(spacing: vp(HEADER_ACTIONS_GAP)) {
         GtdPageTitles(tokens, "GTD · 织理", "收集、澄清、组织、回顾、执行 —— 让每件事都有归处。")
         Spacer()
-        Ui.segmentedWithGlyphs(
-            scene.theme,
-            [
-                SegmentedItem("流程台", glyph: IconGlyph.Workflow),
-                SegmentedItem("周回顾", glyph: IconGlyph.Calendar)
-            ],
-            scene.state.viewMode,
-            size: ControlSize.Sm
-        )
-        Ui.button(
-            scene.theme,
-            "快速收集",
-            {=> quickCapture(scene)},
-            variant: ButtonVariant.Primary,
-            size: ControlSize.Md,
-            iconLeft: IconGlyph.Plus
-        )
+        gtdHeaderActions(scene)
     }
         .crossAxisAlignment(CrossAxisAlignment.Start)
         .hug()
         .fillWidth()
+}
+
+/** Emits the segmented + quick-capture pair into the enclosing stack (no wrapper of its own). */
+func gtdHeaderActions(scene: GtdScene): Unit {
+    Ui.segmentedWithGlyphs(
+        scene.theme,
+        [
+            SegmentedItem("流程台", glyph: IconGlyph.Workflow),
+            SegmentedItem("周回顾", glyph: IconGlyph.Calendar)
+        ],
+        scene.state.viewMode,
+        size: ControlSize.Sm
+    )
+    Ui.button(
+        scene.theme,
+        "快速收集",
+        {=> quickCapture(scene)},
+        variant: ButtonVariant.Primary,
+        size: ControlSize.Md,
+        iconLeft: IconGlyph.Plus
+    )
 }
 
 /** GtdPage.tsx `setUi({ quickCaptureOpen: true })`：快速收集弹窗归 shell 所有。 */
@@ -230,23 +248,44 @@ func flowCard(scene: GtdScene, key: String, glyph: IconGlyph, label: String, val
 /* ---------------------------------------------------------------- 两栏布局 */
 
 /** `.gtd-layout`（gtd.css:96-101）：左 1.65fr / 右 1fr，间距 16，交叉轴起点对齐。 */
+/**
+ * `.gtd-layout` 的两栏（gtd.css:96-101）。
+ *
+ * 1440 下仍是 `minmax(0, 1.65fr) minmax(0, 1fr)`（定值宽度与参考图对齐）；窗口窄到
+ * 1024 时两栏只剩 ~448 / ~272，行的元信息徽标与右侧动作按钮会互相压叠（Web 的
+ * flex 会折行，CUI 的 HStack 不会），因此低于断点改成单列：每栏吃满页面宽度，
+ * 行内容仍然完整可读，页面本身由 shell 的滚动区承载。
+ */
 func gtdFlowLayout(scene: GtdScene): Unit {
-    // `grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 16`（gtd.css:96-101）
-    // 用定值：左栏与右栏起点与参考图一致，右栏右边缘受滚动条槽影响少 10px。
     let total = pageWidth(scene.ctx, scene.tokens)
+    if (total < STACK_BREAKPOINT) {
+        VStack(spacing: vp(COLUMN_GAP)) {
+            gtdFlowLeftColumn(scene, total)
+            gtdFlowRightColumn(scene, total)
+        }.hug().width(total)
+        return
+    }
     let leftWidth = (total - LAYOUT_GAP) * LAYOUT_LEFT_FR / (LAYOUT_LEFT_FR + LAYOUT_RIGHT_FR)
     let rightWidth = total - LAYOUT_GAP - leftWidth
     HStack(spacing: vp(LAYOUT_GAP)) {
-        VStack(spacing: vp(COLUMN_GAP)) {
-            gtdInboxSection(scene)
-            gtdNextSection(scene)
-        }.hug().width(leftWidth)
-        VStack(spacing: vp(COLUMN_GAP)) {
-            gtdWaitingSection(scene)
-            gtdSomedaySection(scene)
-            gtdProjectsSection(scene)
-        }.hug().width(rightWidth)
+        gtdFlowLeftColumn(scene, leftWidth)
+        gtdFlowRightColumn(scene, rightWidth)
     }
         .crossAxisAlignment(CrossAxisAlignment.Start)
         .hug()
+}
+
+func gtdFlowLeftColumn(scene: GtdScene, width: Float32): Unit {
+    VStack(spacing: vp(COLUMN_GAP)) {
+        gtdInboxSection(scene)
+        gtdNextSection(scene)
+    }.hug().width(width)
+}
+
+func gtdFlowRightColumn(scene: GtdScene, width: Float32): Unit {
+    VStack(spacing: vp(COLUMN_GAP)) {
+        gtdWaitingSection(scene)
+        gtdSomedaySection(scene)
+        gtdProjectsSection(scene)
+    }.hug().width(width)
 }

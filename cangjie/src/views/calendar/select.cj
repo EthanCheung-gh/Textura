@@ -15,9 +15,68 @@ import textura.views.calendar.logic.*
 let SELECT_HEIGHT: Float32 = 32.0
 let SELECT_PAD_LEFT: Float32 = 8.0
 let SELECT_FONT: Float32 = 12.5
-/** 弹层行高与可见行数（原生 select 弹层不参与像素对比，取可用值）。 */
+/** 弹层行高与最多可见行数（原生 select 弹层不参与像素对比，取可用值）。 */
 let SELECT_ROW_HEIGHT: Float32 = 26.0
-let SELECT_VISIBLE_ROWS: Int64 = 8
+/**
+ * 一次最多显示 12 行：月份正好 1–12 全部可见（用户反馈「列表不全」），
+ * 年份（1900–2100）窗口跟随选中项滚动。
+ */
+let SELECT_VISIBLE_ROWS: Int64 = 12
+let SELECT_MIN_VISIBLE_ROWS: Int64 = 3
+
+/**
+ * 打开弹层时的滚动位置：让当前值落在可见窗口内并尽量居中。
+ *
+ * 年份列表有 201 项，旧实现固定从 1900 开始滚动，弹层里看不到、也没有高亮今年的项
+ * ——看起来就像「没有默认选中今年」。这里按当前值算窗口，保证选中项可见。
+ */
+func calSelectInitialScroll(options: Array<SelectOption>, currentValue: String, visible: Int64): Int64 {
+    var index = 0
+    var found = false
+    var scan = 0
+    for (option in options) {
+        if (!found && option.value == currentValue) {
+            index = scan
+            found = true
+        }
+        scan += 1
+    }
+    let rows = if (visible < 1) {
+        1
+    } else {
+        visible
+    }
+    var offset = index - (rows - 1) / 2
+    let maxOffset = if (options.size > rows) {
+        options.size - rows
+    } else {
+        0
+    }
+    if (offset < 0) {
+        offset = 0
+    }
+    if (offset > maxOffset) {
+        offset = maxOffset
+    }
+    offset
+}
+
+/** Select 弹层可见行数：12 行封顶，并保证不超出窗口下沿。 */
+func calSelectVisibleRows(options: Array<SelectOption>, viewportHeight: Float32,
+    anchorBottom: Float32): Int64 {
+    let space = viewportHeight - anchorBottom - 16.0
+    var fit = Int64(space / SELECT_ROW_HEIGHT)
+    if (fit < SELECT_MIN_VISIBLE_ROWS) {
+        fit = SELECT_MIN_VISIBLE_ROWS
+    }
+    if (fit > SELECT_VISIBLE_ROWS) {
+        fit = SELECT_VISIBLE_ROWS
+    }
+    if (options.size < fit) {
+        return options.size
+    }
+    fit
+}
 
 class CalSelectView <: Widget {
     private let tokens: ThemeTokens
@@ -80,10 +139,15 @@ class CalSelectView <: Widget {
         }
     }
 
-    private func popupRect(): Rect {
-        let rows = minInt(options.size, SELECT_VISIBLE_ROWS)
+    private func popupRect(ctx: UiContext): Rect {
+        let rows = calSelectVisibleRows(options, ctx.viewportHeight, frame.bottom())
         let height = Float32(rows) * SELECT_ROW_HEIGHT + 8.0
-        Rect(frame.x, frame.bottom() + 4.0, max(frame.w, 128.0), height)
+        // 下面放不下时翻到字段上方（小窗口 / 全屏切换后仍能看全列表）。
+        var top = frame.bottom() + 4.0
+        if (top + height > ctx.viewportHeight - 8.0 && frame.y - 4.0 - height >= 8.0) {
+            top = frame.y - 4.0 - height
+        }
+        Rect(frame.x, top, max(frame.w, 128.0), height)
     }
 
     private func registerPopup(ctx: UiContext): Unit {
@@ -92,7 +156,8 @@ class CalSelectView <: Widget {
         let openState = this.openState
         let scrollState = this.scrollState
         let onPick = this.onPick
-        let popup = popupRect()
+        let popup = popupRect(ctx)
+        let rows = calSelectVisibleRows(options, ctx.viewportHeight, frame.bottom())
         let owner = "cal-select-${openCode.toString()}"
         let overlay = Overlay(
             handleEvent: {inner, event =>
@@ -109,7 +174,7 @@ class CalSelectView <: Widget {
                         openState.value = 0
                         return true
                     case UiEvent.MouseWheel(_, _, _, dy) =>
-                        let maxOffset = maxInt(0, options.size - SELECT_VISIBLE_ROWS)
+                        let maxOffset = maxInt(0, options.size - rows)
                         scrollState.value = minInt(maxOffset, maxInt(0, scrollState.value - Int64(dy)))
                         return true
                     case UiEvent.KeyDown(key, _) =>
@@ -131,7 +196,7 @@ class CalSelectView <: Widget {
                 inner.renderer.pushClip(Rect(popup.x + 1.0, popup.y + 1.0, popup.w - 2.0, popup.h - 2.0))
                 var shown = 0
                 let offset = scrollState.value
-                while (shown < SELECT_VISIBLE_ROWS && offset + shown < options.size) {
+                while (shown < rows && offset + shown < options.size) {
                     let option = options[offset + shown]
                     let rowTop = popup.y + 4.0 + Float32(shown) * SELECT_ROW_HEIGHT
                     if (option.value == currentValue) {
@@ -154,10 +219,13 @@ class CalSelectView <: Widget {
                 CursorShape.Interactive)
             case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
-                    openState.value = if (openState.value == openCode) {
-                        0
+                    if (openState.value == openCode) {
+                        openState.value = 0
                     } else {
-                        openCode
+                        // 打开时把窗口滚到当前值（年份默认落在今年，而不是 1900）。
+                        let visible = calSelectVisibleRows(options, ctx.viewportHeight, frame.bottom())
+                        scrollState.value = calSelectInitialScroll(options, currentValue, visible)
+                        openState.value = openCode
                     }
                     return true
                 }

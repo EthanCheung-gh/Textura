@@ -78,12 +78,42 @@ class HintStripView <: Widget {
         emit(this)
     }
 
-    public func measure(_: UiContext, available: Size): Size {
-        Size(max(available.w, 0.0), HINT_LINE)
+    public func measure(ctx: UiContext, available: Size): Size {
+        // `.cal-hint { flex-wrap: wrap }`：窄窗口（1024）下提示文字折到第二行，
+        // 而不是被栏宽裁掉半句（Web 用 flex-wrap 得到同样结果）。
+        let height = if (hintFits(ctx, available.w)) {
+            HINT_LINE
+        } else {
+            HINT_LINE * 2.0
+        }
+        Size(max(available.w, 0.0), height)
     }
 
     public func layout(_: UiContext, rect: Rect): Unit {
         frame = rect
+    }
+
+    /** 第一行（圆点 + 「今天」/「选中」+ 提示正文）是否放得进 `width`。 */
+    private func hintFits(ctx: UiContext, width: Float32): Bool {
+        width >= leadingWidth(ctx) + hintTextWidth(ctx)
+    }
+
+    private func leadingWidth(ctx: UiContext): Float32 {
+        let today = 6.0 + 5.0 + textWidthOf(ctx, "今天", HINT_FONT, 400) + 12.0
+        let selected = 6.0 + 5.0 + textWidthOf(ctx, "选中", HINT_FONT, 400) + 12.0
+        today + selected
+    }
+
+    private func hintTextWidth(ctx: UiContext): Float32 {
+        textWidthOf(ctx, hintLabel(), HINT_FONT, 400)
+    }
+
+    private func hintLabel(): String {
+        if (monthMode) {
+            "方向键 / Home / End / PageUp / PageDown 导航，Enter 进入日程面板"
+        } else {
+            "点击星期标题切换日期，点击卡片打开条目"
+        }
     }
 
     public func draw(ctx: UiContext): Unit {
@@ -103,12 +133,13 @@ class HintStripView <: Widget {
         x = x + 6.0 + 5.0
         drawTextInBox(ctx, "选中", x, top, HINT_LINE, c.textFaint, HINT_FONT, 400, dy: -1.0)
         x = x + textWidthOf(ctx, "选中", HINT_FONT, 400) + 12.0
-        let hint = if (monthMode) {
-            "方向键 / Home / End / PageUp / PageDown 导航，Enter 进入日程面板"
+        let hint = hintLabel()
+        if (hintFits(ctx, frame.w)) {
+            drawTextInBox(ctx, hint, x, top, HINT_LINE, c.textFaint, HINT_FONT, 400, dy: -1.0)
         } else {
-            "点击星期标题切换日期，点击卡片打开条目"
+            // 折行：正文独占第二行（与 flex-wrap 的换行位置一致）。
+            drawTextInBox(ctx, hint, frame.x, top + HINT_LINE, HINT_LINE, c.textFaint, HINT_FONT, 400, dy: -1.0)
         }
-        drawTextInBox(ctx, hint, x, top, HINT_LINE, c.textFaint, HINT_FONT, 400, dy: -1.0)
     }
 
     public func handle(_: UiContext, _: UiEvent): Bool {

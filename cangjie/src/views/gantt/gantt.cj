@@ -106,6 +106,7 @@ public func render(ctx: data.ViewContext): Unit {
         GanttPageHeader(tokens)
         buildToolbar(theme, tokens, zoom, rangeLabel, scheduled, total, uiState.inspectorOpen,
             zoomBinding,
+            compact: ctx.width <= 1180,
             onPrev: {=> navigate(ctx, extraBefore, extraAfter, scrollLeft, timelineWidth, px, -1)},
             onNext: {=> navigate(ctx, extraBefore, extraAfter, scrollLeft, timelineWidth, px, 1)},
             onToday: {=> scrollToToday(leftState, range, today, px, timelineWidth)},
