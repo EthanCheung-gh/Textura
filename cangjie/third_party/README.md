@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -32,6 +32,29 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 ## CUI 补丁
 
 `CUI-P01-hosted-frame-step` 已包含在源码里，位置 `CUI/src/desktop/desktop_app.cj`。它把阻塞的 `run()` 循环拆成宿主可逐帧驱动的 `beginHostedRun` / `step` / `endHostedRun`，供鸿蒙 XComponent `OnFrame` 使用。不要删除或重命名这些方法。
+
+### CUI-P04-released-scene-node（本仓新增，最小补丁）
+
+- 位置：`CUI/src/core/automatic_render_node.cj`（`AutomaticRenderNode`）。
+- 现象（真机必现「整页冻结」）：在某个视图内切换路由后，该帧在**构建提交阶段**抛
+  `IllegalStateException: Cannot inspect commands through a released scene node`，此后**每一帧**都在同一处抛。
+  因为输入派发在 build/layout 之后，事件再也不被处理：所有控件点不动、滚轮不动、画面停在旧路由，
+  而进程仍以 60 步/秒空转。桌面 `WidgetTestHost` 可稳定复现（`src/shell/route_switch_test.cj`：
+  `dashboard→…→甘特→…→再进甘特`）。
+- 根因：`removeAutomaticMount` 先关外层自动组合的渲染节点、再递归关闭嵌套挂载。嵌套子节点仍持有指向
+  **已关闭**父节点的 `parent` 链接；`close() → invalidatePaintCache() → parent.invalidatePaintCache()`
+  会走到已释放的 `ElementSceneNode` 上调用 `hasCommands()`，`ensureAlive` 抛异常。
+  异常发生在 `finishBuild`/`commitMountBuild`（body 之外），`renderRoute` 的 `try/catch` 边界够不到它，
+  CUI 的 `UiFailureCollector` 只是把它收进宿主失败集合，于是「静默冻结」。
+- 改动（1 个守卫 + 1 个只读助手 + 关闭时清链接）：
+  - `invalidatePaintCache` 开头 `if (closed) { return }`：已释放的节点没有缓存可失效；
+  - 向父节点传播前判 `!value.isClosed()`：已关闭的祖先由组合变更本身标脏，跳过它既安全也充分；
+  - 新增 `func isClosed(): Bool`；`close()` 末尾清 `parent`（原本就有）。
+- 不改变渲染结果：只跳过对已释放节点的缓存操作，绘制指令与尺寸完全不变；
+  1440×900 对拍 `--theme both` 仍 14/14（数值未变）。
+- 实测：修前 `routeSwitchSurvivesRepeatedVisits` 稳定 ERROR，修后 PASSED；真机出货包七路由依次/重复切换、
+  滚动、按钮、弹层均正常，`diag.log` 中 `fail` 计数 0（诊断包实测 1702 次/修前 → 0/修后）。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01/P02/P03 同流程），并在本表登记版本。
 
 ### CUI-P03-hosted-frame-cost（本仓新增，最小补丁）
 

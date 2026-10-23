@@ -78,8 +78,16 @@ class AutomaticRenderNode <: Widget {
         paintStateDependencies().close()
         invalidatePaintCache(resetWarmup: true)
         sceneNode.close()
+        // TEXTURA-CUI-P04: a node that outlives this one keeps `parent` pointing at it, and its own
+        // `invalidatePaintCache` propagation must not walk into a released scene node (see the guard
+        // there). Clearing the link here keeps that guarantee local to the closed node.
         parent = None
         closed = true
+    }
+
+    /** TEXTURA-CUI-P04: whether this node's scene slot has been released. */
+    func isClosed(): Bool {
+        closed
     }
 
     public func measure(ctx: UiContext, available: Size): Size {
@@ -353,11 +361,24 @@ class AutomaticRenderNode <: Widget {
     }
 
     private func invalidatePaintCache(resetWarmup!: Bool): Unit {
+        // TEXTURA-CUI-P04: a released node owns no cached commands, and asking them would throw
+        // "Cannot inspect commands through a released scene node". A node that is being torn down
+        // with its parent (nested automatic mounts are removed outermost first) still holds a
+        // `parent` link to an already-closed node, so the upward propagation below would walk into
+        // exactly that state and abort the whole build commit — which on a hosted run means a frame
+        // that never draws and never dispatches input (the window freezes with a stale picture).
+        // A closed node cannot have a cache to invalidate and its nearest live ancestor is damaged by
+        // the composition change itself, so stopping here is both safe and sufficient.
+        if (closed) {
+            return
+        }
         let wasPatchBoundary = sceneNode.hasCommands()
         clearLocalPaintCache(resetWarmup: resetWarmup)
         if (!wasPatchBoundary) {
             match (parent) {
-                case Some(value) => value.invalidatePaintCache(resetWarmup: resetWarmup)
+                case Some(value) => if (!value.isClosed()) {
+                    value.invalidatePaintCache(resetWarmup: resetWarmup)
+                }
                 case None => ()
             }
         }
