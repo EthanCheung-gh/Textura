@@ -447,3 +447,132 @@ ev# KeyUp key=Tab focus='…:UiButton#2'
 * `build-profile.json5` 用 `set_signing_material.sh` 临时指向 `.certs/textura-debug/`，**用完 `git checkout` 复原**；
   `.hap`、`.certs/`、`diag.log` 一律不提交。
 * `diag.log` 只存在于设备沙箱，仓库里没有任何日志产物。
+
+---
+
+## 12. 从别的路由进入 OKR 后整页空白（已修复）
+
+### 12.1 现场与排除法
+
+| 取证 | 结果 |
+|---|---|
+| `hdc shell date` | `2026-10-23` |
+| 设备 `workspace.json` | 唯一 objective + 3 个 KR，`okr.period` **全部是 `2026-Q4`** |
+| 直接 `aa start`（记住的 route=okr） | **正常显示**（Q4 目标卡齐全） |
+| 从仪表盘/日历点侧栏进 OKR | 内容区**全白**，顶栏标题是 OKR |
+| `ui-prefs.json` | 仍随点击变化（侧栏可点、没有整页冻结） |
+| 诊断包 `fail` 计数 | **0**，没有异常被吞 |
+
+所以「Q4 是空季度」不成立：Q4 有数据、空态卡也写好了。问题只在**切入那一刻之后**。
+
+### 12.2 根因：`measure` 返回「上一次 layout 的内容高度」
+
+`OkrPage.measure()` 原来返回字段 `contentHeight`，而它只在 `layout()` 末尾被写入：
+
+```text
+新 OkrPage 实例 --measure--> contentHeight = 0
+        ↓
+ScrollView.layout: child.measure(...) -> 0  ->  child.layout(Rect(..., 0))
+        ↓
+layoutPage 跑完，contentHeight 变成真实值，但父级这一帧只分了 0 高
+        ↓
+这一帧之后没有任何脏标记 -> 不会再 measure/layout -> 永久空白
+```
+
+首次启动能显示，是因为窗口尺寸变化额外触发了一次 measure→layout（第二次读到第一次写回的高度）。
+全仓只有 OKR 是这种「measure 依赖上一次 layout」的自绘页面，其它视图都是声明式/填充布局，所以只有它白屏。
+
+### 12.3 修法：`measureOnly` 高度预演
+
+- `PageCanvas(measureOnly: true)`：跑同一套行高/列宽公式，但不构造子控件（`TextField` 会持有 `State`
+  并注册焦点）、不提交草稿、不写 `focusTrack`；
+- `OkrPage.measure()` 在高度未知或宽度变化时先跑一遍该预演，把真实内容高度交给父级；
+  真正的 `layout()` 仍按原路径执行，交互与像素不变；
+- 回归测试 `src/views/okr/okr_page_test.cj::measureReportsIntrinsicHeightBeforeAnyLayout`
+  （把修复禁用 → 稳定 FAILED；恢复 → PASSED）。
+
+### 12.4 修后证据（出货包，探针关闭）
+
+- 仪表盘 → OKR：`~/.cache/textura-device/final-okr.jpeg`（页头 + 2026 Q4 季度条 + 1/3/29%/0 健康度 + 目标与 3 个 KR）；
+- 日历 → OKR → 日历 → OKR → … 重复访问正常（同一会话内多次切入，`ship-*` 截图组）；
+- SOP → OKR（最终包）正常：`~/.cache/textura-device/final-okr.jpeg`。
+
+---
+
+## 13. 甘特悬停/点击「慢半拍」：一次 hover 重建整个 shell（已修复）
+
+### 13.1 根因
+
+`GanttBody.handleMove` 在悬停行变化时执行 `rev.value += 1`，`handleDown/handleUp` 也各加一次。
+`rev` 是在 `gantt.render()` 的作用域里被读取的（`let _ = rev.value`），而 `render` 运行在 shell body
+作用域内 —— 于是**每跨一行都重建整个 shell**（真机重建级成本：`tree` 13.8–21.3ms、`costavg` 24.6–51.4ms，
+与换路由同级）。而 `GanttBody.draw` 本来就每帧直接读 `state.hoverRow / gesture`，输入帧也必然会重绘，
+这次重建完全多余。
+
+### 13.2 修法
+
+- 悬停、拖拽增量、按下/抬起不再递增 `rev`；只有折叠分组（真正改变行集合、需要重算 `rows`）才重建；
+- 点击反馈新增 `GanttViewState.pressedRow`，在 `draw` 里按选中同色绘制（行底、左侧 accent 2px、任务条描边），
+  反馈在按下那一帧就出现；`store.select` 到达后的持久选中态与它同色，**视觉零变化**；
+- 回归测试 `src/shell/gantt_hover_test.cj`：同一帧内跨行 `MouseMove`，断言 `buildShell` 执行次数不变
+  （把 `rev` 自增加回去 → 稳定 FAILED）。
+
+### 13.3 数值
+
+| 指标（同机、探针） | 修复前（每次跨行 = 一次 shell 重建） | 修复后（只重绘） |
+|---|---|---|
+| `phases build` | 重建帧 ≈ 2–5ms（整页作用域） | **0.01ms**（body 未执行） |
+| `phases tree` | 13.8–21.3ms（重建级） | **6.4–6.7ms** |
+| `phases present` | 2.0–2.6ms | **2.0–2.6ms** |
+| `cost avg` | 24.6–51.4ms（同机重建级） | **8.9–9.4ms**（p95 12.7ms） |
+
+> 说明：本机 `uinput -M -m` 不产生 SDL 移动事件，`uinput -M -g` / `uitest swipe` 的起点映射不稳定，
+> 无法稳定复现「纯 hover 前后各一次」的对照；上表「修复前」是**同一台设备同一类重建**的实测成本，
+> 「修复后」是修复包上跨行 hover 帧的实测值；重建次数差异由主机回归测试给出确定性证明。
+
+---
+
+## 14. `Esc` 被投递两次（已修复）
+
+- `harmony/entry/src/main/ets/pages/Index.ets` 的 ArkTS 键桥同时转发了 `Escape`，而 XComponent 的原生
+  按键回调本来就能送达 Escape（§10.1：`ev#3 KeyDown key=Escape`）——一次按键变成两次 KeyDown，
+  第一次关掉浮层、第二次作用在下一层。
+- 修法：`sdlScancodeFor()` 删除 `KEYCODE_ESCAPE` 分支与 `SDL_SCANCODE_ESCAPE` 常量，只保留
+  Tab/Shift+Tab、方向键、Ctrl/Cmd+字母（这些是 ArkUI 会吞掉的键）。
+- 回归：`src/shell/keys_test.cj::arktsKeyBridgeForwardsOnlyKeysArkUiSwallows` 直接读 `Index.ets`，
+  断言转发表里没有 `KEYCODE_ESCAPE`、且 Tab/方向键/字母仍在（两边都发会立即红）。
+- 真机：单次注入 Escape 关闭快速收集弹层，路由不变（`~/.cache/textura-device/after-esc1.jpeg`）。
+  本机 `uitest uiInput keyEvent 2070` 的按键状态会残留（偶发把窗口最小化），因此「一次按键只关闭一层」
+  的重复投递由源码门禁 + §10.1 的旧证据共同约束。
+
+---
+
+## 15. 快速收集弹层不自动聚焦（已修复）
+
+### 15.1 为什么 `TextField.autofocus()` 不行
+
+1. 它的「已聚焦」闩锁 `localState("TextField:<id>:autofocused")` 按控件 id **记住整个会话**，
+   第二次打开必然不再聚焦；
+2. 更根本：`textura.ui.ModalHost` 在 **layout** 阶段才调用 `body()` 构造弹层内容，此时 CUI 没有活动的
+   state store，`TextField` 的 `registerFocusable` 不会进入焦点图；下一帧焦点图提交时 `ctx.focus(id)`
+   被判定为无效并清空 —— 所以连**第一次**打开也留不住光标（主机回归测试修复前两次都是空）。
+
+### 15.2 修法
+
+- 输入框改为在 **build 阶段**构造（`buildQuickCapture` 里按 `open` 预建，弹层 body 只 `emit` 它），
+  焦点 id 正常进入焦点图；
+- `ShellHost` 监听 `ui.quickCaptureOpen` 的开关边沿（任何视图都可以直接写 store 打开弹层，不能只挂在
+  shell 的 `openCapture()` 上），置一次性 `pendingFocus`：打开 → `capture-input`，关闭 → 打开前的
+  `ctx.focusId`，空则回落到 `shell-nav-<当前路由>`；
+- 零尺寸 `FocusRequestView` 在 `layout(ctx, rect)` 里消费一次请求；目标可能在稍后的 layout 才注册，
+  因此最多重试 3 帧（`ctx.requestFrame()`），绝不每帧抢焦点；
+- 删除 `TextField.autofocus()` 的会话闩锁用法。
+
+### 15.3 真机证据（出货包）
+
+- GTD「快速收集」按钮打开：输入框边框变成 accent 色并出现光标 ——
+  `~/.cache/textura-device/final-focus2-zoom.png`（放大图）；
+- 关闭后焦点回到打开前的控件/当前侧栏行（主机回归
+  `quickCaptureFocusesItsInputOnEveryOpen` 断言 `shell-nav-dashboard`）；
+- 视图直接写 store 打开弹层的路径由 `quickCaptureOpenedFromAViewFocusesItsInput` 覆盖。
+

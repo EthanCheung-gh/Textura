@@ -231,6 +231,31 @@ private func probeKey(key: Key): String {
     }
 }
 
+/* ------------------------------------------------------------------ hosted frame failures */
+
+/*
+ * A hosted step swallows a recoverable frame failure into CUI's failure collector: the process stays
+ * alive, the window keeps the last frame, and input (dispatched after build/layout) stops arriving —
+ * a "frozen" app with no log line. `DesktopApp.takeHostedFailure()` (CUI-P07) exposes those
+ * exceptions; this reports the first few with the route that produced them.
+ */
+private let PROBE_FAILURE_LIMIT: Int64 = 40
+private var probeFailureCount: Int64 = 0
+
+func probeFailure(route: String, failure: ?Exception): Unit {
+    if (!probeActive) {
+        return
+    }
+    match (failure) {
+        case Some(error) =>
+            probeFailureCount += 1
+            if (probeFailureCount <= PROBE_FAILURE_LIMIT) {
+                probeEmit("fail n=${probeFailureCount} route='${route}' error='${error}'")
+            }
+        case None => ()
+    }
+}
+
 private func probeState(ctx: UiContext): String {
     let modifiers = ctx.eventModifiers()
     // `raw` is the SDL cursor position with no logical scaling applied. CUI divides incoming

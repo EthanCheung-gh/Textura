@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -32,6 +32,18 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 ## CUI 补丁
 
 `CUI-P01-hosted-frame-step` 已包含在源码里，位置 `CUI/src/desktop/desktop_app.cj`。它把阻塞的 `run()` 循环拆成宿主可逐帧驱动的 `beginHostedRun` / `step` / `endHostedRun`，供鸿蒙 XComponent `OnFrame` 使用。不要删除或重命名这些方法。
+
+### CUI-P07-hosted-failure-accessor（本仓新增，只读诊断出口）
+
+- 位置：`CUI/src/desktop/desktop_app.cj`（`DesktopApp.takeHostedFailure()`）。
+- 背景：宿主模式把每帧的可恢复异常收进 `UiFailureCollector` 后继续循环，只在 `endHostedRun()` 才重新抛出。
+  一帧固定抛异常时，输入（在 build/layout 之后派发）全部失效，现象是「窗口活着但冻住」，而会话进行中
+  没有任何出口能看到真实异常（CUI-P04 的问题就是这样被静默了 1702 帧）。
+- 改动：新增一个只读方法，取走（并清空）自上次调用以来的失败，返回原始异常或 `UiAggregateException`。
+  不做任何额外收集、不改变帧行为；只有诊断调用方（`harmony/host/src/probe.cj` 的 `probeFailure`，探针关闭时
+  不执行）会调用它。
+- 不改变渲染结果：不注册监听、不影响 `step()`/`endHostedRun()` 的失败语义；1440×900 对拍 14/14 不变。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01/P02/P03 同流程），并在本表登记版本。
 
 ### CUI-P05-text-input-on-focus（本仓新增，最小补丁，含 cangjie-sdl 绑定扩展）
 

@@ -406,6 +406,24 @@ public class DesktopApp {
     }
 
     /*
+     * Drains the recoverable failures collected by hosted steps since the last call (Textura patch
+     * CUI-P07). A hosted run reports them only in `endHostedRun`, i.e. after the loop has stopped —
+     * but a frame that throws every step is indistinguishable from a dead window while it runs
+     * (input is dispatched after build/layout), so an embedding host needs a way to surface the
+     * first failure *during* the session. Returns the original exception, or a `UiAggregateException`
+     * when several stages failed; only a diagnostic should call it, since it clears the collection.
+     */
+    public func takeHostedFailure(): ?Exception {
+        let failures = match (hostedFailures) {
+            case Some(collector) => collector
+            case None => return None
+        }
+        let failure = failures.failure()
+        hostedFailures = UiFailureCollector()
+        failure
+    }
+
+    /*
      * Releases everything a hosted run owns, mirroring the teardown run() performs when its loop
      * exits. Idempotent: once the run has ended, later calls do nothing.
      */

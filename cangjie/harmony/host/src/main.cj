@@ -357,6 +357,12 @@ public func SDL_AppIterate(appstate: CPointer<Unit>): Int32 {
             let cont = app.step()
             probeFrame(started, PerformanceClock.counter(), countersBefore, textBefore,
                 app.lastFrameUsedPartialDamage(), app.lastFrameCost())
+            // Surface a frame failure while the session is still running: after one, input is never
+            // dispatched again and the window simply stops changing (CUI-P07).
+            probeFailure(match (hostedShell) {
+                case Some(host) => host.store.ui.value().route
+                case None => "unknown"
+            }, app.takeHostedFailure())
             // Preferences are written during a build, so by the second frame the first attempt has
             // happened and its outcome can be reported once.
             if (!prefsReported) {
