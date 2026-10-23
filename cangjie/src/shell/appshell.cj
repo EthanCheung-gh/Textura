@@ -323,17 +323,16 @@ public class ShellHost {
                     case Key.Escape =>
                         return closeTopLayer()
                     case Key.Letter(code) =>
-                        let lower = asciiLower(code)
                         if (command && !alt) {
-                            if (lower == UInt8(75) && !modifiers.shift) {
+                            if (isLetterKey(code, UInt8(75)) && !modifiers.shift) {
                                 togglePalette()
                                 return true
                             }
-                            if (lower == UInt8(78)) {
+                            if (isLetterKey(code, UInt8(78))) {
                                 openCapture()
                                 return true
                             }
-                            if (lower == UInt8(90) && !focusLooksEditable(ctx.focusId)) {
+                            if (isLetterKey(code, UInt8(90)) && !focusLooksEditable(ctx.focusId)) {
                                 let route = route()
                                 if (route == Route.Gtd || route == Route.Sop) {
                                     return false
@@ -364,6 +363,23 @@ func asciiLower(value: UInt8): UInt8 {
     } else {
         value
     }
+}
+
+/*
+ * Case-folded letter match for the hotkey table.
+ *
+ * `Key.Letter` carries whatever keycode the backend uses, and the two backends disagree: SDL3 on the
+ * desktop reports the lowercase character (`'k'` = 107), while the HarmonyOS port reports the
+ * uppercase one (`'K'` = 75) — the device probe prints `KeyDown key=Letter(75)` for a physical K.
+ * The hotkey table is therefore written once, in uppercase, and *both* sides are folded here.
+ *
+ * Folding only the incoming code (the previous shape of this code) made `Ctrl+K`, `Ctrl+N` and
+ * `Ctrl+Z` unreachable on the device: `asciiLower(75)` is 107, which never equals the uppercase
+ * constant, so the branch was skipped while the event itself arrived with the right modifier
+ * (`ev#6 KeyDown key=Letter(75) mods=64` in docs/DEVICE-NOTES.md §7).
+ */
+func isLetterKey(code: UInt8, letter: UInt8): Bool {
+    asciiLower(code) == asciiLower(letter)
 }
 
 /** Approximates `isEditableTarget`: the shell knows its own editor keys, views' ids by suffix. */
