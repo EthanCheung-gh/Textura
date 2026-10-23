@@ -27,6 +27,8 @@ func okrDialogs(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
     menuDialog(ctx, ui, page, theme, tokens, c)
     statusDialog(ctx, ui, page, theme, tokens, c)
     confirmDialogs(ctx, ui, page, theme, tokens, c)
+    // 卡片画布上的行内编辑（标题 / 指标 / 负责人 / 新增 KR）。
+    okrPromptDialog(ctx, ui, page)
 }
 
 /** 新建季度目标（`OkrPage.tsx` 的 objective modal，宽 560）。 */

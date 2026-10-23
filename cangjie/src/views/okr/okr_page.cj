@@ -53,6 +53,18 @@ class OkrUiState {
     let expanded: State<Array<String>>
     let editTitle: State<String>
     let editFocus: State<Bool>
+    /*
+     * The inline editor used by the card canvas. A canvas declares its controls during layout,
+     * where CUI registers no focus stop, so every text edit opens the shared `Ui.prompt`
+     * instead of an inline `TextField` (docs/DEVICE-NOTES.md §16).
+     */
+    let promptOpen: State<Bool>
+    let promptText: State<String>
+    let promptKind: State<String>
+    let promptTarget: State<String>
+    let promptField: State<String>
+    let promptError: State<String>
+    let promptFocus: FocusRequest
     let fields: HashMap<String, State<String>>
 
     init() {
@@ -84,6 +96,13 @@ class OkrUiState {
         this.expanded = rememberState<Array<String>>("okr-expanded") {[]}
         this.editTitle = rememberState<String>("okr-edit-title") {""}
         this.editFocus = rememberState<Bool>("okr-edit-focus") {false}
+        this.promptOpen = rememberState<Bool>("okr-prompt-open") {false}
+        this.promptText = rememberState<String>("okr-prompt-text") {""}
+        this.promptKind = rememberState<String>("okr-prompt-kind") {""}
+        this.promptTarget = rememberState<String>("okr-prompt-target") {""}
+        this.promptField = rememberState<String>("okr-prompt-field") {""}
+        this.promptError = rememberState<String>("okr-prompt-error") {""}
+        this.promptFocus = FocusRequest()
         this.fields = HashMap<String, State<String>>()
     }
 

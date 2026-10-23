@@ -20,6 +20,9 @@ public func render(ctx: ViewContext): Unit {
     let ui = okrUiState()
     let page = OkrPage(ctx, ui)
     okrDialogs(ctx, ui, page)
+    // Applies (and later restores) the one-shot focus request of the card editor, even in the
+    // frames where no dialog is open — a request raised on close must still land.
+    FocusOnceView(ui.promptFocus)
     let _ = bridge
 }
 
