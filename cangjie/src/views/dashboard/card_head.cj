@@ -72,13 +72,13 @@ class CardHeadView <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, linkFrame, linkId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (linkFrame.contains(x, y)) {
                     ctx.focus(linkId, viaKeyboard: false)
                     ctx.press(linkId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(linkId)) {
                     ctx.clearPress()
                     if (linkFrame.contains(x, y)) {

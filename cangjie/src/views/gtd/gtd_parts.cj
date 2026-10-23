@@ -314,12 +314,12 @@ class GtdFlowCard <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
@@ -383,12 +383,12 @@ class GtdCheck <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
@@ -443,12 +443,12 @@ class GtdCheckBox <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
@@ -533,12 +533,12 @@ class GtdSelectBox <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
@@ -608,12 +608,12 @@ class GtdDateBox <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
@@ -664,12 +664,12 @@ class GtdLinkButton <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, hoverId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {

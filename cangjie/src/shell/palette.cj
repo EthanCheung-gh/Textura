@@ -165,7 +165,7 @@ class PaletteRowView <: Widget {
                     return true
                 }
                 return false
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     if (!row.disabled) {
                         onRun()

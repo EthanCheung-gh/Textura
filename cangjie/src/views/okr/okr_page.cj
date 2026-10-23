@@ -396,7 +396,7 @@ class OkrPage <: Widget {
                     let _ = child.handle(ctx, event)
                 }
                 false
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (handleChildEvent(ctx, cv, event)) {
                     return true
                 }
@@ -411,7 +411,7 @@ class OkrPage <: Widget {
                     index -= 1
                 }
                 false
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 var hit = false
                 var index = cv.hotspots.size - 1
                 while (index >= 0) {

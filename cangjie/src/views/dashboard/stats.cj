@@ -114,13 +114,13 @@ class StatCardView <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, frame, controlId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.focus(controlId, viaKeyboard: false)
                     ctx.press(controlId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(controlId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {

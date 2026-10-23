@@ -270,12 +270,12 @@ public class GtdText <: Widget {
                 if (containsPointer(ctx)) {
                     ctx.claimHover(hoverId, CursorShape.Interactive)
                 }
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     ctx.press(hoverId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {

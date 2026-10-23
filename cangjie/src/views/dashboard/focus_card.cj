@@ -309,9 +309,9 @@ class FocusRowsView <: Widget {
                 if (hasMore && moreFrame.contains(x, y)) {
                     ctx.claimHover(moreId, CursorShape.Interactive)
                 }
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 return pressAt(ctx, x, y)
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 return releaseAt(ctx, x, y)
             case UiEvent.MouseWheel(x, y, _, dy) =>
                 // `.dash-focus-list { overflow-y: auto }`：滚轮只滚列表自身。

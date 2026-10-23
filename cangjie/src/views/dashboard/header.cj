@@ -136,13 +136,13 @@ class PageHeaderView <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, buttonFrame, buttonId, CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (buttonFrame.contains(x, y)) {
                     ctx.focus(buttonId, viaKeyboard: false)
                     ctx.press(buttonId)
                     return true
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 if (ctx.isPressed(buttonId)) {
                     ctx.clearPress()
                     if (buttonFrame.contains(x, y)) {

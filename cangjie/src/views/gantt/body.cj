@@ -176,8 +176,8 @@ class GanttBody <: Widget {
                 scrollBy(dx, dy)
                 true
             case UiEvent.MouseMove(x, y) => handleMove(x, y)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) => handleDown(x, y)
-            case UiEvent.MouseUp(MouseButton.Left, x, y) => handleUp(x, y)
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) => handleDown(x, y)
+            case UiEvent.MouseUp(_, x, y) => handleUp(x, y)
             case _ => false
         }
     }

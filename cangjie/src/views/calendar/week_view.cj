@@ -315,7 +315,7 @@ class WeekViewWidget <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, geom.box, "calweek:hover", CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (!geom.box.contains(x, y)) {
                     return false
                 }

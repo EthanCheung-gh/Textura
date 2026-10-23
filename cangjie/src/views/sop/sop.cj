@@ -357,7 +357,7 @@ func paintHeader(ctx: UiContext, view: SopFrame, rect: Rect): Unit {
 func handleHeader(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     let _ = ctx
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
             match (view.sop) {
                 case Some(_) =>
                     let rect = view.headerRect()

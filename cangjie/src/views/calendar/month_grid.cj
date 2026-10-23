@@ -315,7 +315,7 @@ class MonthGridWidget <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) =>
                 claimHoverIfInside(ctx, event, geom.box, "${id}:hover", CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 match (keyAt(geom, x, y)) {
                     case Some(key) =>
                         ctx.focus(id, viaKeyboard: false)

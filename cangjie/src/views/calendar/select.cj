@@ -97,7 +97,7 @@ class CalSelectView <: Widget {
         let overlay = Overlay(
             handleEvent: {inner, event =>
                 match (event) {
-                    case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+                    case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                         if (popup.contains(x, y)) {
                             let row = Int64((y - popup.y - 4.0) / SELECT_ROW_HEIGHT) + scrollState.value
                             if (row >= 0 && row < options.size) {
@@ -152,7 +152,7 @@ class CalSelectView <: Widget {
         match (event) {
             case UiEvent.MouseMove(_, _) => claimHoverIfInside(ctx, event, frame, "calselect:${openCode.toString()}",
                 CursorShape.Interactive)
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (frame.contains(x, y)) {
                     openState.value = if (openState.value == openCode) {
                         0

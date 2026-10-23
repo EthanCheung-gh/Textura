@@ -887,7 +887,7 @@ func fade(color: Color, opacity: Float64): Color {
 /** Canvas interaction: node drag, pane pan, zoom, toolbar buttons, selection. */
 func handleCanvas(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
             if (handleToolbarClick(ctx, view, x, y)) {
                 return true
             }
@@ -959,7 +959,7 @@ func handleCanvas(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
                 return true
             }
             return false
-        case UiEvent.MouseUp(MouseButton.Left, _, _) =>
+        case UiEvent.MouseUp(_, _, _) =>
             var handled = false
             match (view.state.dragNodeId) {
                 case Some(id) =>

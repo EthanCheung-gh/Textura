@@ -375,7 +375,7 @@ class PanelListView <: Widget {
                 let limit = max(0.0, total - frame.h)
                 scroll.value = Float64(max(0.0, min(Float64(limit), scroll.value - Float64(dy) * 24.0)))
                 return true
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 if (!frame.contains(x, y)) {
                     return false
                 }

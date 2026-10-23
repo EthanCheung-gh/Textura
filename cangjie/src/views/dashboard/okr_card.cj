@@ -105,14 +105,14 @@ class OkrRowsView <: Widget {
                     }
                     rowY += height + 2.0
                 }
-            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+            case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
                 match (rowAt(ctx, x, y)) {
                     case Some(id) =>
                         ctx.press("dash-okr-row-${id}")
                         return true
                     case None => ()
                 }
-            case UiEvent.MouseUp(MouseButton.Left, x, y) =>
+            case UiEvent.MouseUp(_, x, y) =>
                 match (rowAt(ctx, x, y)) {
                     case Some(id) =>
                         if (ctx.isPressed("dash-okr-row-${id}")) {

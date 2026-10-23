@@ -273,7 +273,7 @@ func handleRunBar(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
         return false
     }
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
             let rects = runBarRects(ctx, view)
             if (!rects.bar.contains(x, y)) {
                 return false
@@ -384,7 +384,7 @@ func exitRun(view: SopFrame): Unit {
 func handleBranchPanel(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     let _ = ctx
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
             let panel = branchPanelRect(view)
             for ((option, rect) in branchOptionRects(view, panel)) {
                 if (rect.contains(x, y)) {

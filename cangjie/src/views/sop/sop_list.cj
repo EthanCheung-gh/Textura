@@ -233,7 +233,7 @@ func hexDigit(hex: String, index: Int64): ?Int64 {
 
 func handleList(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) =>
             let panel = listPanelRect(ctx, view)
             if (!panel.contains(x, y)) {
                 return false
