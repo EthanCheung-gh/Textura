@@ -42,6 +42,23 @@ public class ShellHost {
 
     private var revisionDelivery: ?((() -> Unit) -> Unit) = None
     private var bridgeArmed: Bool = false
+    /**
+     * One-shot focus request, applied by `FocusRequestView` during layout (the only per-frame hook
+     * that receives a `UiContext`). Never re-applied on later frames: a request must not fight the
+     * user for focus.
+     */
+    private var pendingFocus: ?String = None
+    /** The control that held focus when quick capture opened; restored when it closes. */
+    private var focusBeforeCapture: String = ""
+    /** Last seen quick-capture visibility, for the open/close focus edge. */
+    private var captureWasOpen: Bool = false
+    /** Last observed `ctx.focusId` (updated by `applyFocusRequest`, used to remember the opener). */
+    private var observedFocusId: String = ""
+    /** Target of the last applied request; used to fall back when it no longer exists. */
+    private var lastAppliedFocus: String = ""
+    private var focusFallbackArmed: Bool = false
+    /** Remaining layout passes allowed to land a focus request on a control built later. */
+    private var focusAttemptsLeft: Int64 = 0
 
     public init(
         store: AppStore,
@@ -144,6 +161,76 @@ public class ShellHost {
 
     public func closeCapture(): Unit {
         store.setUi({state => state.quickCaptureOpen = false})
+    }
+
+    /**
+     * Watches the quick-capture overlay's open/close edge and queues the matching focus request.
+     *
+     * Views own the buttons that open the dialog (GTD's 快速收集, the dashboard card, the command
+     * palette), so they write `store.ui` directly — the shell cannot hang the request off its own
+     * `openCapture()`. The edge is detected here instead: this runs inside the build of the very
+     * frame that adds/removes the dialog, and `pendingFocus` is consumed by layout of the same frame.
+     */
+    func noteQuickCaptureVisibility(open: Bool): Unit {
+        if (open == captureWasOpen) {
+            return
+        }
+        captureWasOpen = open
+        if (open) {
+            focusBeforeCapture = observedFocusId
+            pendingFocus = Some(CAPTURE_INPUT_ID)
+            focusAttemptsLeft = 3
+        } else {
+            let target = if (focusBeforeCapture.isEmpty()) {
+                "shell-nav-${routeId(route())}"
+            } else {
+                focusBeforeCapture
+            }
+            focusBeforeCapture = ""
+            pendingFocus = Some(target)
+            focusAttemptsLeft = 3
+        }
+    }
+
+    /**
+     * Consumes a pending focus request (called from `FocusRequestView.layout`). Runs once per
+     * request: later frames only record the current focus id.
+     */
+    func applyFocusRequest(ctx: UiContext): Unit {
+        observedFocusId = ctx.focusId
+        match (pendingFocus) {
+            case Some(id) =>
+                if (!id.isEmpty() && ctx.focusId == id) {
+                    pendingFocus = None
+                    focusAttemptsLeft = 0
+                    return
+                }
+                if (focusAttemptsLeft <= 0) {
+                    pendingFocus = None
+                    return
+                }
+                focusAttemptsLeft -= 1
+                if (!id.isEmpty()) {
+                    ctx.focus(id)
+                }
+                // The target may be built after this layout pass (the dialog body is), and the focus
+                // graph only adopts ids registered during layout at the *next* commit. Ask for those
+                // frames instead of dropping the request; a single frame is not enough on device.
+                ctx.requestFrame()
+                if (focusAttemptsLeft == 0) {
+                    pendingFocus = None
+                    lastAppliedFocus = id
+                    focusFallbackArmed = true
+                }
+            case None =>
+                if (!ctx.focusId.isEmpty()) {
+                    focusFallbackArmed = false
+                } else if (focusFallbackArmed && !lastAppliedFocus.isEmpty()) {
+                    focusFallbackArmed = false
+                    lastAppliedFocus = ""
+                    ctx.focus("shell-nav-${routeId(route())}")
+                }
+        }
     }
 
     public func closePalette(): Unit {
@@ -474,6 +561,8 @@ public func buildShell(host: ShellHost): Unit {
         LoadingScreenView(tokens, "正在织理工作区…")
         return
     }
+    // Focus edge for the quick-capture dialog (any view may open it — see the method's comment).
+    host.noteQuickCaptureVisibility(ui.quickCaptureOpen)
 
     // Remembered editor state: survives CUI's per-frame rebuild.
     let searchText = rememberState<String>("shell-search") {ui.search}
@@ -517,6 +606,8 @@ public func buildShell(host: ShellHost): Unit {
                     }.fillHeight()
                 }.fillWidth().fillHeight()
                 NoticeLayerView(tokens, noticeRows(store.notices.value()))
+                // Consumes `ShellHost.pendingFocus` and nothing else; zero-sized and invisible.
+                FocusRequestView(host)
             }.fillWidth().fillHeight().background(tokens.color.bg)
         }
         buildCommandPalette(host, theme, ui.paletteOpen, paletteQuery, paletteActive)
@@ -536,5 +627,35 @@ public func buildShell(host: ShellHost): Unit {
         }
     } else {
         body()
+    }
+}
+
+/**
+ * Zero-sized, non-interactive widget that turns `ShellHost`'s one-shot focus request into a
+ * `UiContext` call. `layout` is the only hook the shell gets every frame with a `UiContext`, and
+ * CUI itself focuses controls from layout (see `Modal`), so this is the supported timing — a
+ * `TextField.autofocus()` latch cannot be used: it is remembered per control id for the whole
+ * session, so it only ever fires on the first open.
+ */
+class FocusRequestView <: Widget {
+    private let host: ShellHost
+
+    init(host: ShellHost) {
+        this.host = host
+        emit(this)
+    }
+
+    public func measure(_: UiContext, _: Size): Size {
+        Size.zero()
+    }
+
+    public func layout(ctx: UiContext, _: Rect): Unit {
+        host.applyFocusRequest(ctx)
+    }
+
+    public func draw(_: UiContext): Unit {}
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
     }
 }

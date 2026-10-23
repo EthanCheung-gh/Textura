@@ -1,6 +1,7 @@
 package textura.shell
 
 import std.env.*
+import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
 import cui.*
@@ -91,6 +92,67 @@ func commandPaletteOpensOnCtrlKAndClosesOnEscape(): Unit {
     }
 }
 
+/*
+ * A view may open quick capture by writing `store.ui` itself (GTD's 快速收集 button, the dashboard
+ * card, the command palette) — it cannot call `ShellHost.openCapture()` without importing the shell.
+ * The focus request therefore hangs off the visibility edge detected in `buildShell`, not off the
+ * shell's own opener; this pins that path.
+ */
+@Test
+func quickCaptureOpenedFromAViewFocusesItsInput(): Unit {
+    let host = keysTestHost()
+    host.armStoreBridge({action => action()})
+    let testHost = WidgetTestHost()
+    let body = {=> buildShell(host)}
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    host.store.setUi({ui => ui.quickCaptureOpen = true})
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    @Expect(testHost.context.focusId, "capture-input")
+    host.closeCapture()
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    @Expect(testHost.context.focusId, "shell-nav-dashboard")
+}
+
+/*
+ * Source gate for the ArkTS key bridge: it may only forward keys ArkUI would otherwise swallow.
+ *
+ * `harmony/entry/src/main/ets/pages/Index.ets` forwards Tab/Shift+Tab, the four arrows and
+ * Ctrl/Cmd+letter into SDL through `libtextura_keys.so`. Escape must stay out of that table: the
+ * XComponent's native key callback already delivers it (`ev#3 KeyDown key=Escape` on device), so
+ * forwarding it as well delivered one physical press twice — the first Esc closed the top layer and
+ * the duplicate immediately acted on the next one. This test reads the page source (the bridge is
+ * ArkTS, not Cangjie) and pins both halves: no Escape, Tab/arrows still present.
+ */
+@Test
+func arktsKeyBridgeForwardsOnlyKeysArkUiSwallows(): Unit {
+    let root = match (getVariable("TEXTURA_CANGJIE_ROOT")) {
+        case Some(value) => value
+        case None => "."
+    }
+    let path = "${root}/harmony/entry/src/main/ets/pages/Index.ets"
+    var text = ""
+    try {
+        text = String.fromUtf8(File.readFrom(path))
+    } catch (_: Exception) {
+        @Expect("missing ${path}", "")
+    }
+    let start = match (text.indexOf("private sdlScancodeFor")) {
+        case Some(index) => index
+        case None => Int64(-1)
+    }
+    let end = match (text.indexOf("private forwardKeyToSdl")) {
+        case Some(index) => index
+        case None => Int64(-1)
+    }
+    @Expect(start >= 0, true)
+    @Expect(end > start, true)
+    let table = text[start..end]
+    @Expect(table.indexOf("KEYCODE_ESCAPE").isNone(), true)
+    @Expect(table.indexOf("KEYCODE_TAB").isSome(), true)
+    @Expect(table.indexOf("KEYCODE_DPAD_UP").isSome(), true)
+    @Expect(table.indexOf("KEYCODE_A").isSome(), true)
+}
+
 /* `?` (no modifier) opens the shortcuts dialog, and Esc closes it. */
 @Test
 func shortcutsDialogTogglesOnQuestionMark(): Unit {
@@ -117,6 +179,40 @@ func quickCaptureOpensOnCtrlN(): Unit {
     @Expect(host.store.ui.value().quickCaptureOpen, true)
     let _ = pressKey(testHost, Key.Escape, UInt16(0), body)
     @Expect(host.store.ui.value().quickCaptureOpen, false)
+}
+
+/*
+ * Quick capture puts the caret in its input on every open, not only on the first one.
+ *
+ * The field used to rely on `TextField.autofocus()`, whose "already done" latch is keyed by the
+ * control id and remembered for the whole session: the second open found the latch set and left
+ * focus wherever it was, so typing went nowhere. The shell now requests the focus itself, once per
+ * opening, from `FocusRequestView.layout` — which also needs no session-scoped latch.
+ *
+ * Closing restores the control that held focus when the dialog opened (or the current sidebar row
+ * when nothing did), because the dialog is removed from the tree and the focus graph would
+ * otherwise just clear the focus.
+ */
+@Test
+func quickCaptureFocusesItsInputOnEveryOpen(): Unit {
+    let host = keysTestHost()
+    host.armStoreBridge({action => action()})
+    let testHost = WidgetTestHost()
+    let body = {=> buildShell(host)}
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    let _ = pressKey(testHost, Key.Letter(UInt8(78)), MOD_CTRL, body)
+    @Expect(host.store.ui.value().quickCaptureOpen, true)
+    @Expect(testHost.context.focusId, "capture-input")
+    let _ = pressKey(testHost, Key.Escape, UInt16(0), body)
+    @Expect(host.store.ui.value().quickCaptureOpen, false)
+    // Nothing was focused before the first open, so the sidebar's current row takes it back.
+    @Expect(testHost.context.focusId, "shell-nav-dashboard")
+    // Second open: the caret must land in the input again, and closing must return to the row that
+    // held focus when this second dialog opened.
+    let _ = pressKey(testHost, Key.Letter(UInt8(78)), MOD_CTRL, body)
+    @Expect(testHost.context.focusId, "capture-input")
+    let _ = pressKey(testHost, Key.Escape, UInt16(0), body)
+    @Expect(testHost.context.focusId, "shell-nav-dashboard")
 }
 
 /*

@@ -35,7 +35,6 @@ const FOCUS_RETRY_DELAYS_MS: number[] = [0, 80, 240, 600, 1500];
 const SDL_SCANCODE_A: number = 4;
 const SDL_SCANCODE_Z: number = 29;
 const SDL_SCANCODE_TAB: number = 43;
-const SDL_SCANCODE_ESCAPE: number = 41;
 const SDL_SCANCODE_RIGHT: number = 79;
 const SDL_SCANCODE_LEFT: number = 80;
 const SDL_SCANCODE_DOWN: number = 81;
@@ -154,15 +153,17 @@ struct Index {
   /*
    * Translates an ArkUI key code into the SDL_Scancode SDL3 uses on the wire; -1 means "leave it".
    *
-   * Only the keys the shell needs are mapped: Tab/Shift+Tab (CUI's focus ring), the four arrows
-   * (same-layer navigation), Escape (close the top layer) and Ctrl/Cmd+letter (global hotkeys).
+   * Only the keys ArkUI would otherwise keep for itself are mapped: Tab/Shift+Tab (CUI's focus
+   * ring), the four arrows (same-layer navigation) and Ctrl/Cmd+letter (global hotkeys).
+   *
+   * Escape is deliberately NOT mapped. It already reaches CUI through the XComponent's native key
+   * callback (measured on device: `ev#3 KeyDown key=Escape`), so forwarding it here delivered the
+   * same press twice — one Esc closed the top layer and the duplicate immediately closed/undid the
+   * next one. Any key ArkUI lets through must stay out of this table.
    */
   private sdlScancodeFor(keyCode: number): number {
     if (keyCode === KeyCode.KEYCODE_TAB) {
       return SDL_SCANCODE_TAB;
-    }
-    if (keyCode === KeyCode.KEYCODE_ESCAPE) {
-      return SDL_SCANCODE_ESCAPE;
     }
     if (keyCode === KeyCode.KEYCODE_DPAD_UP) {
       return SDL_SCANCODE_UP;
