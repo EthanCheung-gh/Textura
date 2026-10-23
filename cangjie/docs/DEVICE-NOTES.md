@@ -387,12 +387,49 @@ ev#6 KeyDown key=Letter(75) mods=64     ← Ctrl+K，修饰键正确
 
 | 键 | 到达 CUI | 生效 |
 |---|---|---|
-| `Esc` | 是（`ev# KeyDown key=Escape`） | **是**：注入 Esc 关闭「收集到 GTD 收件箱」模态，截图确认遮罩消失 |
+| `Esc` | 是 | **是**：关闭命令面板与「收集到 GTD 收件箱」模态（截图确认） |
 | `Ctrl`（`Scan(224)`） | 是 | 修饰键位正确（`mods=64`） |
-| `K`/`N`/`Z` 等字母 | **否**（被系统输入法接管） | 否，因此 Ctrl+K 在真机上仍未生效 |
-| `Tab` / 方向键 | 否（无事件） | 否，ArkUI 焦点遍历先消费了 Tab |
+| `K`/`N`/`Z` | 修后**是**（P05 关掉常驻输入法） | **是**：Ctrl+K 开命令面板、Ctrl+N 开快速收集 |
+| `Tab` / `Shift+Tab` | 修后**是**（P06 桥接） | **是**：焦点沿 `shell-search → UiIconButton → UiSegmented → UiButton` 移动 |
+| 方向键 | 修后**是**（P06 桥接） | 是：交由 CUI 的视图/滚动处理 |
+| 输入框里的中文 | 走系统输入法 | **是**：聚焦搜索框输入 `ni` 出现中文候选 |
 
-### 10.4 剩余工作（明确、可执行）
+### 10.4 已修：输入法抢字符键（`TEXTURA-CUI-P05`）
+
+`SdlWindow` 建窗时调用一次 `SDL_StartTextInput` 且永不停止 → HarmonyOS 把系统输入法挂到 XComponent 上，
+字母键全部进 IME（候选条出现），SDL 只收到 `Ctrl`（`Scan(224)`）。修法：窗口新增 `startTextInput()` /
+`stopTextInput()`，CUI 在 `applyTextInputAnchor()` 里按「本帧是否有文本控件绘制了插入符」切换——
+无输入框时停止文本输入，字符键回到应用；输入框聚焦时重新开启，输入法不受影响。
+`SafeImeController.attach/hideTextInput` 同时维护 `TextInputState.attached`，供页面决定是否转发按键。
+
+真机证据（同一台机器，出货包）：
+
+| 操作 | 结果 |
+|---|---|
+| 无输入框按 `Ctrl+K` | 命令面板打开（截图：命令面板含搜索框与条目行） |
+| `Esc` | 命令面板关闭（截图对比 115 908 取样像素变化） |
+| `Ctrl+N` | 「收集到 GTD 收件箱」弹出（截图像素变化 119 555） |
+| 聚焦顶栏搜索框输入 `ni` | 系统输入法候选条出现 `你/拟/呢/尼/妮…`，中文输入正常 |
+
+### 10.5 已修：Tab 被 ArkUI 焦点遍历消费（`TEXTURA-CUI-P06`）
+
+`Tab` 注入后 CUI 端**没有任何事件**（ArkUI 在 XComponent 的按键回调之前消费掉 Tab）。
+修法：HAP 侧新增 NAPI 模块 `libtextura_keys.so`（`sendKey(scancode, down, mods)` → `SDL_PushEvent`），
+页面根容器 `onKeyEvent` 只转发 Tab/Shift+Tab、方向键、Escape、Ctrl/Cmd+字母，普通字母不转发（留给输入法）；
+ArkUI 只放行 KeyUp 的情况由页面补发一次完整按下-抬起。输入法已挂载时页面不再转发，避免重复投递。
+
+真机证据（`diag.log` 的 `focus` 字段随每次 Tab 变化）：
+
+```text
+ev# KeyUp key=Tab focus='shell-search'
+ev# KeyUp key=Tab focus='…:UiIconButton'
+ev# KeyUp key=Tab focus='…:UiSegmented'
+ev# KeyUp key=Tab focus='…:UiButton#2'
+```
+
+即 Tab 依次走过顶栏搜索框 → 主题切换按钮 → 设置页分段控件 → 设置页按钮，**焦点环真的在控件间移动**。
+
+### 10.6 剩余工作（明确、可执行）
 
 1. **让文本输入按焦点开关**：`cangjie-sdl` 增加 `SdlWindow.stopTextInput()/startTextInput()`，
    CUI 在 `applyTextInputAnchor()` 里按「有/无文本控件焦点」调用。这样输入法只在编辑框聚焦时占字符键，

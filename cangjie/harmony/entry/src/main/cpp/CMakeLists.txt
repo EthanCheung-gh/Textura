@@ -23,6 +23,20 @@ set(TEXTURA_LIBS "${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/${OHOS_ARCH}")
 
 add_library(main SHARED host_bootstrap.c)
 
+# TEXTURA-CUI-P05: the ArkTS -> SDL key bridge. A separate NAPI module (`textura_keys`) because the
+# page root forwards the keys ArkUI keeps for its own focus traversal (Tab) into SDL's event queue.
+# It resolves SDL_PushEvent at run time, so it needs no SDL headers and no link against libSDL3.so;
+# libace_napi provides the module registration entry points.
+add_library(textura_keys SHARED textura_keys.c)
+find_library(ACE_NAPI_LIB ace_napi.z)
+if(ACE_NAPI_LIB)
+    target_link_libraries(textura_keys PRIVATE ${ACE_NAPI_LIB})
+endif()
+set_target_properties(textura_keys PROPERTIES
+    PREFIX "lib"
+    OUTPUT_NAME "textura_keys"
+)
+
 # dlopen/dlsym are all the shim needs; the Cangjie runtime is brought up by ArkTS.
 target_link_libraries(main PRIVATE dl)
 

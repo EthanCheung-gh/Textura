@@ -26,6 +26,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import pointer from '@ohos.multimodalInput.pointer';
 import sdl from 'libSDL3.so';
 import { requireCJLib } from 'libark_interop_loader.so';
+import { TextInputState } from '../common/TextInputState';
 
 const DOMAIN = 0x0000;
 const TAG = 'Textura/HOST';
@@ -47,6 +48,9 @@ class SafeImeController {
   private readonly controller: inputMethod.InputMethodController = inputMethod.getController();
 
   attach(showKeyboard: boolean, textConfig: ESObject, callback: ESObject): void {
+    // A text control has focus: the IME owns character keys and Escape/Ctrl from here on
+    // (pages/Index.ets stops forwarding them, because the native path works while the IME is up).
+    TextInputState.attached = true;
     try {
       this.controller.attach(showKeyboard, textConfig as inputMethod.TextConfig,
         callback as (error: BusinessError<void>) => void);
@@ -56,6 +60,8 @@ class SafeImeController {
   }
 
   hideTextInput(callback: ESObject): void {
+    // No text control focused any more: the page takes the navigation/shortcut keys back.
+    TextInputState.attached = false;
     try {
       this.controller.hideTextInput(callback as () => void);
     } catch (e) {
