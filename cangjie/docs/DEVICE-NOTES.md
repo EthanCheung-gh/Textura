@@ -670,3 +670,53 @@ Enter 提交 + Esc 取消 + 初值 + 校验错误。点击画布上的「输入�
 - 弹层叠层数从 1 变 2（遮罩 + 正文），`commandPaletteOpensOnCtrlKAndClosesOnEscape` 与
   `closedOverlaysLeaveNoLayerBehind` 已按新结构更新为 `+2 / 0`。
 
+---
+
+## 17. 全控件可点击性：审计、加固与门禁（本轮）
+
+§16 解决的是「输入框点不进」；本节解决「控件点不动」这一类同源问题，并把判据写成可复查的清单。
+
+### 17.1 审计清单
+
+逐路由的控件清单（类型 / 命中代码 file:line / 观测变化）落在 `docs/CLICK-AUDIT.md`：
+侧栏、顶栏、命令面板、快速收集、GTD、OKR、日历、甘特、SOP、设置、仪表盘共 11 组、约 60 行条目，
+每条标明 **[原生]**（CUI 内建）还是 **[自绘]**（Textura 画布 + hotspot）。清单由三条 grep 复跑：
+`MouseDown(MouseButton.`、`addHotspot(`、`ButtonView(|IconButtonView(|SegmentedView(`。
+
+### 17.2 通用加固：按钮码归一（`TEXTURA-CUI-P08`）
+
+- 触摸后端把主键报成 `RawCode(0|1)`，CUI 内建控件只认 `Left`，于是「点不动但 hover 正常」。
+  补丁在事件进入框架处（`cui.core.dispatchEventRecord`）**一次**归一 `RawCode(0|1) → Left`，
+  内建与自绘控件共用同一判定；中间键/右键不变。
+- 应用层仍统一走 `textura.ui.isPrimaryPointerButton`（`Left | RawCode(0) | RawCode(1)`），
+  双保险；生产源码里 41 处 `MouseDown/MouseUp(MouseButton.Left` 直接匹配已全部替换。
+
+### 17.3 抬手与命中矩形
+
+- 抬手统一 `MouseUp(_, x, y)`：不再校验抬手事件的 button 字段，改由「按下时 `ctx.press(id)` +
+  抬手落在同一矩形」触发，避免抬手码异常导致控件卡在按下态。
+- 自绘控件的命中矩形在 layout/同帧 draw 计算并保存在控件实例；画布类（`PageCanvas`、
+  `GanttBody`、`SopFrame`）每次 layout 刷新，`measure` 只做高度预演、不写回矩形。
+
+### 17.4 源码门禁
+
+`src/shell/pointer_gate_test.cj`：递归扫描 `src/` 下全部非测试 `.cj`，只要出现
+`MouseDown(MouseButton.` 或 `MouseUp(MouseButton.` 就直接失败并打印 `文件:行号`；
+另有一条用例钉住 `isPrimaryPointerButton` 的四种映射（`Left` / `RawCode(0)` / `RawCode(1)` 通过，
+`RawCode(2)` 拒绝）。空扫描（根目录错、文件树读不到）也会失败，防止「零命中绿灯」。
+
+### 17.5 主机回归（`src/shell/press_test.cj`）
+
+| 用例 | 覆盖 | 断言 |
+|---|---|---|
+| `buttonPressCountsUnderEveryButtonCoding` | 自绘按钮 + 三种按钮码 | 三次主键各 +1 次点击，`RawCode(3)` 不触发 |
+| `segmentedPressSelectsThePressedItem` | 自绘分段（按控件自身度量算命中点） | `RawCode(1)` 选中第 2 项，`Left` 回到第 1 项 |
+| `dialogFooterButtonPressRunsThroughTheOverlay` | 弹层页脚按钮（overlay 派发 + 原生 `Button`） | `RawCode(0)` 抬手后回调执行一次 |
+
+行选择由 `src/shell/sidebar_click_test.cj`（侧栏行按压 → 路由变化）覆盖；输入框由
+`src/shell/input_focus_test.cj` 覆盖；浮层按钮的保存/取消语义由 `src/ui/prompt_test.cj` 覆盖。
+
+### 17.6 真机矩阵
+
+真机 8 项输入矩阵与「七路由 × 每路由 ≥3 控件」点击表见交付报告；本文件只记录可复跑的命令与
+判据（截图 + `ev#` 里的 `focus`/`hover` 变化），不复制一次性截图路径。
