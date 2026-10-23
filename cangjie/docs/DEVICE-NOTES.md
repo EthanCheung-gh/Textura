@@ -293,7 +293,117 @@ screenX=674 screenY=370  →  x=60  y=128
 
 ---
 
-## 9. 卫生
+## 9. 路由切换导致整页冻结（已修复，`TEXTURA-CUI-P04`）
+
+### 9.1 症状与旧判断的修正
+
+用户现场：点若干次侧栏之后界面「冻结」——所有控件点不动、滚轮不滚、需要重启应用。现场还报告
+「侧栏只有 OKR / SOP / GTD 可点」。**本轮把两条都复现并给出了根因**，其中「只有三项可点」是
+坐标换算错误造成的观察偏差（见 §7 的窗口原点：外框 `(614,177)` + 系统标题栏 66px ⇒ 内容原点
+`(614,242)`，旧记录里的 `(614,242)` 才是点击应使用的原点），点对之后**七条路由都能切换**。
+
+### 9.2 根因：构建提交阶段的 CUI 渲染节点二次回收
+
+诊断包（`PROBE_COMPILED_ON=true`）在真机 `diag.log` 里给出直接证据：
+
+```text
+ev#44 MouseMove x=163 y=237 hover='shell-nav-gantt'
+ev#45 MouseDown button=Left primary=true x=163 y=237 hover='shell-nav-gantt'
+t=30475 fail route=gtd   error=IllegalStateException: Cannot inspect commands through a released scene node
+t=30482 fail route=gantt error=IllegalStateException: Cannot inspect commands through a released scene node
+…（此后每帧一次，直到进程结束；本轮实测共 1702 次）
+```
+
+链路：点击 → store 写入成功（`ui-prefs.json` 因为 `buildShell` 没跑完而**不落盘**）→ 该帧
+`buildRoot → finishBuild → commitMountBuild → removeAutomaticMount → closeRenderNodes →
+AutomaticRenderNode.close() → invalidatePaintCache()` 抛异常 → **之后每一帧都在同一处抛**。
+
+两个放大因素：
+1. 异常发生在 `finishBuild`（`body` 之外），`renderRoute` 的错误边界**够不到**它；
+2. CUI 的 `UiFailureCollector` 把它收进宿主失败集合并继续循环，所以进程活着、界面死了、日志里也没有痕迹
+   —— 这就是「静默冻结」。诊断包因此临时给 `DesktopApp` 加了 `hostedFailureListener`（见 §9.4 的说明）。
+
+### 9.3 修法（`CUI-P04`，`third_party/CUI/src/core/automatic_render_node.cj`）
+
+`removeAutomaticMount` 是「先关外层、再递归关内层」，内层节点仍持有指向已关闭父节点的 `parent`
+链接，向上失效缓存时踩到已释放的 `ElementSceneNode`。补丁在 `invalidatePaintCache` 里
+`if (closed) { return }`，并只向**未关闭**的父节点传播；新增只读 `isClosed()`。只跳过对已释放节点的
+缓存操作，绘制指令不变 → 对拍 14/14 数值未变。
+
+主机回归（`src/shell/route_switch_test.cj`）：修前 `routeSwitchSurvivesRepeatedVisits` 稳定 ERROR，
+修后 PASSED。
+
+### 9.4 真机复测（出货构建，探针关闭）
+
+安装 `entry-default-signed.hap` 后按用户顺序注入点击（屏幕坐标 = 内容坐标 + `(614,242)`）：
+
+| 步骤 | 注入 | `ui-prefs.json` 结果 |
+|---|---|---|
+| 今日 | `(674,331)` | `dashboard` |
+| 日历 | `(674,367)` | `calendar` |
+| 甘特 | `(674,477)` | `gantt` |
+| 设置 | `(674,549)` | `settings` |
+| OKR | `(674,404)` | `okr` |
+| SOP | `(674,513)` | `sop` |
+| GTD | `(674,440)` | `gtd` |
+| 再次今日/日历/甘特 | 同上 | `dashboard` / `calendar` / `gantt` |
+
+* 每一步都切换，**切换之后仍可继续点击**（冻结消失）；诊断包同一次会话里 `fail` 计数 **0**（修前 1702）。
+* 内容区滚轮：`uinput -M -s -4` 后整屏取样像素变化 33 731（内容真的滚动）。
+* 按钮：GTD 顶栏「快速收集」→ 弹出「收集到 GTD 收件箱」模态（遮罩 + 面板）。
+* 已知注入噪声：`aa start` 之后**第一次**注入偶发丢失（系统侧瞬时），重发一次即可，与本应用无关。
+
+---
+
+## 10. 键盘：到得了 CUI，但被系统输入法抢走字符键
+
+### 10.1 证据链（诊断包 `diag.log`，Capture 阶段根监听）
+
+```text
+ev#3 KeyDown key=Escape
+ev#5 KeyDown key=Scan(224) mods=64      ← 左 Ctrl
+ev#6 KeyDown key=Letter(75) mods=64     ← Ctrl+K，修饰键正确
+```
+
+结论修正：`requestFocus`/`onFocus` 之外，**按键本身是能到 CUI 的**（Escape、Ctrl 都到）。此前「键盘全不可用」
+的观察里至少混了两件事：
+
+1. **方向/字符键被系统输入法接管**：SDL 窗口创建时就 `SDL_StartTextInput`（`cangjie-sdl/src/window.cj:137`）
+   且永不停止，HarmonyOS 因此把系统输入法挂到 XComponent 上。注入 `K` 时系统弹出候选条（截图里出现
+   「kk / 看看 / 开口 / 可靠…」），`diag.log` 里**只有 Ctrl 的 `Scan(224)`**，`Letter(75)` 不再出现。
+2. **`Tab` 根本不产生事件**：`uinput -K -d 2049` 后 `diag.log` 无任何对应行——被 ArkUI 的焦点遍历吃掉。
+
+### 10.2 修掉的软件侧 bug：字母键码大小写
+
+`handleHotkey` 原来先 `asciiLower(code)` 再与**大写**常量比较：设备上报 `'K'` = 75，
+`asciiLower(75)` = 107，永远不等于 75，于是 Ctrl+K / Ctrl+N / Ctrl+Z 全部静默失效（桌面 SDL 报小写 107，
+`asciiLower(107)` = 107 也不等于 75，同样失效）。改为 `isLetterKey(code, letter)` 两侧都折叠
+（`src/shell/appshell.cj`），一张表同时服务两种键码约定。
+
+主机回归（`src/shell/keys_test.cj`，七条路由各跑一遍）：Ctrl+K 打开命令面板、Esc 关闭（并断言关闭后
+侧栏点击仍有效）、`?` 开关快捷键弹层、Ctrl+N 开关快速收集、Tab / Shift+Tab 焦点前后移动。
+
+### 10.3 真机键盘现状（出货构建）
+
+| 键 | 到达 CUI | 生效 |
+|---|---|---|
+| `Esc` | 是（`ev# KeyDown key=Escape`） | **是**：注入 Esc 关闭「收集到 GTD 收件箱」模态，截图确认遮罩消失 |
+| `Ctrl`（`Scan(224)`） | 是 | 修饰键位正确（`mods=64`） |
+| `K`/`N`/`Z` 等字母 | **否**（被系统输入法接管） | 否，因此 Ctrl+K 在真机上仍未生效 |
+| `Tab` / 方向键 | 否（无事件） | 否，ArkUI 焦点遍历先消费了 Tab |
+
+### 10.4 剩余工作（明确、可执行）
+
+1. **让文本输入按焦点开关**：`cangjie-sdl` 增加 `SdlWindow.stopTextInput()/startTextInput()`，
+   CUI 在 `applyTextInputAnchor()` 里按「有/无文本控件焦点」调用。这样输入法只在编辑框聚焦时占字符键，
+   Ctrl+K 等快捷键才能到 CUI；桌面侧行为不变（默认仍然开启）。这是字符键与 Tab 之外的字母键的唯一正解，
+   属第三方改动，需与 CUI-P04 同流程登记。
+2. `Tab` 需要 ArkUI 焦点链（`Index.ets` 根容器 `focusable(true)` + `defaultFocus`）或 ArkTS→native 按键桥；
+   本轮尚未实现，因为 §10.1 证明非字符键本来就能到 CUI。
+
+---
+
+## 11. 卫生
 
 * 探针源码默认关闭（`PROBE_COMPILED_ON = false`；出货构建实测 `diag.log` 不出新行）。
   真机现存安装包是**探针开启**的诊断包（便于现场复测），出货需按 `HARMONY.md` §7.1c 重编。
