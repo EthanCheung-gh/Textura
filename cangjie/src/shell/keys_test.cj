@@ -93,6 +93,34 @@ func commandPaletteOpensOnCtrlKAndClosesOnEscape(): Unit {
 }
 
 /*
+ * Clicking the capture input must focus it even with no autofocus request pending.
+ *
+ * The field is the first control of the dialog body: the panel is centred (560 wide → x 440..1000)
+ * and its top is 10% of the viewport plus the header, body padding, label and gap. A press on
+ * (720, 266) lands inside the input.
+ */
+@Test
+func clickOnCaptureInputFocusesIt(): Unit {
+    let host = keysTestHost()
+    host.armStoreBridge({action => action()})
+    let testHost = WidgetTestHost()
+    let body = {=> buildShell(host)}
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    host.store.setUi({ui => ui.quickCaptureOpen = true})
+    let _ = testHost.frame(KEYS_RECT, body: body)
+    // Clear whatever the open edge focused, then click like a user would. (720, 266) is the input's
+    // centre: the panel top is 10% of the viewport plus header, body padding, label and gap.
+    testHost.context.clearFocus()
+    let _ = testHost.frame(KEYS_RECT,
+        events: [
+            UiEvent.MouseMove(720.0, 266.0),
+            UiEvent.MouseDown(MouseButton.Left, 720.0, 266.0),
+            UiEvent.MouseUp(MouseButton.Left, 720.0, 266.0)
+        ], body: body)
+    @Expect(testHost.context.focusId, "capture-input")
+}
+
+/*
  * A view may open quick capture by writing `store.ui` itself (GTD's 快速收集 button, the dashboard
  * card, the command palette) — it cannot call `ShellHost.openCapture()` without importing the shell.
  * The focus request therefore hangs off the visibility edge detected in `buildShell`, not off the
