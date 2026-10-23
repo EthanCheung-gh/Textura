@@ -627,6 +627,131 @@ cangjie/scripts/harmony/assemble_hap.sh    # 结尾应变成 STATUS: installable
 
 脚本会先校验：文件存在且非空；profile 的 `bundle-name` == `AppScope/app.json5` 的 bundleName
 （不符直接报错退出，不写文件）；打印 profile 里授权的 `device-ids`。`--dry-run` 只校验不落盘。
+还没有自己的私钥/CSR 时，先按 §7.1a 生成。
+
+### 7.1a 生成密钥与 CSR（AGC 前置）
+
+签名材料分两半：**本机生成**私钥 + CSR，**AGC 签发**证书（`.cer`）与调试 profile（`.p7b`）。CSR 与私钥只跟
+JDK 的 `keytool`（或 `openssl`）有关；`hdc` 是设备连接工具，**不能生成 CSR**，它只负责取 UDID
+（§7.1a 第 2 步 / `device_udid.sh`）。
+
+一条命令（默认参数即 Textura 调试材料）：
+
+```bash
+cangjie/scripts/harmony/make_csr.sh
+
+# 等价的全参数写法
+cangjie/scripts/harmony/make_csr.sh \
+  --alias    textura-debug \
+  --out-dir  cangjie/harmony/.certs/textura-debug \
+  --dname    'C=CN,O=EthanCheung,OU=Textura,CN=Textura Debug' \
+  --validity 9125
+```
+
+默认走 keytool，固定为华为要求的组合：`-keyalg EC -groupname secp256r1 -sigalg SHA256withECDSA
+-storetype PKCS12`。产物：
+
+```
+cangjie/harmony/.certs/textura-debug/
+├── textura-debug.p12   # PKCS#12 keystore，含私钥；签名时 --store-file 指向它
+├── textura-debug.csr   # PKCS#10 请求；上传给 AGC
+└── password.txt        # 24 位随机密码（仅未显式提供密码时生成）
+```
+
+输出样例（密码只打印路径，**从不回显**）：
+
+```
+==> out-dir  : .../cangjie/harmony/.certs/textura-debug
+==> keystore : .../textura-debug.p12 (PKCS#12, alias textura-debug)
+==> CSR      : .../textura-debug.csr (PKCS#10, to upload to AGC)
+==> generated a 24-character random password -> .../password.txt (mode 600, not printed)
+==> keytool: EC secp256r1 + SHA256withECDSA, PKCS#12, alias textura-debug, validity 9125 days
+==> self-check
+    CSR subject          : CN=Textura Debug, OU=Textura, O=EthanCheung, C=CN
+    CSR public key       : id-ecPublicKey / prime256v1 (P-256)
+    CSR signature alg    : ecdsa-with-SHA256
+    CSR SHA-256          : BE:9E:A2:09:1C:3B:FC:E7:...:C8:62:9F:6A:09
+    public key SHA-256   : 244a81aa608bd3fe5c56578547241e89827f0ef20ab4aacf8349e4b2f3a4fcbd
+    keystore key SHA-256 : 244a81aa608bd3fe5c56578547241e89827f0ef20ab4aacf8349e4b2f3a4fcbd  [matches CSR]
+    keystore alias/type  : textura-debug / PrivateKeyEntry
+    keystore cert SHA-256: 41:39:1B:87:FE:1D:CA:6E:...:18:44:73:E6:8D
+    keystore cert note   : local self-signed placeholder; AGC issues the real .cer
+```
+
+自检不是打印完就算：CSR 必须是 `id-ecPublicKey` + `prime256v1` + `ecdsa-with-SHA256`；脚本把 p12 里私钥
+导出的公钥 DER 与 CSR 公钥 DER 各算一次 SHA-256，**不相等直接非零退出**（不会留下半套材料）。
+
+其他开关：
+
+| 参数 | 作用 |
+|---|---|
+| `--force` | 替换已有 p12/csr（先生成到临时目录、自检通过后再原子替换）；不带它时只复检、不动文件 |
+| `--password` / `--password-file` | 显式给密码（`--password-file` 更安全：argv 在 `ps` 里可见）；不提供则复用/生成 `password.txt` |
+| `--openssl` | 用 openssl 生成同一套 EC P-256 材料；p12 里会放一张一次性自签证书，签名时仍以 AGC 的 `.cer` 为准 |
+| `--alias` / `--out-dir` / `--dname` / `--validity` | 别名、输出目录、Subject、本地自签证书有效期 |
+
+文件权限统一：目录 `700`，`p12`/`csr`/`password.txt` 均为 `600`。重复执行是幂等的；`--force` 两次会得到
+两套不同密钥，每次自检都通过。
+
+**第 2 步：AGC 操作清单**（需要你自己的华为账号，命令行无法代做）
+
+1. 登录 [AppGallery Connect](https://developer.huawei.com/consumer/cn/service/josp/agc/index.html) →
+   我的项目 → 选择 Textura 所在项目 → **证书、APP ID 与 Profile**。
+2. **证书**页 → 新增证书 → 名称 `TexturaDebug` → 类型 **调试** → 上传
+   `cangjie/harmony/.certs/textura-debug/textura-debug.csr` → 提交 → 下载签发的 `.cer`
+   （证书有效期以页面为准；到期需重签）。
+3. **设备**页 → 新增设备 → 名称自取 → UDID 用下面的命令取（或 DevEco Studio 设备管理器里看）：
+
+   ```bash
+   cangjie/scripts/harmony/device_udid.sh
+   # device : <connect-key>
+   # UDID   : <64 位十六进制>
+   ```
+
+   脚本用绝对路径调 hdc；没有设备时会提示 USB 调试或 `hdc tconn <ip>:<port>`（无线调试）。
+4. **Profile** 页 → 新增 Profile → 类型 **调试** → 选择上面的证书与设备 →
+   **bundleName 必须填 `com.ethancheung.textura`**（不是参考项目的 `com.ethancheung.pixcapt`）→
+   下载 `.p7b`。
+5. 材料接入项目（四件套 + 密码）：
+
+   ```bash
+   cangjie/scripts/harmony/set_signing_material.sh \
+     --store-file cangjie/harmony/.certs/textura-debug/textura-debug.p12 \
+     --key-alias  textura-debug \
+     --cert       cangjie/harmony/.certs/textura-debug/TexturaDebug.cer \
+     --profile    cangjie/harmony/.certs/textura-debug/TexturaDebug.p7b \
+     --store-password "$(cat cangjie/harmony/.certs/textura-debug/password.txt)" \
+     --key-password   "$(cat cangjie/harmony/.certs/textura-debug/password.txt)"
+
+   # 先只校验、不改文件：
+   cangjie/scripts/harmony/set_signing_material.sh ... --dry-run
+
+   cangjie/scripts/harmony/assemble_hap.sh    # 结尾应为 STATUS: installable
+   ```
+
+   `set_signing_material.sh` 会把密码写进 **受版本控制的** `cangjie/harmony/build-profile.json5`。
+   因此这一步只在本地做：**不要把带明文密码的 `build-profile.json5` 提交**；提交前
+   `git checkout -- cangjie/harmony/build-profile.json5` 恢复。脚本会先校验 profile 的
+   `bundle-name` 与 `AppScope/app.json5` 一致，并打印 profile 授权的 UDID 列表。
+
+**常见失败**
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| hvigor `00303074` | `.p7b` 的 bundleName ≠ `com.ethancheung.textura`（多半是复用了 pixcapt 材料） | 重新在 AGC 为 `com.ethancheung.textura` 申请调试 profile；`set_signing_material.sh` 会在写文件前就报错 |
+| 安装被拒、日志提示设备未授权 | 设备 UDID 不在 profile 的 `device-ids` 里 | AGC 设备页注册该 UDID，**重新生成** `.p7b` 并重跑 `set_signing_material.sh` |
+| 签名/安装提示 profile 过期 | 调试 profile 有有效期 | AGC 重新下载 `.p7b`，按第 5 步替换 |
+| `keystore password was incorrect` / `mac verify failure` | p12 密码不对，或 `password.txt` 与 p12 不是一套 | 用 `cangjie/harmony/.certs/<alias>/password.txt`；密码丢失无法恢复，只能重新生成密钥 + CSR 并在 AGC 重签证书 |
+| 自检报 `does not match the CSR public key` | p12 与 CSR 不是同一次生成的（手工混用了文件） | 删掉该目录重跑 `make_csr.sh --force`，重新走 AGC |
+| `device_udid.sh` 输出 `[Empty]` | 设备没连上 | 打开 USB 调试并授权，或 `hdc tconn <ip>:<port>`；见 §6 第 0 步 |
+
+**密钥与密码永不入库**
+
+- `cangjie/harmony/.certs/` 已加入 `cangjie/.gitignore`（`harmony/.certs/`，第 18 行），
+  `git check-ignore -v cangjie/harmony/.certs/textura-debug/textura-debug.p12` 应命中；
+- `.p12`、`.csr`、`.cer`、`.p7b`、`password.txt` 都属于本机材料，不要 `git add -f`；
+- 本机生成的 p12 里的自签证书只是占位，**真正参与签名的是 AGC 签发的 `.cer`**；
+- bundleName 固定为 `com.ethancheung.textura`，与 `AppScope/app.json5` 一致。
 
 ### 7.2 `libc++.so` 的 ABI 与来源（阻塞真机加载，已 workaround）
 
@@ -866,6 +991,8 @@ cd /home/ethan/CodeRepo/sandbox/Textura/cangjie
 ./scripts/harmony/stage_libs.sh                # 闭包 + loader + ohos/ interop -> entry/libs/arm64-v8a
 ./scripts/harmony/assemble_hap.sh [--no-sync]  # HAP -> harmony/out/ + 载荷校验 + 可安装性判定
 ./scripts/harmony/set_signing_material.sh --help   # 换签名材料（§7.1）
+./scripts/harmony/make_csr.sh [--force] [--openssl]  # 私钥 p12 + CSR（§7.1a）
+./scripts/harmony/device_udid.sh                   # 取设备 UDID（hdc 绝对路径）
 
 # 直接看快照里的中间产物（readelf 用 SDK 自带的 llvm-readelf，PATH 里没有）
 RE=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/native/llvm/bin/llvm-readelf
