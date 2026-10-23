@@ -232,6 +232,27 @@ public class SdlWindow <: Resource {
     }
 
     /*
+     * Starts/stops OS text input for this window (TEXTURA-CUI-P05).
+     *
+     * The window used to call SDL_StartTextInput once at creation and never stop it, which is what a
+     * desktop app wants. On HarmonyOS "text input started" means the system input method owns the
+     * window's character keys: every letter goes to the IME (candidate bar included) and never
+     * reaches SDL's key events, so application shortcuts such as Ctrl+K could not work there while a
+     * text field was not even focused. The shell therefore drives these two calls from focus: the
+     * window owns "how", the framework owns "when".
+     */
+    public func startTextInput(): Unit {
+        renderer.ensureRenderAccess("startTextInput SdlWindow")
+        ensureSdl(unsafe { SDL_StartTextInput(windowPtr) }, "SDL_StartTextInput")
+    }
+
+    /** Stops OS text input for this window; a no-op on backends without an IME. */
+    public func stopTextInput(): Unit {
+        renderer.ensureRenderAccess("stopTextInput SdlWindow")
+        ensureSdl(unsafe { SDL_StopTextInput(windowPtr) }, "SDL_StopTextInput")
+    }
+
+    /*
      * Dequeues the next pending event, with coordinates already converted to logical pixels;
      * returns `None` when the queue is empty. Non-blocking.
      */

@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -32,6 +32,39 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 ## CUI 补丁
 
 `CUI-P01-hosted-frame-step` 已包含在源码里，位置 `CUI/src/desktop/desktop_app.cj`。它把阻塞的 `run()` 循环拆成宿主可逐帧驱动的 `beginHostedRun` / `step` / `endHostedRun`，供鸿蒙 XComponent `OnFrame` 使用。不要删除或重命名这些方法。
+
+### CUI-P05-text-input-on-focus（本仓新增，最小补丁，含 cangjie-sdl 绑定扩展）
+
+- 位置：`cangjie-sdl/src/window.cj`（新增 `SdlWindow.startTextInput()` / `stopTextInput()`）+
+  `CUI/src/desktop/desktop_app.cj`（`applyTextInputAnchor()` 按焦点开关文本输入）。
+- 现象（真机）：`Ctrl+K`/`Ctrl+N`/`Ctrl+Z` 等含字母的快捷键无效，而 `Escape`、`Ctrl` 能到 CUI。
+  `diag.log` 只有 `Scan(224)`、没有 `Letter(75)`；屏幕上出现系统输入法候选条。
+- 根因：`SdlWindow` 在**建窗时**调用一次 `SDL_StartTextInput` 且永不停止。HarmonyOS 上「文本输入已开启」
+  意味着系统输入法接管窗口的字符键，字母全部进 IME，SDL 的键事件拿不到；本应用并没有聚焦任何输入框。
+- 改动：窗口仍默认开启（桌面行为不变），CUI 在每帧结束时按「本帧是否有文本控件报告了插入符」
+  （`ctx.textInputAnchorRect()`，即 `TextField/TextArea` 有焦点并绘制了光标）切换：
+  有 → `startTextInput()`（输入法可正常出候选），无 → `stopTextInput()`（字符键交回应用）。
+  两侧都用 `SdlException` 兜底，失败时保持原状态，不影响帧。
+- 实测：真机上无输入框时 `K` 不再进输入法（候选条消失，`Ctrl+K` 打开命令面板、`Ctrl+N` 打开快速收集）；
+  聚焦顶栏搜索框后输入 `ni`，系统输入法候选条正常出现（你/拟/呢/尼…），中文输入未被破坏。
+- 上游同步提示：升级 cangjie-sdl/CUI 时需重新应用本补丁，并在本表登记版本。
+
+### CUI-P06-arkts-key-bridge（本仓新功能，HAP 侧）
+
+- 位置：`harmony/entry/src/main/cpp/textura_keys.c`（新 NAPI 模块 `textura_keys`）+
+  `harmony/entry/src/main/ets/pages/Index.ets`（根容器 `onKeyEvent` 转发）+ `ets/common/TextInputState.ets`。
+- 现象（真机）：`Tab` 注入后 `diag.log` 里**没有任何事件**——ArkUI 的焦点遍历在 XComponent 的
+  `OH_NativeXComponent_RegisterKeyEventCallback` 之前就把 Tab 消费了，CUI 的 Tab 走焦永远不可用。
+- 改动：根容器只把应用需要的键转发进 SDL 队列（`sendKey(scancode, down, mods)` → `SDL_PushEvent`，
+  事件结构按 SDL3 `SDL_KeyboardEvent` 手工布局，`SDL_PushEvent` 运行时 `dlsym`，不引入 SDL 头文件依赖）：
+  Tab/Shift+Tab、四个方向键、Escape、Ctrl/Cmd+字母；**普通字母不转发**（必须留给输入法）。
+  ArkUI 吞掉 KeyDown、只放行 KeyUp 的场景由页面补发一次完整按下-抬起。
+  `TextInputState`（由 `SafeImeController.attach/hideTextInput` 维护）保证「输入法已挂载」时页面不再转发，
+  避免与原生路径重复投递。
+- 实测：真机 `ev# KeyUp key=Tab` 且 `focus='shell-search'` → `UiIconButton` → `UiSegmented` → `UiButton#2`，
+  即焦点沿声明顺序在真实控件间移动；Ctrl+K/Ctrl+N/Esc 全部生效。
+- 上游同步提示：本补丁在 HAP 侧，不在 CUI 内；升级 CUI 不受影响，但升级 SDL 时需复核
+  `SDL_KeyboardEvent` 布局与 `SDL_PushEvent` 符号。
 
 ### CUI-P04-released-scene-node（本仓新增，最小补丁）
 

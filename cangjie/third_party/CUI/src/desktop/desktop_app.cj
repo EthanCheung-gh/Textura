@@ -126,6 +126,9 @@ public class DesktopApp {
     private var appliedShape: ?CursorShape = None
     // The caret rectangle last forwarded to the OS for IME anchoring (logical pixels).
     private var appliedInputAnchor: ?Rect = None
+    // Whether OS text input (the system IME) is currently enabled for this window. The window starts
+    // it at creation, so the first frame without a text control turns it off (TEXTURA-CUI-P05).
+    private var textInputActive: Bool = true
     // Cross-frame loop state. Held as fields rather than runLoop locals so the frame driver can be
     // either the blocking run() loop or an embedding host that owns the tick (see beginHostedRun).
     private var loopPreviousTick: UInt64 = 0
@@ -907,6 +910,17 @@ public class DesktopApp {
     private func applyTextInputAnchor(): Unit {
         match (ctx.textInputAnchorRect()) {
             case Some(anchor) =>
+                // TEXTURA-CUI-P05: a caret means a text control owns the keyboard, so OS text input
+                // must be on. On HarmonyOS an always-on IME swallows every character key before SDL
+                // sees it (Ctrl+K, Ctrl+N, Ctrl+Z never arrived; the candidate bar appeared instead).
+                if (!textInputActive) {
+                    textInputActive = true
+                    try {
+                        window.startTextInput()
+                    } catch (_: SdlException) {
+                        textInputActive = false
+                    }
+                }
                 if (!sameAnchorRect(appliedInputAnchor, anchor)) {
                     appliedInputAnchor = Some(anchor)
                     try {
@@ -917,7 +931,18 @@ public class DesktopApp {
                         appliedInputAnchor = None
                     }
                 }
-            case None => ()
+            case None =>
+                // No text control drew a caret this frame: give the character keys back to the
+                // application (shortcuts, Tab traversal) and let the IME go away.
+                if (textInputActive) {
+                    textInputActive = false
+                    appliedInputAnchor = None
+                    try {
+                        window.stopTextInput()
+                    } catch (_: SdlException) {
+                        textInputActive = true
+                    }
+                }
         }
     }
 
