@@ -18,15 +18,18 @@
 | 宿主库导出 SDL 入口 | ✅ | `.dynsym` 含 `SDL_AppInit/AppIterate/AppEvent/AppQuit`（GLOBAL FUNC） |
 | C shim → `libmain.so` | ✅ | hvigor `BuildNativeWithNinja`；`SONAME libmain.so`，导出同样 4 个符号 |
 | ArkTS 编译 + 页面打包 | ✅ | hvigor `CompileArkTS` 成功，`entry-default-*.hap` 内含 `ets/`、`module.json`、`resources.index` |
-| `assembleHap` 成功 | ✅ | `product=unsigned`：`BUILD SUCCESSFUL`，产出 ≈29.08 MB HAP（见 §5.1） |
+| `assembleHap` 成功 | ✅ | **`product=default`（签名）**：`BUILD SUCCESSFUL`，`entry-default-signed.hap` = 29 585 948 B（§5.1、§7.1b） |
 | HAP 内含宿主 + SDL + 仓颉运行时闭包 | ✅ | 25 个 `libs/arm64-v8a/*.so`（§5.4） |
 | **HAP 内含 `libs/arm64-v8a/ohos/` interop 运行时** | ✅ | 8 个库，与真机可用的参考 HAP **逐文件 sha256 相同**（§5.5） |
-| 签名产物（可安装） | ❌ | 本机无 `com.ethancheung.textura` 的调试 profile，`00303074`（§7.1） |
+| 签名产物（可安装） | ✅ | `hap-sign-tool.jar verify-app` → `verify: Verify success`；签名块叶子证书 = profile 的 `development-certificate`（§7.1b） |
 | 「产物是否可安装」由脚本显式判定 | ✅ | `assemble_hap.sh` 结尾打印 `STATUS: installable` / `STATUS: NOT INSTALLABLE` |
-| 工作区播种 / 偏好持久化（沙箱） | ⚠️ 仅构建期验证 | 路径与建目录逻辑见 §4.5；真机看 `files/textura/workspace.json` 是否生成 |
-| 运行时初始化（`requireCJLib` 路线） | ⚠️ 仅构建期验证 | 符号/依赖证据见 §4.2；无设备无法验证 ArkVM 注册与首帧 |
-| 宿主包与 loader 的版本组合 | ⚠️ **高风险** | 与本仓相同的组合在参考项目上**失败过**（§7.3） |
-| 真机安装/启动/首帧/键盘 | ❌ 未验证 | 需设备 + 为 `com.ethancheung.textura` 签发的调试 profile |
+| 工作区播种 / 偏好持久化（沙箱） | ✅ | 真机首帧后 `workspace.json` 已生成并加载，页脚显示 `30 条记录 · v1`（§7.1c） |
+| 运行时初始化（`requireCJLib` 路线） | ✅ 真机验证 | `Cangjie runtime started` → `requireCJLib` → `SDL_AppInit said continue! We are live!`（§7.1c） |
+| 宿主包与 loader 的版本组合 | ✅ 真机验证 | `cj module must dependent on ohos_ark_interop` 只报 E 级噪音，运行时照常启动（§7.3 已降级） |
+| 真机安装 / 启动 / 首帧 / 中文字形 | ✅ | 安装无失败码；`pidof`=44483 稳定存活；首帧截图见 §7.1c |
+| 真机交互：点击侧栏 → 路由切换 | ✅ | 注入 tap 后顶栏标题与内容区同时切换（日历 / OKR 均验证，截图见 `docs/DEVICE-NOTES.md` §4.4）；根因是 store→CUI 失效桥缺失，非 SDL/坐标（§7.1c） |
+| 真机偏好持久化（跨启动恢复视图） | ✅ | `ui-prefs.json` 每次 route 变化都写；`aa force-stop` + 重启后直接开在 OKR（§7.10） |
+| 输入延迟 / 空转开销 | ✅ 已修 | 宿主事件等待上限 250ms → 16ms：空转 CPU 23% → 6%，系统 `OS_DfxWatchdog` 线程消失（§7.1c、`DEVICE-NOTES.md` §3.3） |
 
 ---
 
@@ -47,7 +50,7 @@
 | `libohos.*.so` / `libcj_ndk_ffi.z.so` | 同上目录（`libohos.ark_interop.so` 2 112 304 B 等 7 个） | loader 启动运行时后按名解析的 interop 库 |
 | `libohos_ark_interop_diff.z.so` | `~/cangjie-ohos-sdk/cangjie/c_wrapper_diff/linux_ohos_aarch64_llvm/`（5 592 B） | `libohos.ark_interop.so` 的 C wrapper 差分 |
 | `libsecurec.so` | `~/cangjie-ohos-sdk/cangjie/compiler/runtime/lib/linux_ohos_aarch64_llvm/`（63 304 B） | 每个 `libohos.*.so` 的 NEEDED |
-| 调试签名材料 | `~/CodeRepo/sandbox/PixCap-Cangjie/.certs/pixcapt-debug/`（只读复用，**bundleName 不符**，见 §7.1） | `build-profile.json5` 的 `signingConfigs` |
+| 调试签名材料 | `cangjie/harmony/.certs/textura-debug/`（AGC 签发，`bundle-name=com.ethancheung.textura`，UDID 已授权；见 §7.1、§7.1b） | `build-profile.json5` 的 `signingConfigs`（本地临时写入，用完 `git checkout` 复原） |
 | 目标 SDK | `targetSdkVersion` / `compatibleSdkVersion` = `5.0.4(16)`，实际用 API 26 SDK 编译 | SDL openharmony 后端要求 ≥ API 16 |
 
 **版本错配（必须知情）**：宿主库由 cjv `sts-1.2.0`（cjc 1.2.0）交叉编译，而 loader 与
@@ -124,7 +127,7 @@ cangjie/harmony/
 ├── AppScope/
 │   ├── app.json5                     bundleName / 版本 / 图标 / 应用名「织理 Textura」
 │   └── resources/base/{element,media} app_name、分层图标（background+foreground）
-├── build-profile.json5               signingConfigs（复用 PixCap .certs）+ products: default / unsigned
+├── build-profile.json5               signingConfigs（material 由 set_signing_material.sh 本地临时写入，见 §7.1）+ products: default / unsigned
 ├── hvigorfile.ts                      appTasks
 ├── oh-package.json5 / code-linter.json5 / hvigor/hvigor-config.json5
 ├── entry/
@@ -259,7 +262,7 @@ app.beginHostedRun { buildShell(host) }                // 一次
 ```
 AppStore(clock: SystemClock())          // clock 必须显式注入，AppStore 不会自己退回墙上时钟
   └─ store.load(<沙箱>/workspace.json)  // 缺失/空白 = 全新安装 -> core.data 播种 demo 并写回
-ShellPreferences.load()                 // $HOME/.textura/ui-prefs.json（route/theme/最近项）
+ShellPreferences.load(<沙箱>/.textura/ui-prefs.json)  // route/theme/最近项（显式绝对路径）
 ShellRuntime(prefs, store)              // 自动保存状态机、toast 生命周期、偏好持久化
 ShellHost(store, runtime, today, interactive=true, loadError, 1440, 900)
   └─ buildShell(host)                   // 侧栏/顶栏/七个视图/命令面板/快速收集
@@ -281,9 +284,11 @@ ShellHost(store, runtime, today, interactive=true, loadError, 1440, 900)
 - **首启播种**：`store.load` 在文件缺失/空白时走 fresh-install 分支，`createSeedWorkspace` 生成 demo
   工作区并 `persist` 到该路径——所以真机第一次启动就能看到与桌面同一份内容，第二次启动是加载而不是重播种。
   父目录由宿主在 `prepareSandbox()` 里 `Directory.create(recursive: true)` 保证。
-- **`HOME` 指向沙箱**：`ShellPreferences.load()` 用 `$HOME/.textura/ui-prefs.json`，设备上 `HOME`
-  通常不可写或未设置；宿主在加载偏好之前 `setVariable("HOME", <沙箱>)`，路由/主题才能跨启动记住。
-  写失败是**尽力而为**（`ShellPreferences.persist` 吞掉 I/O 异常），不会把 UI 拖挂。
+- **偏好路径由宿主显式给出**：`$HOME` 在 HAP 进程里不可用（工作目录只读、环境变量不保证可设），
+  所以宿主调 `ShellPreferences.load(<沙箱>/.textura/ui-prefs.json)`，不依赖 `HOME`；
+  桌面包仍走 `load()` 的 `$HOME` 约定。沙箱根目录与 `.textura/` 子目录都由 `prepareSandbox()`
+  **幂等**创建。写失败是**尽力而为**（不会把 UI 拖挂），但**原因会被记录**并在探针里打一行
+  `prefs … wrote=false error='…'`——这条记录是本轮定位「偏好静默不落盘」的关键（§7.10）。
 - **`interactive = true`**：这是活窗口，自动保存、toast 计时、偏好持久化都开启；桌面的
   `--snapshot` 路径才传 `false`（它不允许写任何东西）。`today` 取本机日期（`store.anchorToday()`），
   加载失败时降级为 `"unknown"` 并让壳层渲染它自己的错误页。
@@ -304,11 +309,11 @@ ShellHost(store, runtime, today, interactive=true, loadError, 1440, 900)
 
 | 项 | 值 |
 |---|---|
-| 路径 | `cangjie/harmony/out/entry-default-unsigned.hap`（快照内为 `entry/build/unsigned/outputs/default/`） |
-| 大小 | **≈29.08 MB**（本轮实测 29 083 038 B，其中宿主库 13 260 920 B；同一 `src/**` 状态下连续两次构建字节数完全一致）。宿主库链接整份 `textura` 源码，`src/**` 有改动时体积会跟着浮动（本轮两次完整重建之间宿主库就多了约 40 KB）；另外 hvigor 打 zip 时写入时间戳，所以 **sha256 每次构建都不同**，别拿哈希当复现判据，用字节数 + 载荷清单。 |
-| product | `unsigned`（`default` 签名失败，见 §7.1） |
+| 路径 | `cangjie/harmony/out/entry-default-signed.hap`（快照内为 `entry/build/default/outputs/default/`） |
+| 大小 | **≈29.59 MB**（本轮实测 29 585 948 B，签名块约占 127 KB；其中宿主库 13 265 624 B）。宿主库链接整份 `textura` 源码，`src/**` 有改动时体积会跟着浮动；另外 hvigor 打 zip 时写入时间戳，所以 **sha256 每次构建都不同**，别拿哈希当复现判据，用字节数 + 载荷清单。 |
+| product | `default`（已签名；material 见 §7.1b。未签名产物 `entry-default-unsigned.hap` ≈29.08 MB 仍在同目录，是 `product=unsigned` 的回退产物，不可安装） |
 | native 库 | **25 个** `libs/arm64-v8a/*.so`（顶层，= 23 个 staged + `libmain.so` + hvigor 补的 `libc++_shared.so`）+ **8 个** `libs/arm64-v8a/ohos/*.so`（interop，见 §5.5） |
-| 其他 | `ets/`（`pages/Index` + `EntryAbility` 字节码）、`module.json`、`resources.index`、`resources/`、`pack.info`、`pkgContextInfo.json` |
+| 其他 | `ets/`（`pages/Index` + `EntryAbility` 字节码）、`module.json`、`resources.index`、`resources/`、`pack.info`、`pkgContextInfo.json`、HAP 签名块（`Hap Signing Block version 3`，3 个 block） |
 
 宿主入口迁到 `buildShell(host)` 之后 HAP 从 ≈22.33 MB 涨到 ≈29.08 MB（宿主库从 7.0 MB → 12.6 MB，
 因为它现在真的链接了侧栏/顶栏/七个视图/命令面板），这是**预期**的体积变化，不是回退。
@@ -551,21 +556,33 @@ $HDC file recv /data/local/tmp/textura.jpeg /tmp/textura.jpeg
 
 ### 最可能失败点排序（按概率）
 
-1. **第 1 步**：签名材料（本机根本没有 `com.ethancheung.textura` 的 profile），与 HAP 内容无关；
-2. **第 3 步**：`cj module must dependent on ohos_ark_interop`（§7.3，本仓宿主是 cjc 1.2.0 时代产物）；
-3. **第 3 步**：`libc++.so` 的 `std::__h` ABI（§7.2，用的是从设备拉出来的库）；
-4. **第 3 步**：`ohos/` 里 interop 库的 18 个 NEEDED 在设备 `platformsdk` 中缺失（§5.5 末段）；
+> **2026-10-23 首次上机后回填**：下面 1–4 条**均未命中**，实际唯一致命项是第 6 条（字体）。实测细节见 §7.1c。
+
+1. ~~**第 1 步**：签名材料（本机根本没有 `com.ethancheung.textura` 的 profile），与 HAP 内容无关；~~
+   → 材料已在 `cangjie/harmony/.certs/textura-debug/`，`install bundle successfully`；
+2. ~~**第 3 步**：`cj module must dependent on ohos_ark_interop`（§7.3，本仓宿主是 cjc 1.2.0 时代产物）；~~
+   → 该 `E` 行照打，但运行时与宿主都正常起来，**非致命**（§7.3 已降级）；
+3. ~~**第 3 步**：`libc++.so` 的 `std::__h` ABI（§7.2，用的是从设备拉出来的库）；~~ → 未复现；
+4. ~~**第 3 步**：`ohos/` 里 interop 库的 18 个 NEEDED 在设备 `platformsdk` 中缺失（§5.5 末段）；~~ → 未复现；
 5. **第 3 步之后**：沙箱不可写（`workspace.json` 没生成、顶栏「保存失败」）——这是新宿主入口引入的
    第一类**业务**失败面，构建期只能验证到「路径解析 + 建目录」为止。
+   → 实测正常：页脚 `自动保存已开启 · 30 条记录 · v1`；
+6. **第 3 步（实测命中，已修）**：首帧前**字体初始化**失败 —— `System UI font initialization failed:
+   No usable font … Failed to open RawFile` → `SDL_AppInit said SDL_APP_FAILURE!` → `reason=Cpp Crash`。
+   修法见 §7.1c 崩溃 #1；**这是本项目真机上第一个、也是唯一一个致命项**。
 
 ---
 
 ## 7. 已知风险
 
-### 7.1 签名：`00303074`，当前 HAP 不可安装（阻塞项，**需要用户提供材料**）
+### 7.1 签名：材料已接入，`product=default` 可签（历史阻塞项已解除，实测见 §7.1b）
 
-`build-profile.json5` 的 `product=default` 复用参考项目的调试材料
-（`PixCap-Cangjie/.certs/pixcapt-debug/`，`keyAlias=pixcapt-debug`）。hvigor 在 `SignHap` 阶段直接拒绝：
+`build-profile.json5` 的 `product=default` 现在用 AGC 为本 bundle 签发的调试材料：
+`cangjie/harmony/.certs/textura-debug/`（`keyAlias=textura-debug`，`bundle-name=com.ethancheung.textura`，
+profile 内 `debug-info.device-ids` 含 1 个 UDID）。**该目录被 `cangjie/.gitignore` 忽略，只在本地存在。**
+
+历史上这一项是阻塞的：早期 `product=default` 复用参考项目的材料
+（`PixCap-Cangjie/.certs/pixcapt-debug/`），hvigor 在 `SignHap` 阶段直接拒绝：
 
 ```
 00303074 Configuration Error
@@ -573,11 +590,12 @@ Error Message: The bundleName in app.json5/hvigorfile.ts does not match the bund
                in the generated SigningConfigs
 ```
 
-原因：该 p7b 是 `type:debug` 的 profile，`bundle-name` 字段为 `com.ethancheung.pixcapt`，且
-`debug-info.device-ids` 只含参考设备那一个 UDID。签名工具比对 bundleName，不符即停。
+原因：那个 p7b 是 `type:debug` 的 profile，`bundle-name` 字段为 `com.ethancheung.pixcapt`，且
+`debug-info.device-ids` 只含参考设备那一个 UDID；签名工具比对 bundleName，不符即停。**换回任何别的项目
+的材料都会立刻复现这个错误**，所以下面这套回退与前置校验都保留着。
 
-因此本仓提供两个 product：`default`（签名，本机必然失败）与 `unsigned`（同模块同 SDK，无签名材料）。
-`assemble_hap.sh` 先试 signed，命中 `00303074` 后自动回落 unsigned 并把错误原文打印出来，**并在结尾
+本仓提供两个 product：`default`（签名）与 `unsigned`（同模块同 SDK，无签名材料）。
+`assemble_hap.sh` 先试 signed，只有命中 `00303074` 时才回落 unsigned 并把错误原文打印出来，**并在结尾
 明确打印产物是否可安装**：
 
 - `STATUS: NOT INSTALLABLE`：不给 `hdc install` 命令（unsigned 产物装不上，给了只会误导）；
@@ -585,48 +603,38 @@ Error Message: The bundleName in app.json5/hvigorfile.ts does not match the bund
   （`ls /system/lib64/platformsdk/ | grep -E "ark_interop|cj_environment"`），之后才是
   `install / aa start / hilog`。
 
-并且现在**在构建开始前**就把 profile 的 bundleName 与 `AppScope/app.json5` 对比打印，
+并且**在构建开始前**就把 profile 的 bundleName 与 `AppScope/app.json5` 对比打印，
 00303074 不用等一次完整构建才发现：
 
 ```
-==> signing profile: .../PixCap-Cangjie/.certs/pixcapt-debug/PixCaptDebugCertDebug.p7b
-==>      profile bundle-name=com.ethancheung.pixcapt  app bundleName=com.ethancheung.textura
-warn: the profile's bundleName does not match com.ethancheung.textura, so product=default cannot be signed here
+==> signing profile: .../.certs/textura-debug/TexturaProfileDebug.p7b
+==>      profile bundle-name=com.ethancheung.textura  app bundleName=com.ethancheung.textura
 ```
 
-**本机可行性核查（结论：不可，缺账号 + 设备 UDID）**
-
-| 路线 | 结论 | 证据 |
-|---|---|---|
-| `devecocli signature generate` | ❌ 需要登录 + 需要设备 | 命令存在（`devecocli signature generate [--team-id] [--force]`）；设置 `DEVECO_CLI_CLT_PATH=<clt>` 后直接返回 `Failed to automatically generate signatures. Run devecocli auth login to sign in.`；`devecocli auth status` → `Not logged in`；`devecocli device list` → `No active devices`（本机无设备，UDID 也拿不到） |
-| `~/.ohos/config` 已有材料 | ❌ 没有本 bundle | 该目录全部 10 个 p7b 覆盖的 bundleName 是：`com.ethan.metricstudio`、`com.ethancheung.metricstudio`、`com.ethancheung.harmodrive`、`com.ethancheung.moduse`、`com.ethancheung.ohclashparty`、`com.ethancheung.pixcapt`、`com.example.cangjiehnp`，**没有 `com.ethancheung.textura`**（`strings *.p7b \| grep -o '"bundle-name":"[^"]*"'`） |
-| `hap-sign-tool.jar`（`sdk/default/openharmony/26/toolchains/lib/`） | ⚠️ 工具在，但救不了 | 有 `sign-app` / `sign-profile` / `generate-keypair` 等子命令，可以本地签名；但 profile 的签名链到 AGC 根、内容是 AGC 签发的 JSON（bundleName + device-ids）。自己 `generate-profile-cert` + `sign-profile` 造出来的 profile 设备不认，安装期校验失败。它只能用于「材料齐了之后手工签」，而 hvigor 已经会调它 |
-
-**需要你提供**（两样，缺一不可）：
-
-1. 设备 UDID（连上设备后 `$HDC shell bm get --udid`，部分固件用 `bm get -u`；或 DevEco Studio 的
-   设备管理器里看）；
-2. 为 `com.ethancheung.textura` + 该 UDID 签发的调试 profile（`.p7b`），以及与之配对的
-   `.p12`（keystore，含私钥）与 `.cer`（证书）。
-   最省事的做法是在有 GUI/账号的机器上跑一次 `devecocli auth login` +
-   `devecocli signature generate`，它会把材料写进 `build-profile.json5`；只需把
-   `~/.ohos/config/default_<bundle>*.{p12,cer,p7b}` 这三个文件拷过来。
-
-材料到手后**一条命令换掉**（全部是参数，脚本里没有写死任何路径）：
+材料（四件套）与接入方式（全部是参数，脚本里没有写死任何路径）：
 
 ```bash
-cangjie/scripts/harmony/set_signing_material.sh \
-  --store-file   <keystore.p12> \
-  --key-alias    <alias> \
-  --cert         <certificate.cer> \
-  --profile      <debug-profile.p7b> \
-  [--store-password <加密串>] [--key-password <加密串>] [--dry-run]
+cangjie/harmony/.certs/textura-debug/
+├── textura-debug.p12          # keystore，alias textura-debug，密码在 password.txt
+├── password.txt               # 600，只有本机
+├── TexturaDebug.cer           # AGC 签发，PEM 含 3 段（Root CA G2 → Developer Relations CA G2 → 叶子）
+├── TexturaProfileDebug.p7b    # AGC 调试 profile（type=debug + bundle-name + device-ids）
+└── material -> ~/.ohos/config/material   # hvigor 解密码用的工作密钥（set_signing_material.sh 建）
 
-cangjie/scripts/harmony/assemble_hap.sh    # 结尾应变成 STATUS: installable
+cangjie/scripts/harmony/set_signing_material.sh \
+  --store-file   cangjie/harmony/.certs/textura-debug/textura-debug.p12 \
+  --key-alias    textura-debug \
+  --cert         cangjie/harmony/.certs/textura-debug/TexturaDebug.cer \
+  --profile      cangjie/harmony/.certs/textura-debug/TexturaProfileDebug.p7b \
+  --store-password "$(cat .../password.txt)" --key-password "$(cat .../password.txt)" \
+  --dry-run        # 再跑一次去掉 --dry-run
+
+cangjie/scripts/harmony/assemble_hap.sh    # 结尾 STATUS: installable
 ```
 
 脚本会先校验：文件存在且非空；profile 的 `bundle-name` == `AppScope/app.json5` 的 bundleName
-（不符直接报错退出，不写文件）；打印 profile 里授权的 `device-ids`。`--dry-run` 只校验不落盘。
+（不符直接报错退出，不写文件）；打印 profile 里授权的 `device-ids`；再把明文密码转成 hvigor 能解的
+DevEco 密文（§7.1b 第 2 条）。`--dry-run` 只校验不落盘。
 还没有自己的私钥/CSR 时，先按 §7.1a 生成。
 
 ### 7.1a 生成密钥与 CSR（AGC 前置）
@@ -719,7 +727,7 @@ cangjie/harmony/.certs/textura-debug/
      --store-file cangjie/harmony/.certs/textura-debug/textura-debug.p12 \
      --key-alias  textura-debug \
      --cert       cangjie/harmony/.certs/textura-debug/TexturaDebug.cer \
-     --profile    cangjie/harmony/.certs/textura-debug/TexturaDebug.p7b \
+     --profile    cangjie/harmony/.certs/textura-debug/TexturaProfileDebug.p7b \
      --store-password "$(cat cangjie/harmony/.certs/textura-debug/password.txt)" \
      --key-password   "$(cat cangjie/harmony/.certs/textura-debug/password.txt)"
 
@@ -729,10 +737,16 @@ cangjie/harmony/.certs/textura-debug/
    cangjie/scripts/harmony/assemble_hap.sh    # 结尾应为 STATUS: installable
    ```
 
-   `set_signing_material.sh` 会把密码写进 **受版本控制的** `cangjie/harmony/build-profile.json5`。
-   因此这一步只在本地做：**不要把带明文密码的 `build-profile.json5` 提交**；提交前
-   `git checkout -- cangjie/harmony/build-profile.json5` 恢复。脚本会先校验 profile 的
-   `bundle-name` 与 `AppScope/app.json5` 一致，并打印 profile 授权的 UDID 列表。
+   `set_signing_material.sh` 会改写 **受版本控制的** `cangjie/harmony/build-profile.json5`（material 的
+   五个字段）。因此这一步只在本地做，**构建完就恢复**：
+
+   ```bash
+   git checkout -- cangjie/harmony/build-profile.json5 && git status --short   # 应为空
+   ```
+
+   写进去的不是明文密码，而是 hvigor 能解的 DevEco 密文（§7.1b 第 2 条）；密文只在本机能解，但
+   `build-profile.json5` 仍属于「本地临时状态」，不要提交。脚本会先校验 profile 的 `bundle-name` 与
+   `AppScope/app.json5` 一致，并打印 profile 授权的 UDID 列表。
 
 **常见失败**
 
@@ -752,6 +766,309 @@ cangjie/harmony/.certs/textura-debug/
 - `.p12`、`.csr`、`.cer`、`.p7b`、`password.txt` 都属于本机材料，不要 `git add -f`；
 - 本机生成的 p12 里的自签证书只是占位，**真正参与签名的是 AGC 签发的 `.cer`**；
 - bundleName 固定为 `com.ethancheung.textura`，与 `AppScope/app.json5` 一致。
+
+### 7.1b 实测记录：签名 HAP 已产出并通过 `verify-app`
+
+本轮（无设备）在快照 `~/.cache/cj-signed` 里跑完整链，四步全部通过：
+
+```bash
+export TMPDIR=~/.cache/tmp TEXTURA_HARMONY_SNAP=~/.cache/cj-signed
+cangjie/scripts/harmony/build_ohos.sh
+cangjie/scripts/harmony/stage_libs.sh
+cangjie/scripts/harmony/assemble_hap.sh          # product=default，结尾 STATUS: installable
+```
+
+**1) 签名产物**
+
+| 项 | 值 |
+|---|---|
+| 路径 | `cangjie/harmony/out/entry-default-signed.hap`（绝对路径 `/home/ethan/CodeRepo/sandbox/Textura/cangjie/harmony/out/entry-default-signed.hap`） |
+| 大小 | 29 585 948 B（≈29.59 MB）；`libs/arm64-v8a/` 25 个 + `libs/arm64-v8a/ohos/` 8 个，`assemble_hap.sh` 的必检清单全过 |
+| product | `default`（**没有**回落 unsigned；hvigor 日志 `Finished :entry:default@SignHap`、`BUILD SUCCESSFUL`） |
+| 签名块 | `Hap Signing Block version: 3`，3 个 block；`verify codesign success`，每个 `libs/**/*.so` 都被逐个校验 |
+| 叶子证书 Subject | `C=CN, O=张强, OU=1787468707111409281, CN=张强(1787468707111409281)\,Development`，序列号 `09FD4CF6813262E0B54817369B1E` |
+| 叶子证书有效期 | 2026-10-23 12:15:58 ~ 2027-10-23 12:15:58（本地时区；profile 内 `validity` 同值） |
+| 证书链 | Root `Huawei CBG Root CA G2` → `Huawei CBG Developer Relations CA G2` → 叶子，三段全在签名块里 |
+
+**2) `build-profile.json5` 里的密码是密文，不是明文**
+
+hvigor 不接受明文密码：短于 32 字符直接 `00303116 Configuration error / The length of the
+storePassword or keyPassword field in the signature configuration is less than 32`。它要的是 DevEco
+的密文，并用**本机**的工作密钥解密，密钥来自 `<dirname(storeFile)>/material`（DevEco 放在
+`~/.ohos/config/material`：`fd/{0,1,2}` 三段 16 字节成分 + `ac/` 盐 + `ce/` 加密的工作密钥，
+PBKDF2-HMAC-SHA256 迭代 10000 次得 root key）。
+
+`set_signing_material.sh` 因此做了两件事，逻辑来自
+`hvigor-ohos-plugin/src/utils/decipher-util.js`：
+
+- `cangjie/scripts/harmony/devsign_password.py` 复刻该方案（AES-128-GCM，blob 布局
+  `| len(4) | iv(12) | ciphertext | tag(16) |`），把明文密码加密，并在**写文件前**解回来比对一次；
+- 在 keystore 旁建 `material -> ~/.ohos/config/material` 符号链接（与参考项目同样的做法）。
+
+密文只在本机能解，所以它可以留在受版本控制的文件里；**真机签名材料本身（`.p12/.p7b/.cer`、
+`password.txt`）仍然只在本机**。换机器重建时：把 `~/.ohos/config/material` 一起带过去，或重新执行
+`set_signing_material.sh` 让它用新机器的 material 重新加密。
+
+**3) 独立校验（官方工具，不看文件名）**
+
+```bash
+java -jar ~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/26/toolchains/lib/hap-sign-tool.jar \
+  verify-app -inFile cangjie/harmony/out/entry-default-signed.hap \
+             -outCertChain /tmp/chain.cer -outProfile /tmp/profile.p7b
+# ==> verify: Verify success / verify-app success，rc=0
+```
+
+- profile（从 HAP 里解出）：`type=debug`、`bundle-name=com.ethancheung.textura`、
+  `device-ids=[3538172691…559F]`、`app-identifier=6917619816333679076`；
+- 签名块叶子证书、profile 的 `development-certificate`、`.certs/` 里 `.cer` 的叶子，**三者
+  SHA-256 指纹完全一致**（`9C:34:5B:60:…:5B:90:A5`），公钥指纹 `244a81aa…a4fcbd` 与 `.p12` 里私钥
+  导出的公钥相同；
+- 7 条路由（`dashboard/calendar/okr/gtd/gantt/sop/settings`）与 `parseRoute/routeId/ROUTES`
+  都在 HAP 内 `libtextura_host.so` 的符号里（`textura.views.<view>` 七个包齐全），即 HAP 内容完整。
+
+**4) 接上设备后（本机当前 `hdc list targets` = `[Empty]`，未安装）**
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+HAP=/home/ethan/CodeRepo/sandbox/Textura/cangjie/harmony/out/entry-default-signed.hap
+
+# 0) 固件自检：这两个库必须由设备自己提供，HAP 里带不了
+$HDC shell 'ls /system/lib64/platformsdk/ | grep -E "ark_interop|cj_environment"'
+#    期望：libark_interop.z.so、libcj_environment.z.so；缺了就别往下走
+
+# 1) UDID 必须与 profile 的 device-ids 一致
+$HDC shell bm get --udid        # 部分固件：bm get -u
+#    期望：35381726910894F76508095CAA994B5520D119DA71D1204933838D9463DC559F
+
+# 2) 安装
+$HDC install -r $HAP
+#    期望：AppMod finish / install bundle successfully
+
+# 3) 启动
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+
+# 4) 日志（tag 是 Textura/HOST、Textura/FOCUS）
+$HDC shell hilog | grep -E 'Textura/(HOST|FOCUS)'
+```
+
+**签名被拒时怎么判断**（`hdc install` 失败都会打印 `error code`）：
+
+| 报错 | 含义 | 处理 |
+|---|---|---|
+| `9568289 / error code 9568289` + `failed to install bundle ... sign verify failed` / `code:9568320` | HAP 签名或 profile 校验没过（多数是**设备 UDID 不在 profile 的 `device-ids`** 里，或 profile 已过期） | 先比第 1 步的 UDID 与 profile 里的值；不一致就去 AGC 注册该 UDID 并**重新下载 profile**，再跑 `set_signing_material.sh` + `assemble_hap.sh` |
+| `code:9568333` / `signature verification failed` | 设备时间/证书链问题，或换了别家材料签的包 | 检查叶子证书有效期（2027-10-23 到期）与设备时间 |
+| `code:9568305` / `device not authorized` | 调试 profile 未授权该设备 | 同第一行：AGC 设备页加 UDID → 重签 profile |
+| `error code 9568259` / `version downgrade` | 装了更高 versionCode 的同名包 | `hdc uninstall com.ethancheung.textura` 后重装 |
+
+**5) 本地留档与还原**
+
+- signed HAP 已在 `cangjie/harmony/out/`（`cangjie/.gitignore` 的 `harmony/out/` 与 `*.hap` 都忽略它），
+  不进仓库；
+- `build-profile.json5` 用完已 `git checkout --` 复原，工作树干净——**每次本地签名构建都要重复这两步**
+  （写入 → 构建 → 复原），它不属于要提交的改动。
+
+### 7.1c 真机实测记录（首次上机 + 交互复测）
+
+**结论：安装 ✅ / 启动 ✅ / 首帧渲染 ✅ / 中文字形 ✅ / 指针点击与路由切换 ✅ / 偏好持久化 ✅。**
+本轮上机修掉了三个真机独有问题：首帧前字体初始化失败（下面「崩溃 #1」）、
+**store → CUI 失效桥缺失（点击不生效）**、**偏好文件静默不落盘**（§7.10）。
+帧耗时口径也一并纠正（`DEVICE-NOTES.md` §3）。
+
+**日期 / 设备**
+
+| 项 | 实测值（命令输出） |
+|---|---|
+| 日期 | 2026-10-23（设备时钟同） |
+| 连接 | `hdc list targets -v` → `192.168.0.3:36773 TCP Connected`（无线调试） |
+| UDID | `hdc shell bm get --udid` → `35381726910894F76508095CAA994B5520D119DA71D1204933838D9463DC559F`（与 profile `device-ids` 一致） |
+| 机型 | `const.product.model` = `MNTXM-24A`；`const.product.name` = `HUAWEI MateBook 14`（2in1） |
+| 系统 | `const.ohos.fullname` = `OpenHarmony-7.0.0.109`；`const.ohos.apiversion` = `26` |
+| 屏幕 | `hidumper -s RenderService -a screen` → `screen[0] 2880x1920 (POWER_STATUS_OFF)`、`screen[1] 2560x1440@60 (POWER_STATUS_ON, EXTERNAL_TYPE)`；应用窗口落在 display 0，`snapshot_display` 出图 2880x1620 |
+| 空间 | `df -h /data` → 926G 总量 / 705G 可用（充裕） |
+
+> 注意两个「看着像失败」的固件事实，均**不是**本项目问题：
+> - `ls /system/lib64/platformsdk/` → `Permission denied`：`shell`（uid 2000）无权列举该目录，
+>   「查不到 `libark_interop.z.so`」**不等于固件缺库**。实际 interop 正常工作（见下方 hilog 原文）。
+> - `wm size` 不存在（2in1 不带 `wm`），改 `hidumper -s RenderService -a screen` 取分辨率。
+
+**安装**
+
+```
+hdc install -r cangjie/harmony/out/entry-default-signed.hap
+→ [Info]App install path:...msg:install bundle successfully.
+```
+
+无失败码。首轮用仓库里已有的 29 585 948 B signed HAP 也装成功了（同一 profile）。
+本轮重建后为 29 589 440 B。**签名材料必须指向 Textura 自己的那一套**：`build-profile.json5` 此前仍写着
+PixCap 的 `.certs/pixcapt-debug/*`，`product=default` 会以 `00303074`（bundleName 不匹配）失败并静默回退
+`product=unsigned`——那一步的产物**不可安装**。正确做法：
+
+```bash
+C=$PWD/cangjie/harmony/.certs/textura-debug
+cangjie/scripts/harmony/set_signing_material.sh \
+  --store-file "$C/textura-debug.p12" --key-alias textura-debug \
+  --cert "$C/TexturaDebug.cer" --profile "$C/TexturaProfileDebug.p7b" \
+  --store-password "$(cat "$C/password.txt")" --key-password "$(cat "$C/password.txt")"
+```
+
+三个坑（本轮都踩过，`assemble_hap.sh` 的报错原文）：
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `00303107 Invalid storeFile value … The file must be included in '<相对路径>'` | `build-profile.json5` 里写的是**相对路径**，hvigor 在快照目录下解析 | `set_signing_material.sh` 三个路径**都传绝对路径** |
+| `11014007 Key alias {textura-debug} password error` | 只传了 `--store-password`，`keyPassword` 沿用了 PixCap 的密文 | 该 p12 的**私钥口令 = store 口令**，同时传 `--key-password` |
+| `00303074 bundleName … does not match` | 材料还是 PixCap 的 | 按上面命令切到 `.certs/textura-debug` |
+
+另：`/tmp` 是 13G tmpfs 且被别的任务占用，`build_ohos.sh` 的 rsync 会 `Disk quota exceeded`（exit 11）。
+用脚本自带的逃生口，别去动别人的 `/tmp`：
+
+```bash
+export TMPDIR=$HOME/.cache/tmp TEXTURA_HARMONY_SNAP=$HOME/.cache/textura-cj-harmony
+```
+
+**启动**
+
+```
+hdc shell aa start -a EntryAbility -b com.ethancheung.textura
+→ start ability successfully.
+hdc shell pidof com.ethancheung.textura
+→ 44483            # 首帧后持续存活，RSS 204512 KB，无二次崩溃
+```
+
+窗口（`hidumper -s WindowManagerService -a '-a'`）：
+
+```
+textura0   0   44483   367   1   102   0   111   0   [ 614  177  1930 1085 ]
+Focus window: 367
+```
+
+**hilog 关键行（原文，`hdc shell hilog -x`）**
+
+```
+I .../CANGJIE-RUNTIME: Cangjie runtime started.
+D .../ARKTS-INTEROP: ARKTS_LoadCJModule start: libtextura_host.so
+E .../ARKTS-INTEROP: cj module must dependent on ohos_ark_interop
+I .../Textura/HOST: Cangjie runtime started via requireCJLib
+I .../Textura/HOST: handing control from ArkTS to native SDL
+I .../SDL/APP: PixCap surface probe: bufferGeometry=1930x1020 xcomponent=1930x1020(vp) window=0x0
+I .../SDL/APP: SDL_AppInit said continue! We are live!
+I .../Textura/FOCUS: textura-focus request=appear#0 ok=true
+W .../Textura/FOCUS: textura-focus converge=appear exhausted focused=false
+```
+
+这条 `E ARKTS-INTEROP: cj module must dependent on ohos_ark_interop`（§7.3 的高风险项）**在真机上是非致命的**：
+下一行运行时照常起来，宿主照常拿到控制权。**§7.3 的担忧到此可以降级为「噪音日志」**，不需要迁工具链、
+也不需要改走 ArkTS 壳 + Canvas 自绘（那两条规避路线据此不必再走）。
+
+**崩溃 #1（本轮修掉）：首帧前字体初始化失败**
+
+首次启动的现象：`aa start` 成功但 `pidof` 为空，系统记一条 `reason=Cpp Crash`。日志原文：
+
+```
+I .../SDL/APP: [textura-shim] host SDL_AppInit failed: Exception: System UI font initialization failed:
+   No usable font. Configure an application default or fallback font file: Failed to open RawFile
+I .../SDL/APP: SDL_AppInit said SDL_APP_FAILURE! Terminating!
+W .../AppMS: send event [FRAMEWORK,PROCESS_KILL] ... reason=Cpp Crash
+```
+
+根因链（三处叠加，任一处修好即可）：
+
+1. `nativeSystemFontCandidates()`（`third_party/cangjie-sdl/src/text/native_text.cj`）为 HarmonyOS 只列了一个
+   **HAP 内 rawfile** 候选 `fonts/wqy-zenhei.ttc`，但本仓 `entry/src/main/resources/` 下**根本没有 `rawfile` 目录**，
+   HAP 里也没有任何字体（`unzip -l … | grep -Ei 'ttf|ttc|rawfile'` 为空）→ `TTF_OpenFont` 失败；
+2. 该候选之后的路径全是桌面路径（Windows/macOS/Linux）；
+3. 宿主的兜底 `Fonts.setDefault(Some("HarmonyOS Sans SC"))` 只设了一个**族名**，没有注册到文件的路径，
+   `fontBootstrapSources()` 无法把名字解析成文件（需要已加载的系统字体目录），于是这条兜底是**死路**。
+
+**修法**（只改宿主，不动 vendored 第三方）：`cangjie/harmony/host/src/main.cj` 里新增 `PLATFORM_FONT_PATHS`
+（`/system/fonts/HarmonyOS_Sans_SC.ttf` → `NotoSansCJK-Regular.ttc` → `HarmonyOS_Sans.ttf`），
+`configureHostFont()` 改为按 **side-load 目录 → 设备镜像字体 → 族名**三档顺序，前两档都是把**真实绝对路径**
+`Fonts.register("textura-ui", path)` + `setDefault`。设备侧确认这些文件存在且可读：
+
+```
+$ hdc shell ls -l /system/fonts/HarmonyOS_Sans_SC.ttf
+-rw-r--r-- 1 root root 20617156 2024-06-06 08:00 /system/fonts/HarmonyOS_Sans_SC.ttf
+```
+
+**改了什么 → 现象变化**：`SDL_AppInit failed / No usable font` → `SDL_AppInit said continue! We are live!`，
+进程存活、首帧画出完整界面、中文全部正常。这条同时把 §7.5 的「没打包字体」从**风险**变成**已解决**
+（不再需要 side-load）。
+
+**首帧截图**
+
+| 文件 | 内容 |
+|---|---|
+| `cangjie/docs/assets/harmony/first-launch-20261023-1300.png` | 首帧：窗口 `织理 Textura`，侧栏 7 项 + 顶栏 + 今日面板，中文字形完整，无方框 |
+| `cangjie/docs/assets/harmony/observed-lockscreen-20261023-1258.png` | 取证过程中的**干扰项**：设备息屏锁屏时截到的是锁屏，不是应用（见下「取证注意」） |
+
+首帧可见内容（截图佐证）：侧栏 `今日 / 日历 / OKR / GTD / 甘特 / SOP / 设置` + `领域`（产品 12、运营 9、个人 5）；
+顶栏搜索 + `命令面板 K`；卡片 `收件箱待澄清 6 条`、`近 7 天完成 1 项`、`活跃 OKR 平均进度 29%`、
+`最近 SOP 运行 失败`；`今日聚焦` 4 项；`OKR 概览`；`SOP 快速启动`；`最近活动`；页脚 `自动保存已开启 · 30 条记录 · v1`。
+
+**取证注意（踩过的三个坑）**
+
+- `snapshot_display` 只接受 `-i 0`（`-i 1` → `displayId 1 invalid`），且**输出文件后缀必须是 `.jpeg`**，
+  `.png` 会 `suffix must be .jpeg` 直接失败（拿到的是 JPEG，入库前用 PIL 转真 PNG）；
+- 设备会息屏锁屏，锁屏在 `com.ohos.sceneboard` 之上；用 `uitest dumpLayout` 看 `bundleName` 就能分辨当前
+  截到的是锁屏还是应用。唤醒：`hdc shell power-shell wakeup`，再 `uitest uiInput fling 2 1200 200`；
+- `hdc file recv` 往 `/tmp` 落盘会报 `Unknown system error -122`（EDQUOT，`/tmp` 配额），
+  直接 `recv` 到仓库目录即可。
+
+**交互复测：点击 → 路由切换 ✅（旧结论「注入全局失效」已推翻）**
+
+上一轮把这一项记为「设备侧输入注入不可用」，**方法错**：`uitest uiInput click` 在本机只注入了抬手事件
+（hilog：`pointer event action:4 … PA:up`），而 `uitest uiInput swipe`（触摸，会被 SDL 的 openharmony 后端
+转成 MouseMove/Down/Up）与 `uinput -M`（相对鼠标移动）都可用。坐标要按**窗口原点 (614,242)** 换算：
+
+```bash
+# 窗口坐标 (60,128) = 侧栏第 2 行（日历）→ 屏幕坐标 (674,370)
+hdc shell uitest uiInput swipe 674 370 674 375 150
+```
+
+复测结果（`diag.log` + `snapshot_display` + `ui-prefs.json` 三处互证）：
+
+```text
+ev#40 MouseDown button=Left primary=true x=60 y=128 hover='shell-nav-calendar'
+phases frames=2 build=0.010ms layout=0.040ms event=3.120ms tree=24.750ms present=2.020ms
+prefs path='…/.textura/ui-prefs.json' wrote=true route='calendar'
+→ 截图：顶栏「日历 公历、农历与节气的日程概览」+ 月历网格，侧栏「日历」高亮
+# 再点 OKR 行；aa force-stop + aa start 后
+prefs … wrote=true route='okr'   → 截图：直接开在 OKR 视图
+```
+
+**点击不生效的根因不在 SDL、不在按钮解码、不在坐标**：SDL 收到了 `action=1 button=0x1`，
+CUI 把按压交给了侧栏（焦点都落上了），`onNavigate` → `store.setRoute` 也执行了；坏在
+`AppStore` 的 `StateCell` 写入不会让 CUI 的增量保留图变脏 —— `buildShell` 从未被再执行。
+修法：`ShellHost.revision`（CUI `State`）+ `armStoreBridge` + `DesktopApp.deliver`，
+详见 `docs/DEVICE-NOTES.md` §4 与 `third_party/README.md` 的 `CUI-P03`。
+
+**性能复测：输入延迟 250ms → 16ms，空转 CPU 23% → 6%**
+
+`step()` 跑在应用 UI 线程上（XComponent `OnFrame`），CUI 桌面循环的「阻塞 250ms 等事件」在这里会按住 UI 线程：
+
+| 设置 | 空转 step | 空转 CPU | 系统 `OS_DfxWatchdog` |
+|---|---|---|---|
+| `MAX_EVENT_WAIT_MS = 250`（旧） | 250ms/步 | ≈23% | 18.4% |
+| `HOSTED_MAX_EVENT_WAIT_MS = 16`（CUI-P03） | 16ms/步 | ≈6% | 消失 |
+
+同时把「每帧 256ms」的错误口径纠正了：真实帧成本是 **4–7ms**（悬停/移动，热缓存全帧重绘）、
+**30–55ms**（换路由，主项 `tree`）、**43ms**（冷启动首帧）。分段数字与命令见 `docs/DEVICE-NOTES.md` §3。
+
+**仍待人工复测**（本机只有注入，没有真鼠标/键盘）：
+快速收集弹层、滚轮、键盘焦点——`textura-focus converge=appear exhausted focused=false` 仍然存在，
+意味着**键盘事件在真机上大概进不到 SDL**（`Index.ets` 要求 XComponent 真获得焦点）。
+鼠标/触摸路径不受焦点影响，已验证可用（侧栏点击 → 路由切换 ✅，偏好落盘并跨启动恢复 ✅）。
+
+**剩余问题（按优先级）**
+
+1. **焦点收敛失败**（`textura-focus converge=appear exhausted focused=false`）：`requestFocus` 每次
+   `ok=true` 但 ArkUI 的 `onFocus` 不触发，重试 5 次后放弃 → 键盘事件大概进不到 SDL。
+   需在人工可操作的环境里定位（DecorBar 抢焦点？`requestFocus` 对 SURFACE 型 XComponent 的语义？）。
+2. **尚未人工复测的交互**：快速收集弹层、滚轮滚动、键盘快捷键（鼠标/触摸点击与路由切换已 ✅）。
+3. `/data/log/faultlog/faultlogger` 无 `shell` 读权限（`Permission denied`），崩溃栈只能靠 hilog 的
+   `reason=Cpp Crash` 间接判断——崩溃 #1 的根因是靠应用自己的 `SDL_AppInit failed` 日志定位的。
+4. `SDL/APP: … window=0x0`：SDL 侧窗口尺寸报 0，但渲染与布局都按 1930×1020 正常进行；
+   若日后出现「点击命中偏移」，先看这个值和窗口原点（本机 `(614,242)`，见 `DEVICE-NOTES.md` §7）。
 
 ### 7.2 `libc++.so` 的 ABI 与来源（阻塞真机加载，已 workaround）
 
@@ -792,7 +1109,7 @@ $HDC file recv /system/lib64/libc++.so cangjie/harmony/device-libs/arm64-v8a/lib
 `cangjie/.gitignore` 已忽略 `harmony/device-libs/`、`harmony/entry/libs/`、`harmony/out/` 与
 `harmony/host/{crti.o,crtn.o}`：设备提取的系统库**不得入库**。
 
-### 7.3 工具链代际错配（**高风险，本仓最可能的真机失败点**）
+### 7.3 工具链代际错配（**真机实测：非致命，已降级为噪音日志**）
 
 本仓的组合是：
 
@@ -824,14 +1141,13 @@ I SDL/APP: SDL_AppInit said continue! We are live!
 （§4.2 的符号/依赖分析），没有「宿主库被 `libark_interop.z.so` 接受」的任何证据，而这正是参考项目
 卡住的那一步。
 
-- 风险等级：**高**（构建期无法排除；命中后表现为 `cj module must dependent on ohos_ark_interop`，
-  与 HAP 内容、签名、权限都无关）。
-- 触发条件：设备上用 `requireCJLib` 加载一个 `.cjo` 未声明 `ohos_ark_interop` 的仓颉动态库。
-- 正解（超出本次打包修复范围，需要协调者批准改宿主包契约）：把宿主从
-  `cjc 1.2.0 + 手工 C ABI` 迁到鸿蒙仓颉工具链（`cangjie-linux-x86-ohos-*.zip` 那一套），让宿主
-  `import ohos.ark_interop` 并在 `.cjo` 里声明 `ohos_ark_interop`，然后重建 cangjie-sdl bindings → CUI → 宿主。
-- 本轮的处置：不隐瞒、不假装已解决；把它写进 §6「最可能失败点」第 2 条，命中时按上面的日志特征判定，
-  而不是去改 HAP 内容。
+- 风险等级：**已降级（真机不阻塞）**——2026-10-23 首次上机实测：该 `E` 行照常打印，但紧接着
+  `Cangjie runtime started via requireCJLib` → `handing control from ArkTS to native SDL` →
+  `SDL_AppInit said continue! We are live!`，即宿主库**被接受了**（§7.1c 原文日志）。
+  「loader 能启动运行时」与「宿主库被接受」在本设备上**同时成立**，参考项目的失败未复现。
+- 触发条件（历史假设）：设备上用 `requireCJLib` 加载一个 `.cjo` 未声明 `ohos_ark_interop` 的仓颉动态库。
+- 现状处置：**不再需要**迁工具链或改走 ArkTS 壳 + Canvas 自绘这两条规避路线；把这条 `E` 当日志噪音。
+  仅在后续换成别的固件/工具链代际、且 `requireCJLib` 之后**不再出现** `handing control` 时才需要重新判定。
 
 ### 7.4 R5：`libcangjie-trace.so` 无来源（已知风险，不影响启动）
 
@@ -857,10 +1173,27 @@ DevEco SDK、参考项目 HAP 里都没有）。它是调试/追踪用途：
   # 确认固件也没提供（固件提供了就说明是版本差异，可忽略本风险）
   ```
 
-### 7.5 中文字形：没打包字体
+### 7.5 中文字形：**已解决**，直接读设备镜像字体（不再需要打包/side-load）
 
-HAP 内没有字体文件。`configureHostFont()` 会优先用沙箱里的字体，否则用系统族 `HarmonyOS Sans SC`。
-若真机出现方框（CUI 缺字回退失败），side-load 一个 CJK 字体：
+**现状（2026-10-23 真机实测）**：`configureHostFont()` 按三档顺序取字体，前两档都把**真实绝对路径**
+`Fonts.register("textura-ui", path)` 并设为默认：
+
+1. 沙箱 `<filesDir>/fonts` 下 side-load 的字体（运维覆盖用，仍然支持）；
+2. **设备镜像字体**：`/system/fonts/HarmonyOS_Sans_SC.ttf` → `NotoSansCJK-Regular.ttc` → `HarmonyOS_Sans.ttf`
+   （`ls -l` 确认 0644、`root:root`、可读）；
+3. 兜底才是族名 `HarmonyOS Sans SC`（**这一档在真机上是死路**，见 §7.1c 崩溃 #1）。
+
+真机首帧中文全部正常，无方框，截图见 §7.1c。
+
+> 原先这条写的是「HAP 内没有字体，否则用系统族 `HarmonyOS Sans SC`」——那个兜底只设了族名、没注册路径，
+> 是导致首帧 `SDL_AppInit` 直接失败的原因。`third_party/cangjie-sdl` 的
+> `nativeSystemFontCandidates()` 里那条 `fonts/wqy-zenhei.ttc`（注释声称「这个字体随 HAP 发布」）
+> 与事实不符：本仓**没有** `entry/src/main/resources/rawfile/`，HAP 里也没有任何字体。
+> 修法放在宿主而不是 vendored 第三方，见 §7.1c。
+>
+> 也因此**不需要**为了字体往 HAP 里塞 20 MB 的 CJK 字体：设备镜像自带。
+
+若某个固件版本确实没有上述路径，仍可用下面的 side-load 路径兜底：
 
 ```bash
 # 目标是「应用级 files 目录」下的 fonts/（SDL_GetPrefPath("textura","fonts") 的返回值），
@@ -877,14 +1210,17 @@ $HDC file send NotoSansCJK-Regular.ttc "$FONT_DIR/NotoSansCJK-Regular.ttc"
 
 ```bash
 $HDC shell ls -l /data/app/el2/100/base/com.ethancheung.textura/files/fonts/
-# 有 .ttf/.ttc/.otf 就会被注册成 textura-ui 并设为默认；没有则退回 HarmonyOS Sans SC
+# 有 .ttf/.ttc/.otf 就会被注册成 textura-ui 并设为默认；没有则退回设备镜像字体（§7.1c 实测可用）
 ```
 
-### 7.6 运行时初始化：仅构建期验证
+### 7.6 运行时初始化：真机已验证
 
-见 §4.2。真机上的三个未知点：ArkVM 注册是否接受当前 loader 版本；宿主库在应用命名空间里能否解析
-`libSDL3.so`（两者都在 `libs/arm64-v8a`，与参考项目同构）；`beginHostedRun` 的线程断言
-（`scheduler.assertOwnerThread()`）是否与 XComponent 回调线程一致。三者都只在设备上才能确认。
+见 §4.2 与 §7.1c。三个未知点**全部落地**：ArkVM 注册接受当前 loader 版本（`ARKTS_LoadCJModule start` →
+`Cangjie runtime started via requireCJLib`）；宿主库在应用命名空间里能解析 `libSDL3.so` 并画出首帧；
+`beginHostedRun` 的线程断言与 XComponent 回调线程一致（`handing control from ArkTS to native SDL` 之后
+`SDL_AppInit said continue!`，无 `SIGBUS`/`SIGSEGV`）。
+
+仍未验证的是**输入**（焦点/键盘/鼠标），见 §7.1c 末尾「剩余问题」。
 
 ### 7.7 权限：一个都不声明
 
@@ -933,6 +1269,39 @@ $HDC shell ls -l /data/app/el2/100/base/com.ethancheung.textura/files/fonts/
   所以不能随意替换成上游原版。
 - `libs/arm64-v8a/ohos/` 由 `stage_libs.sh` 每次 `rm -rf` 重建；不要手工往里放库，
   加库请改 `_common.sh` 的 `OHOS_INTEROP_LIBS`（`assemble_hap.sh` 会断言数量与关键成员）。
+
+### 7.10 偏好文件静默不落盘（**已修复**，真机踩中过）
+
+**症状**：`ui-prefs.json` 的 mtime 永远停在首次安装那一刻，`route` 恒为 `dashboard`，
+重启后总回到默认视图——而界面本身一切正常，没有任何报错。
+
+**根因**：`ShellPreferences.persist()` 把「建父目录」和「写文件」放在**同一个 try** 里，而
+**Cangjie 1.2.0 的 `Directory.create` 在目录已存在时会抛异常**
+（`The input path '…/.textura' is already exists.`）。首跑目录不存在 → 建目录 + 写文件成功
+（所以磁盘上有一个首跑的文件）；之后目录已存在 → `Directory.create` 抛 → 写文件**没执行** →
+异常被 `catch` 吞掉 → 每次写入静默失败。宿主的 `step()` 每帧都在跑，所以这个"每帧丢掉一个异常"
+从未浮出水面。
+
+**修法**（`src/shell/runtime.cj`、`harmony/host/src/main.cj`）：
+
+* 建目录单独 try（吞掉"已存在"），**文件写入才是成败判据**；
+* `persist()` 记录 `lastWriteOk` / `lastWriteError`，不再无声吞掉；
+* `persistUi` 失败时**不记"已持久化"**，下一帧重试（沙箱目录可能晚一帧就绪）；
+* 新增 `ShellPreferences.load(path)`：宿主用**绝对路径** `<sandbox>/.textura/ui-prefs.json`，
+  HAP 进程没有可用的 `$HOME`，偏好不该依赖它；`prepareSandbox()` 幂等补建 `.textura/`；
+* 探针新增 `prefs path=… wrote=… route=… error=…` 一行（`DEVICE-NOTES.md` §1），这类问题一眼可见。
+
+**真机验证**：
+
+```text
+prefs path='…/.textura/ui-prefs.json' wrote=true route='dashboard' error=''
+hdc shell ls -l …/files/textura/.textura/   → -rw-rw-rw- 56 B  mtime 15:35（点日历/OKR 后刷新）
+hdc shell cat  …/files/textura/.textura/ui-prefs.json → {"route":"okr", …}
+aa force-stop + aa start → prefs … route='okr' → 截图直接开在 OKR 视图
+```
+
+**教训（可推广）**：任何"便利功能"的 `catch (_: Exception) { () }` 都必须至少把原因记下来，
+否则一旦异常是在**建目录**这种前置步骤上抛的，功能会永久静默失效。
 
 ---
 

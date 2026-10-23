@@ -9,14 +9,14 @@
 # copied back to cangjie/harmony/out/ so it can be inspected from the worktree; that directory is
 # git-ignored.
 #
-# Signing: the `default` product carries the debug signing config. hvigor rejects it with
-#   00303074 Configuration Error / The bundleName in app.json5 does not match the bundleName in the
-#   generated SigningConfigs
-# because the only debug profile on this machine was issued for com.ethancheung.pixcapt. The script
-# therefore falls back to the `unsigned` product, which is the same module compiled with the same SDK
-# versions and no signing material, and prints both outcomes so the failure is never hidden.
-# Installability of the result is stated explicitly at the end; an unsigned HAP is not installable
-# and this script does not print an install command for it.
+# Signing: the `default` product carries the debug signing config, and this project now has material
+# issued by AGC for its own bundleName (cangjie/harmony/.certs/textura-debug/, plugged in with
+# set_signing_material.sh), so `default` is expected to sign successfully. The fallback below stays
+# as a safety net: if `default` fails with 00303074 — the profile's bundleName is not the app's, e.g.
+# after the material was replaced by another project's — the script builds the `unsigned` product
+# (same module, same SDK versions, no signing material) and prints both outcomes, so the failure is
+# never hidden. Installability of the result is stated explicitly at the end; an unsigned HAP is not
+# installable and this script does not print an install command for it.
 #
 # Usage: cangjie/scripts/harmony/assemble_hap.sh [--no-sync]
 set -euo pipefail
@@ -74,7 +74,7 @@ fi
 
 log "assembling HAP (product=default, signed) via $HVIGORW"
 PRODUCT="default"
-SIGNING_NOTE="signed with the reference project's debug profile"
+SIGNING_NOTE="signed with the debug profile printed above"
 set +e
 run_hvigor default "$LOG_DIR/assemble-signed.log"
 rc=$?
@@ -127,13 +127,20 @@ OUT_HAP="$OUT_DIR/$(basename "$HAP")"
 log "HAP: $OUT_HAP"
 log "     $(stat -c%s "$HAP") bytes ($(du -h "$HAP" | cut -f1)), product=$PRODUCT, $SIGNING_NOTE"
 log "sha256: $(sha256sum "$HAP" | cut -d' ' -f1)"
+
+# One listing, read many times: the per-entry assertions below must not stream the archive into a
+# short-circuiting grep (see the note at the `for required` loop).
+HAP_LISTING="$(mktemp)"
+trap 'rm -f "$HAP_LISTING"' EXIT
+unzip -l "$HAP" >"$HAP_LISTING"
+
 log "native payload inside the HAP:"
-unzip -l "$HAP" | awk '$4 ~ /libs\/arm64-v8a\/.*\.so$/ {printf "    %10s  %s\n", $1, $4}' | sort -k2
-TOPLEVEL_COUNT="$(unzip -l "$HAP" | awk '$4 ~ /^libs\/arm64-v8a\/[^/]+\.so$/ {n++} END {print n+0}')"
+awk '$4 ~ /libs\/arm64-v8a\/.*\.so$/ {printf "    %10s  %s\n", $1, $4}' "$HAP_LISTING" | sort -k2
+TOPLEVEL_COUNT="$(awk '$4 ~ /^libs\/arm64-v8a\/[^/]+\.so$/ {n++} END {print n+0}' "$HAP_LISTING")"
 log "    $TOPLEVEL_COUNT libraries in libs/arm64-v8a/"
 log "interop runtime inside the HAP:"
-unzip -l "$HAP" | awk '$4 ~ /libs\/arm64-v8a\/ohos\/.*\.so$/ {printf "    %10s  %s\n", $1, $4}' | sort -k2
-OHOS_COUNT="$(unzip -l "$HAP" | awk '$4 ~ /libs\/arm64-v8a\/ohos\/.*\.so$/ {n++} END {print n+0}')"
+awk '$4 ~ /libs\/arm64-v8a\/ohos\/.*\.so$/ {printf "    %10s  %s\n", $1, $4}' "$HAP_LISTING" | sort -k2
+OHOS_COUNT="$(awk '$4 ~ /libs\/arm64-v8a\/ohos\/.*\.so$/ {n++} END {print n+0}' "$HAP_LISTING")"
 log "    $OHOS_COUNT libraries in libs/arm64-v8a/ohos/"
 log "bundleName: $BUNDLE"
 
@@ -142,7 +149,11 @@ for required in libs/arm64-v8a/libmain.so libs/arm64-v8a/libtextura_host.so \
                 libs/arm64-v8a/libcangjie-runtime.so libs/arm64-v8a/libark_interop_loader.so \
                 libs/arm64-v8a/ohos/libohos.ark_interop.so \
                 libs/arm64-v8a/ohos/libohos_ark_interop_diff.z.so; do
-  if ! unzip -l "$HAP" | grep -q " $required\$"; then
+  # `unzip -l "$HAP" | grep -q` is not usable here: grep -q exits at the first match, unzip then dies
+  # of SIGPIPE, and pipefail turns that into a failed pipeline — so an *early* entry in the archive
+  # (libSDL3.so, libSDL3_ttf.so) reported as missing while a late one passed. grep the captured
+  # listing instead.
+  if ! grep -q " $required\$" "$HAP_LISTING"; then
     die "HAP is missing $required"
   fi
 done
@@ -199,7 +210,7 @@ Device-side acceptance sequence (hdc is not on PATH, so the absolute path is req
   # 3) start
   $HDC shell aa start -a EntryAbility -b $BUNDLE
 
-  # 4) host log (the hilog tag is "Textura/HOST"/"Textura/FOCUS", so `hilog -T Textura` matches nothing)
+  # 4) host log (the hilog tag is "Textura/HOST"/"Textura/FOCUS", so \`hilog -T Textura\` matches nothing)
   $HDC shell hilog | grep -E 'Textura/(HOST|FOCUS)'
 
 See cangjie/docs/HARMONY.md §6 for the expected log lines and the most likely failure points.
