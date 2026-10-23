@@ -667,7 +667,10 @@ func paintHistory(ctx: UiContext, view: SopFrame): Unit {
 /** Inspector + history interactions (checklist, type chips, duplicate/delete, presets). */
 func handleInspector(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     match (event) {
-        case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+        case UiEvent.MouseDown(button, x, y) =>
+            if (!isPrimaryPointerButton(button)) {
+                return false
+            }
             let rect = view.inspectorRect(ctx)
             let history = view.historyRect(ctx)
             if (!rect.contains(x, y) && !history.contains(x, y)) {
@@ -677,10 +680,74 @@ func handleInspector(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
             match (rects.variant) {
                 case SopInspVariant.Node => return handleNodeInspector(ctx, view, rects, x, y)
                 case SopInspVariant.Edge => return handleEdgeInspector(view, rects, x, y)
-                case _ => return false
+                case _ => return handleSopSettings(view, rects, x, y)
             }
         case _ => return false
     }
+}
+
+/**
+ * SOP 设置：名称 / 默认负责人是画上去的「输入框」，点击打开编辑浮层
+ * （`sop_prompt.cj`；行内 `TextField` 在绘制期无法登记焦点）。
+ */
+func handleSopSettings(view: SopFrame, rects: SopInspRects, x: Float32, y: Float32): Bool {
+    let sop = match (view.sop) {
+        case Some(value) => value
+        case None => return false
+    }
+    if (rects.nameInput.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.SopTitle, sop.id, sop.title)
+        return true
+    }
+    if (rects.ownerInput.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.SopOwner, sop.id, sopOwnerOf(sop))
+        return true
+    }
+    false
+}
+
+func sopOwnerOf(item: Item): String {
+    match (item.sop) {
+        case Some(data) => match (data.owner) {
+            case Some(value) => value
+            case None => ""
+        }
+        case None => ""
+    }
+}
+
+/** 节点检查器：标题 / 负责人 / 预计耗时 / 检查项文本都走编辑浮层。 */
+func handleNodeFields(view: SopFrame, rects: SopInspRects, item: Item, x: Float32, y: Float32): Bool {
+    if (rects.titleInput.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.NodeTitle, item.id, item.title)
+        return true
+    }
+    if (rects.ownerInput.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.NodeOwner, item.id, sopOwnerOf(item))
+        return true
+    }
+    if (rects.durationInput.contains(x, y)) {
+        let minutes = match (item.sop) {
+            case Some(data) => match (data.durationMin) {
+                case Some(value) => "${value}"
+                case None => ""
+            }
+            case None => ""
+        }
+        openSopPrompt(view.state, SopPromptKind.NodeDuration, item.id, minutes)
+        return true
+    }
+    for (row in rects.checkRows) {
+        if (row.label.contains(x, y)) {
+            for (entry in checklistOf(item)) {
+                if (entry.id == row.entryId) {
+                    openSopPrompt(view.state, SopPromptKind.CheckText, item.id, entry.text, entry: entry.id)
+                }
+            }
+            return true
+        }
+    }
+    false
 }
 
 func handleNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects, x: Float32, y: Float32): Bool {
@@ -689,6 +756,10 @@ func handleNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects, x:
         case None => return false
     }
     let _ = ctx
+    // 标题 / 负责人 / 耗时 / 检查项文本：画布自绘的字段，点击打开编辑浮层。
+    if (handleNodeFields(view, rects, item, x, y)) {
+        return true
+    }
     // 检查项: toggle / delete / add.
     for (row in rects.checkRows) {
         if (row.checkbox.contains(x, y)) {
@@ -756,6 +827,10 @@ func handleEdgeInspector(view: SopFrame, rects: SopInspRects, x: Float32, y: Flo
     let edge = match (view.selectedEdge()) {
         case Some(value) => value
         case None => return false
+    }
+    if (rects.labelInput.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.EdgeLabel, edge.id, edge.label)
+        return true
     }
     for ((preset, chip) in rects.presetChips) {
         if (chip.contains(x, y)) {

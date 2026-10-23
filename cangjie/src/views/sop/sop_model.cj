@@ -307,6 +307,19 @@ class SopViewState {
     var inspectorOpen: Bool = true
     var createDraft: Bool = false
     var runSeq: Int64 = 0
+    /*
+     * The inspector is painted, not declared: it lays its "fields" out during draw. CUI only
+     * registers a focus stop for a control declared during build, so those painted boxes open
+     * the shared `Ui.prompt` instead of hosting an inline `TextField`
+     * (docs/DEVICE-NOTES.md §16). One prompt serves every field; `promptKind` says which.
+     */
+    var promptOpen: State<Bool> = State<Bool>(false)
+    var promptText: State<String> = State<String>("")
+    var promptKind: State<String> = State<String>("")
+    var promptTarget: State<String> = State<String>("")
+    var promptEntry: State<String> = State<String>("")
+    var promptError: State<String> = State<String>("")
+    var promptFocus: FocusRequest = FocusRequest()
 
     init(generation: State<Int64>) {
         this.generation = generation

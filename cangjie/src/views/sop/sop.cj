@@ -56,6 +56,10 @@ public func render(ctx: ViewContext): Unit {
     let state = remember<SopViewState>("sop-view-state") {SopViewState(generation)}
     let _ = generation.value
     SopPageWidget(workspace, ctx.store, theme, tokens, state, ctx.today, ctx.width, ctx.height)
+    // Inspector "fields" are painted; editing opens the shared prompt (see sop_prompt.cj).
+    sopPromptDialog(theme, ctx.store, state)
+    // Applies — and after closing restores — the one-shot focus request of that prompt.
+    FocusOnceView(state.promptFocus)
 }
 
 /** Page shell: header + (run bar) + list/canvas/inspector grid. */
