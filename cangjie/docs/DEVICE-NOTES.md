@@ -559,6 +559,9 @@ layoutPage 跑完，contentHeight 变成真实值，但父级这一帧只分了 
 
 ### 15.2 修法
 
+> 本节是快速收集的**单点**修复；其根因已在 §16 统一解决（`ModalHost` 整个弹层改为 build 期构建），
+> `capture.cj` 里「预先构造再 emit」的特例已删除。
+
 - 输入框改为在 **build 阶段**构造（`buildQuickCapture` 里按 `open` 预建，弹层 body 只 `emit` 它），
   焦点 id 正常进入焦点图；
 - `ShellHost` 监听 `ui.quickCaptureOpen` 的开关边沿（任何视图都可以直接写 store 打开弹层，不能只挂在
@@ -575,4 +578,95 @@ layoutPage 跑完，contentHeight 变成真实值，但父级这一帧只分了 
 - 关闭后焦点回到打开前的控件/当前侧栏行（主机回归
   `quickCaptureFocusesItsInputOnEveryOpen` 断言 `shell-nav-dashboard`）；
 - 视图直接写 store 打开弹层的路径由 `quickCaptureOpenedFromAViewFocusesItsInput` 覆盖。
+
+---
+
+## 16. 控件在 layout 阶段构造 → 焦点图里没有它（本轮全量修复）
+
+### 16.1 症状与共同点
+
+用户实测：快速收集、命令面板、GTD 澄清、SOP 检查器、甘特检查器、OKR 的输入框「点不进」，
+顶栏搜索当时未确认。共同点不是控件、不是坐标，而是**控件被构造的时机**：
+
+| 位置 | 构造时机 | 结果 |
+|---|---|---|
+| 顶栏搜索 | build（`buildTopBar`） | 正常（§10.3 已证） |
+| 快速收集 / 命令面板 / GTD 澄清 / OKR 弹层 / 设置弹层 | **layout**（`ModalHost` 在 `layout` 里调 `body()`） | 焦点 id 不在焦点图 |
+| SOP 检查器 | 从不（只有 `paintInputBox` 画出来的「输入框」） | 没有控件可点 |
+| OKR 卡片 | **layout**（`PageCanvas.addChild` 在布局期造 `TextField`） | 焦点 id 不在焦点图 |
+| 甘特检查器 | build（真实 `Ui.textInput`） | 本应正常，见 §16.5 |
+
+根因链条（CUI）：`registerFocusable(id)` 只在**构建块内**生效（`third_party/CUI/src/core/ui_build.cj`）；
+`TextField` 在 `layout` 阶段构造时 `activeStateStore == None`，登记被静默丢弃。点击时
+`TextField.pressAt` 仍然调用 `ctx.focus(id)`，但 `focusTargetForKey(id)` 为 `None`，下一帧
+`adoptFocusSnapshot → synchronizeFocusedTarget` 判定 id 无效并 `clearFocus()`：没有焦点环、
+没有插入符、`applyTextInputAnchor()` 看到「无文本控件」于是 `stopTextInput()`，字符键回到应用，
+所以也打不进字。
+
+主机证据（修复前的 `clickOnCaptureInputFocusesIt` 手工排查）：点击输入框矩形后
+`testHost.context.focusId == ""`；而「build 期构造 + `FocusRequestView` 自动聚焦」能留住光标。
+
+### 16.2 修法 A：`ModalHost` 改为 build 期构建（一处修好所有弹层）
+
+`textura.ui` 无法自己开一个嵌套构建块（`buildChild` 是 CUI 模块内的 `protected`），
+因此弹层改成**两个协作节点**（`src/ui/modal.cj`、`src/ui/ui.cj` 的 `Ui.modal`）：
+
+| 节点 | 作用 |
+|---|---|
+| `ModalHost`（零尺寸，`participatesInLayout=false` + `needsDetachedLayout`） | 量出面板矩形，注册**遮罩层**：scrim、圆角/阴影/描边、Esc、点遮罩关闭、Tab 焦点限制 |
+| `Portal(owner, placement: frame.resolve)` | CUI 的公开浮层节点：body 在 **build 期**构建（控件因此正常登记焦点），按面板矩形布局、绘制在遮罩之上 |
+
+`ModalFrame` 是两者的共享上下文：头部/正文/脚部分别测量，`min(自然高度, 80vh)` 决定面板高度，
+正文用 `.flex()` 吃掉剩余高度并在超出时滚动 —— 视觉与几何和改造前逐项一致。
+遮罩层先注册（z 序在下）、正文层后注册（在上），CUI 事件自顶向下派发：正文先收事件，
+没消费的（Esc / 遮罩点击）才落到 `ModalHost`，页面永远收不到 —— 与「弹层阻断下层」语义一致。
+
+影响面：`Ui.modal` 的全部调用点（快速收集、命令面板、快捷键弹层、GTD 澄清/选择/日期、
+OKR 六个弹层、设置页四个弹层）一次性恢复可点击可输入，无需各自改动。
+
+### 16.3 修法 B：画布视图改用统一编辑浮层 `Ui.prompt`
+
+SOP 检查器与 OKR 卡片是自绘画布，布局在 `layout`/`draw` 阶段完成，行内控件天生拿不到焦点。
+因此新增通用编辑器（`Ui.prompt`，`src/ui/ui.cj`）：标题 + 单行/多行 `TextField` + 取消/保存 +
+Enter 提交 + Esc 取消 + 初值 + 校验错误。点击画布上的「输入框外观」打开它，提交写回 `ctx.store`。
+
+**为什么用编辑浮层而不是内联输入框**：CUI 只在 build 阶段把控件登记进焦点图，画布的行内输入框
+在 layout 阶段构造，点击后焦点下一帧被清空；浮层在 build 阶段声明，输入框就是普通可聚焦控件。
+
+覆盖清单：
+
+| 视图 | 字段 | 提交 |
+|---|---|---|
+| SOP | 流程名称、默认负责人（SOP 设置态） | `updateItem` title / `SopPatch.owner` |
+| SOP | 步骤标题、负责人、预计耗时（分钟）、检查项文本、连线分支文案 | `updateItem` title / `SopPatch.owner` / `SopPatch.durationMin` / `SopPatch.checklist` / `updateEdge(label)` |
+| OKR | 目标标题、KR 标题 | `updateItem` title |
+| OKR | 指标 起点/当前/目标/单位 | `pendingMetricPatch` + `setMetric`（无法解析则留在浮层并提示） |
+| OKR | 负责人、新增关键结果 | `OkrPatch.krOwner` / `createKeyItem`（默认信心 5） |
+| 甘特 | 标题、开始/结束日期、进度 ±5% | 已是 build 期真实控件，保持不变 |
+| 日历 | 快速添加输入框 | 已是 build 期真实控件，保持不变 |
+| GTD | 澄清弹层各字段、日期弹层 | 走 `Ui.modal`，随修法 A 恢复 |
+
+### 16.4 修法 C：焦点生命周期
+
+- `textura.ui.FocusRequest` + `FocusOnceView`（`src/ui/focus.cj`）：打开编辑器时 `request(id)`，
+  layout 里**一次性** `ctx.focus(id)`；第一帧无条件生效，之后只在「没有任何控件持有焦点」时重试
+  （最多 3 帧），任何别的控件拿到焦点即视为用户接管、立即停止 —— 绝不每帧抢。
+- 关闭时 `release()` 把焦点交还打开前的控件（`request` 时记下的 `ctx.focusId`）；没有则回落到
+  调用方的兜底（shell 是 `shell-nav-<当前路由>`）。
+- 弹层内 Tab 在正文的焦点停靠点之间循环（`ModalHost` 消费 Tab），不会跑到遮罩下面的页面。
+- 输入法：CUI-P05 的「有插入符才 `startTextInput`」逻辑未改；因为焦点现在真的落到输入框，
+  插入符会画出来，输入法随之打开。
+
+### 16.5 回归门禁
+
+- `src/shell/input_focus_test.cj::everyVisibleTextfieldFocusesWhenClicked`：遍历全部 7 条路由，
+  从语义树里取出**每个** `TextField` 的矩形，逐个「移动+按下+抬起」，断言
+  `ctx.focusId == 该 id`；并固定要求 `shell-search` / `gantt-title` / `calendar-quick-input`
+  都在被枚举到的集合里（甘特检查器默认收起，测试会先打开并选中一行，避免「空集合绿灯」）。
+- `paletteSearchFocusesWhenClicked`、`quickCaptureAutofocusesOnOpen`：命令面板点搜索框即聚焦；
+  快速收集打开即聚焦、关闭回到侧栏行。
+- `src/ui/prompt_test.cj`：`Ui.prompt` 打开即聚焦、Enter 保存、Esc 取消、Tab 后不抢回焦点。
+- `src/views/sop/sop_prompt_test.cj`：检查器标题/耗时经浮层写回 store，空标题被拦下且浮层不关。
+- 弹层叠层数从 1 变 2（遮罩 + 正文），`commandPaletteOpensOnCtrlKAndClosesOnEscape` 与
+  `closedOverlaysLeaveNoLayerBehind` 已按新结构更新为 `+2 / 0`。
 
