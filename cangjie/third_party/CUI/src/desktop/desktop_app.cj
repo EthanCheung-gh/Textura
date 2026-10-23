@@ -25,6 +25,21 @@ private let MAX_STABILIZATION_PASSES: Int64 = 3
 // SDL_WaitEventTimeout is a blocking foreign call. Bounding it avoids occupying a Cangjie M:N
 // carrier indefinitely and also drains posted work eventually if SDL rejects a rare wake event.
 private let MAX_EVENT_WAIT_MS: Int32 = 250
+/*
+ * Bounded wait used when an embedding host owns the tick (`beginHostedRun`).
+ *
+ * CUI's blocking `run()` loop is the thread that has nothing else to do, so a 250ms wait there is
+ * free. A hosted tick is not: HarmonyOS drives `step()` from the XComponent `OnFrame` callback on the
+ * application's UI thread, so a 250ms block also stalls every other window-system operation queued
+ * behind it. Measured on the MateBook with the 250ms wait: the app's own main thread burned ~5% CPU
+ * and a system Dfx watchdog thread ~18% while the UI was completely idle.
+ *
+ * 16ms keeps an idle host at roughly one wake-up per display frame (measured ~2% CPU) and returns
+ * control to the platform within one frame budget.
+ */
+private let HOSTED_MAX_EVENT_WAIT_MS: Int32 = 16
+// Upper bound on input records dispatched inside one frame (see collectPendingEvents).
+private let MAX_EVENTS_PER_FRAME: Int64 = 64
 
 private enum DesktopAppLifecycle {
     | Ready
@@ -92,6 +107,16 @@ public class DesktopApp {
     private let profiler: ?FrameProfiler
     private let retainedDamageEnabled: Bool
     private var lastPartialDamage = false
+    // Nanoseconds of the last drawn frame's begin / tree / resolve / present phases (HostedFrameCost).
+    private var lastDrawSplit: (UInt64, UInt64, UInt64, UInt64) = (UInt64(0), UInt64(0), UInt64(0), UInt64(0))
+    private var lastCost = HostedFrameCost.none()
+    // Interaction owners as they stood when the frame started, and whether the frame's input moved
+    // one of them. A frame that moved focus/pressed/drag cannot be repainted piecewise; a frame that
+    // only changed hover can (see canRepaintPartially).
+    private var frameFocusOwner: String = ""
+    private var framePressedOwner: String = ""
+    private var frameDragOwner: String = ""
+    private var intrinsicPointerStateChanged = false
     private var frames: UInt64 = 0
     private var baseCursor: ?Cursor = None
     private var pointerCursor: ?Cursor = None
@@ -198,6 +223,39 @@ public class DesktopApp {
     public func lastFrameUsedPartialDamage(): Bool {
         ensureUiAccess("inspect retained frame damage")
         lastPartialDamage
+    }
+
+    /**
+     * Per-phase cost of the most recently drawn frame.
+     *
+     * The `--profile` reporter above needs a desktop command line, which an embedding host (the
+     * HarmonyOS SDL port) does not have. This accessor is the hosted equivalent: it is filled on
+     * every drawn frame, so a host can attribute a slow frame to build, layout, input, semantics or
+     * a draw/present phase in its own diagnostics instead of guessing from wall time.
+     */
+    public func lastFrameCost(): HostedFrameCost {
+        ensureUiAccess("inspect hosted frame cost")
+        lastCost
+    }
+
+    /**
+     * Runs `action` as one visual invalidation on whichever thread the caller is on.
+     *
+     * A store/observer callback is usually reached from the UI thread while an input event or a
+     * build is running: running the action immediately keeps the caused repaint inside the *same*
+     * frame, which is what a click handler needs (one frame of latency instead of two). A callback
+     * reached from a worker thread must not touch the thread-confined `State`s, so it is handed to
+     * `post` instead and drained at the next frame boundary.
+     */
+    public func deliver(action: () -> Unit): Unit {
+        if (scheduler.ownsCurrentThread()) {
+            withFrameScheduler(scheduler, {=> scheduler.transaction(action)})
+        } else if (!post(action)) {
+            // Capacity or shutdown: the action is dropped rather than run on the wrong thread.
+            // The next frame still reflects the underlying store write when something else
+            // invalidates the tree, and postStats() reports the refusal to the host.
+            ()
+        }
     }
 
     /**
@@ -412,33 +470,56 @@ public class DesktopApp {
         let stateTriggered = stateGen != loopLastRenderedGen
         let resized = viewportW != loopRenderedWidth || viewportH != loopRenderedHeight
         let mustRender = timerTriggered || !events.isEmpty() || stateTriggered || resized || forced
+        // A step that does not draw reports no cost (`lastFrameCost` would otherwise repeat the
+        // previous drawn frame's numbers, which reads as "every idle step rendered" in a host log).
+        lastCost = HostedFrameCost.none()
 
         if (mustRender) {
+            let costBuildStart = hostedNow()
             // Measure and route input on the same raster grid as the upcoming render pass.
             ctx.renderer.prepareTextLayout(Float32(viewportW), Float32(viewportH))
             match (profiler) {
                 case Some(_) => ctx.renderer.resetTextMeasureCount()
                 case None => ()
             }
+            let costLayoutStart = hostedNow()
             var stable = buildAndLayoutStable(body, viewportW, viewportH)
+            let costEventStart = hostedNow()
             var eventNs = UInt64(0)
+            frameFocusOwner = ctx.focusId
+            framePressedOwner = ctx.pressedId
+            frameDragOwner = ctx.dragId
             for (record in events) {
                 eventNs += dispatchInputEvent(stable.widget, record)
                 stable = reflectStateChanges(stable, body, viewportW, viewportH)
             }
             eventNs += dispatchFrameTick(frame)
             stable = reflectStateChanges(stable, body, viewportW, viewportH)
+            intrinsicPointerStateChanged = ctx.focusId != frameFocusOwner || ctx.pressedId != framePressedOwner ||
+                ctx.dragId != frameDragOwner
+            let costSemanticsStart = hostedNow()
             let semanticsStart = frameProfileTimestamp(profiler)
             commitSemanticsForStore(ctx, stateStore)
             let semanticsNs = frameProfileTimestamp(profiler) - semanticsStart
+            let costDrawStart = hostedNow()
             frames += 1
             loopLastRenderedGen = stable.generation // writes made during draw intentionally schedule the next frame
-            let allowPartialDamage = retainedDamageEnabled && stateTriggered && events.isEmpty() && !timerTriggered &&
-                !resized && snapshotPath.isNone() && frameSubscriberCount(stateStore) == 0 && !ctx.hasOverlay() &&
-                ctx.hoverId.isEmpty() && ctx.focusId.isEmpty() && ctx.dragId.isEmpty() && ctx.pressedId.isEmpty()
+            let allowPartialDamage = canRepaintPartially(stateTriggered, events, timerTriggered, resized)
             let frameDamage = takeRetainedFrameDamage(stateStore,
                 Rect(0.0, 0.0, Float32(viewportW), Float32(viewportH)), allowPartialDamage)
             let (beginNs, treeNs, resolveNs, presentNs) = draw(stable.widget, frameDamage)
+            lastCost = HostedFrameCost(
+                costLayoutStart - costBuildStart,
+                costEventStart - costLayoutStart,
+                costSemanticsStart - costEventStart,
+                costDrawStart - costSemanticsStart,
+                lastDrawSplit[0],
+                lastDrawSplit[1],
+                lastDrawSplit[2],
+                lastDrawSplit[3],
+                Int64(events.size),
+                lastPartialDamage
+            )
             loopSchedule = ctx.takeFrameSchedule()
             loopRenderedWidth = viewportW
             loopRenderedHeight = viewportH
@@ -457,6 +538,52 @@ public class DesktopApp {
             }
         }
         waitForWork(loopSchedule, frame.elapsedMs, scheduler.generation != loopLastRenderedGen)
+    }
+
+    /*
+     * Whether this frame may repaint through retained partial damage.
+     *
+     * CUI's original rule demanded `events.isEmpty()`, i.e. "any input at all repaints the whole
+     * window". On a 1930x1020 software-rasterised HarmonyOS surface that is 250ms per pointer move:
+     * a hover turns into a queue of full repaints and the UI feels frozen.
+     *
+     * The rule is now stated as what actually has to hold. A repaint may be limited to the damaged
+     * retained region when *every* reason to paint but one is absent and the input that arrived can
+     * only have changed hover: no mouse press/release, no wheel, no key, no text, and the focus,
+     * pressed and drag owners are unchanged across the frame. Anything else — a press that can move
+     * focus, a scroll that can clip, a resize, a timer — keeps the conservative full frame, and a
+     * frame with no retained damage hint at all still falls back to full damage inside
+     * `takeRetainedFrameDamage`.
+     */
+    private func canRepaintPartially(
+        stateTriggered: Bool,
+        events: ArrayList<UiEventRecord>,
+        timerTriggered: Bool,
+        resized: Bool
+    ): Bool {
+        if (!retainedDamageEnabled || timerTriggered || resized || snapshotPath.isSome() ||
+            frameSubscriberCount(stateStore) != 0 || ctx.hasOverlay() || !ctx.dragId.isEmpty()) {
+            return false
+        }
+        if (stateTriggered) {
+            // A state write owns the frame only when no input arrived, as before (CUI-P01 behaviour).
+            return events.isEmpty() && ctx.hoverId.isEmpty() && ctx.focusId.isEmpty() && ctx.pressedId.isEmpty()
+        }
+        if (events.isEmpty()) {
+            return false
+        }
+        // Input-only frame: it may be repainted piecewise iff the input cannot have changed anything
+        // but hover. Pointer moves are the whole set; presses settle focus and presses.
+        if (intrinsicPointerStateChanged) {
+            return false
+        }
+        for (record in events) {
+            match (record.event) {
+                case UiEvent.MouseMove(_, _) => ()
+                case _ => return false
+            }
+        }
+        true
     }
 
     private func dispatchInputEvent(widget: Widget, record: UiEventRecord): UInt64 {
@@ -549,31 +676,71 @@ public class DesktopApp {
         }
 
         let now = window.ticks()
-        let timeout = eventWaitTimeout(schedule, now)
+        // Hosted ticks block briefly (see HOSTED_MAX_EVENT_WAIT_MS); CUI's own loop uses MAX_EVENT_WAIT_MS.
+        let timeout = eventWaitTimeout(schedule, now, if (hostedBody.isSome()) {
+            HOSTED_MAX_EVENT_WAIT_MS
+        } else {
+            MAX_EVENT_WAIT_MS
+        })
         match (window.waitEventRecordTimeout(timeout)) {
             case Some(record) => match (record.event) {
                 case UiEvent.Wake => ()
-                case _ => waitedEvents.add(record)
+                case _ =>
+                    waitedEvents.add(record)
+                    // Merge the rest of the burst this wake-up belongs to into the same frame. A
+                    // pointer drag delivers dozens of motion records back to back; dispatching them
+                    // one per frame turns a 250ms repaint into a 250ms queue, while all of them
+                    // describe one pointer position anyway. Order is preserved: the blocking record
+                    // is queued first, then whatever SDL already has.
+                    mergeQueuedEvents()
             }
             case None => () // timer deadline elapsed
         }
     }
 
-    // Polls every event SDL has queued into a buffer, so the render decision can tell whether any input
-    // arrived before deciding whether to build a frame at all. Dispatch is deferred (see below).
-    private func collectPendingEvents(): ArrayList<UiEventRecord> {
-        let events = ArrayList<UiEventRecord>()
-        for (event in waitedEvents) {
-            events.add(event)
-        }
-        waitedEvents.clear()
+    /* Queues every already-pending record for the upcoming frame, up to the per-frame bound. */
+    private func mergeQueuedEvents(): Unit {
         var current = window.pollEventRecord()
         while (let Some(record) <- current) {
             match (record.event) {
                 case UiEvent.Wake => ()
-                case _ => events.add(record)
+                case _ =>
+                    if (Int64(waitedEvents.size) >= MAX_EVENTS_PER_FRAME) {
+                        return // the remainder stays in SDL; the next frame drains it
+                    }
+                    waitedEvents.add(record)
             }
             current = window.pollEventRecord()
+        }
+    }
+
+    // Polls every event SDL has queued into a buffer, so the render decision can tell whether any input
+    // arrived before deciding whether to build a frame at all. Dispatch is deferred (see below).
+    // At most MAX_EVENTS_PER_FRAME records go into one frame: the rest stay queued (SDL + waitedEvents)
+    // and the frame asks for its successor immediately, so a flood is drained over several frames
+    // instead of stalling one.
+    private func collectPendingEvents(): ArrayList<UiEventRecord> {
+        let events = ArrayList<UiEventRecord>()
+        while (!waitedEvents.isEmpty() && Int64(events.size) < MAX_EVENTS_PER_FRAME) {
+            events.add(waitedEvents.remove(at: 0))
+        }
+        var deferred = !waitedEvents.isEmpty()
+        var current = window.pollEventRecord()
+        while (let Some(record) <- current) {
+            match (record.event) {
+                case UiEvent.Wake => ()
+                case _ =>
+                    if (Int64(events.size) >= MAX_EVENTS_PER_FRAME) {
+                        waitedEvents.add(record)
+                        deferred = true
+                        break
+                    }
+                    events.add(record)
+            }
+            current = window.pollEventRecord()
+        }
+        if (deferred) {
+            ctx.requestFrame()
         }
         events
     }
@@ -667,12 +834,14 @@ public class DesktopApp {
     // records them.
     private func draw(widget: Widget, damage: RetainedFrameDamage): (UInt64, UInt64, UInt64, UInt64) {
         let t0 = frameProfileTimestamp(profiler)
+        let hostBeginStart = hostedNow()
         let (pass, activeDamage) = beginFramePass(damage)
         // Report the backend decision, not merely the framework's damage plan. A renderer
         // may safely fall back to a full frame when its persistent target is unavailable.
         lastPartialDamage = activeDamage.isSome()
         ctx.setRetainedDamage(activeDamage)
         let t1 = frameProfileTimestamp(profiler)
+        let hostTreeStart = hostedNow()
         var t2 = t1
         try {
             drawFrameContents(widget)
@@ -681,8 +850,10 @@ public class DesktopApp {
             ctx.setRetainedDamage(None)
             pass.close()
         }
+        let hostResolveStart = hostedNow()
         let t3 = frameProfileTimestamp(profiler)
         maybeSnapshot()
+        let hostPresentStart = hostedNow()
         ctx.renderer.present()
         if (frames == UInt64(1) && !ctx.shouldClose) {
             // Window creation, font initialization and first layout happen off screen.
@@ -690,7 +861,12 @@ public class DesktopApp {
             window.show()
             ctx.requestFrame() // redraw after native show/DPI/expose changes, even on an otherwise idle UI
         }
+        let hostEnd = hostedNow()
         let t4 = frameProfileTimestamp(profiler)
+        // Unconditional split for the host-facing HostedFrameCost; `resolve` is the target resolve
+        // plus the supersample downsample, `present` the backend submit and swap.
+        lastDrawSplit = (hostTreeStart - hostBeginStart, hostResolveStart - hostTreeStart,
+            hostPresentStart - hostResolveStart, hostEnd - hostPresentStart)
         (t1 - t0, t2 - t1, t3 - t2, t4 - t3)
     }
 
@@ -948,15 +1124,15 @@ internal func closeResourcesInReverse(resources: ArrayList<Resource>): Unit {
     failures.raiseIfAny()
 }
 
-internal func eventWaitTimeout(schedule: FrameSchedule, now: UInt64): Int32 {
+internal func eventWaitTimeout(schedule: FrameSchedule, now: UInt64, cap: Int32): Int32 {
     match (schedule.deadlineMs) {
         case Some(deadline) =>
             if (deadline <= now) {
                 Int32(0)
             } else {
-                Int32(min(deadline - now, UInt64(MAX_EVENT_WAIT_MS)))
+                Int32(min(deadline - now, UInt64(cap)))
             }
-        case None => MAX_EVENT_WAIT_MS
+        case None => cap
     }
 }
 

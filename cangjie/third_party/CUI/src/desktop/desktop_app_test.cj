@@ -51,12 +51,16 @@ func frameProfilerPercentileUsesNearestRank(): Unit {
 
 @Test
 func eventWaitTimeoutBoundsNativeBlockingAndHonorsEarlierDeadline(): Unit {
-    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: None), UInt64(100)), Int32(250))
-    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(1000))), UInt64(100)),
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: None), UInt64(100), 250), Int32(250))
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(1000))), UInt64(100), 250),
         Int32(250))
-    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(120))), UInt64(100)),
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(120))), UInt64(100), 250),
         Int32(20))
-    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(90))), UInt64(100)), Int32(0))
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(90))), UInt64(100), 250), Int32(0))
+    // A hosted tick caps the block at one display frame instead of the desktop 250ms.
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: None), UInt64(100), 16), Int32(16))
+    @Expect(eventWaitTimeout(FrameSchedule(immediate: false, deadlineMs: Some(UInt64(1000))), UInt64(100), 16),
+        Int32(16))
 }
 
 @Test

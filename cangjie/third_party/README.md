@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -32,6 +32,30 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 ## CUI 补丁
 
 `CUI-P01-hosted-frame-step` 已包含在源码里，位置 `CUI/src/desktop/desktop_app.cj`。它把阻塞的 `run()` 循环拆成宿主可逐帧驱动的 `beginHostedRun` / `step` / `endHostedRun`，供鸿蒙 XComponent `OnFrame` 使用。不要删除或重命名这些方法。
+
+### CUI-P03-hosted-frame-cost（本仓新增，最小补丁）
+
+- 位置：`CUI/src/desktop/desktop_app.cj`、`CUI/src/desktop/frame_profiler.cj`、`CUI/src/core/frame_scheduler.cj`、`CUI/src/cui.cj`。
+- 背景：鸿蒙宿主要回答两个问题——「一帧到底贵在哪」和「store 的写入怎么落到 UI 线程」，而 CUI 0.9.6 都没有出口：
+  `FrameProfiler` 只认桌面命令行 `--profile`（HAP 没有 argv），`DesktopApp.post` 只能"排队到下一帧"，
+  没有"已经在 UI 线程就当场执行"的通道。
+- 改动（1 个公开类 + 2 个公开方法 + 3 处行为分支 + 1 处内部枚举值）：
+  - 新增公开类 `HostedFrameCost`（`cui.desktop`，并由 `cui.cj` 再导出）：上一次**真正绘制**的帧的分段纳秒耗时
+    （build / layout / event / semantics / begin / tree / resolve / present）、该帧事件数与是否走 retained 局部
+    damage。每个绘制帧用 8 次 `PerformanceClock` 读取填充（与一帧的成本相比不可测）；未绘制的 step 归零，
+    不会重复上报上一帧的数字。
+  - 新增 `DesktopApp.lastFrameCost()`：宿主侧诊断入口，替代"用 step 墙钟猜帧成本"（墙钟里含着等待下一个事件的时间）。
+  - 新增 `DesktopApp.deliver(action)`：在 UI 线程上以一次视觉失效执行 `action`——当前线程就是帧调度器的 owner
+    时**当场**执行（同一个输入帧内完成重绘，点击延迟 1 帧而不是 2 帧），否则转 `post` 排到下一帧边界。
+    配合 `FrameScheduler.ownsCurrentThread()`（新增的 protected 只读判定，不抛异常）。
+  - 宿主模式的事件等待上限：`waitForWork` 在 `beginHostedRun` 之后把 `MAX_EVENT_WAIT_MS`（250ms）换成
+    `HOSTED_MAX_EVENT_WAIT_MS`（16ms），`eventWaitTimeout` 多一个 `cap` 参数。桌面 `run()` 仍是 250ms，行为不变。
+    原因与实测见 `docs/DEVICE-NOTES.md` §3：宿主 tick 跑在应用 UI 线程上（XComponent `OnFrame`），
+    阻塞 250ms 会拖住排在后面的窗口系统操作，实测空转期有系统 `OS_DfxWatchdog` 线程吃掉 18% CPU。
+  - 保留原判定不变：`retainedDamageEnabled`、`--cui-disable-retained-damage`、`--cui-force-full-retained`、
+    `--profile` 的语义与输出格式都未改；`FrameProfileSample` 仍由 `frameProfileTimestamp(profiler)` 计时。
+- 不改变渲染结果：三个新增出口只读或只影响"何时绘制/何时执行"，不改任何绘制指令；1440×900 对拍 14/14 不变。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01/P02 同流程），并在本表登记版本。
 
 ### CUI-P02-overlay-scrollbar（本仓新增，最小补丁）
 

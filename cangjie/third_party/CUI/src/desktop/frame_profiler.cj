@@ -47,6 +47,71 @@ class FramePhaseTimes {
     }
 }
 
+/*
+ * Per-phase cost of the most recent drawn frame, in nanoseconds, reported to an embedding host.
+ *
+ * The `--profile` FrameProfiler above is desktop-only: it prints, and it needs a command line, which
+ * a HAP does not have. A host that owns the frame tick (see `beginHostedRun`) does have a log of its
+ * own, but no way to attribute a slow frame — this value is that missing half. It is measured on
+ * every drawn frame with a handful of clock reads (no allocation, no formatting) so it costs
+ * nothing measurable next to a frame, and is *off* the rendered output: it cannot affect parity.
+ */
+public class HostedFrameCost {
+    /** Tree build (only the dirty declarative scopes) in nanoseconds. */
+    public let buildNs: UInt64
+    /** Layout of the stable tree in nanoseconds. */
+    public let layoutNs: UInt64
+    /** Input dispatch, including the rebuild/layout the events caused in the same frame. */
+    public let eventNs: UInt64
+    /** Accessibility/semantic commit in nanoseconds. */
+    public let semanticsNs: UInt64
+    /** `beginRenderPass` (target clear / scene setup) in nanoseconds. */
+    public let beginNs: UInt64
+    /** `draw(ctx)` walk of the widget tree in nanoseconds. */
+    public let treeNs: UInt64
+    /** Supersample resolve step in nanoseconds. */
+    public let resolveNs: UInt64
+    /** `renderer.present()` (backend submit + swap) in nanoseconds. */
+    public let presentNs: UInt64
+    /** Input events dispatched in this frame. */
+    public let events: Int64
+    /** Whether the frame repainted through retained partial damage instead of the full viewport. */
+    public let partialDamage: Bool
+
+    init(
+        buildNs: UInt64,
+        layoutNs: UInt64,
+        eventNs: UInt64,
+        semanticsNs: UInt64,
+        beginNs: UInt64,
+        treeNs: UInt64,
+        resolveNs: UInt64,
+        presentNs: UInt64,
+        events: Int64,
+        partialDamage: Bool
+    ) {
+        this.buildNs = buildNs
+        this.layoutNs = layoutNs
+        this.eventNs = eventNs
+        this.semanticsNs = semanticsNs
+        this.beginNs = beginNs
+        this.treeNs = treeNs
+        this.resolveNs = resolveNs
+        this.presentNs = presentNs
+        this.events = events
+        this.partialDamage = partialDamage
+    }
+
+    static func none(): HostedFrameCost {
+        HostedFrameCost(UInt64(0), UInt64(0), UInt64(0), UInt64(0), UInt64(0), UInt64(0), UInt64(0), UInt64(0), 0, false)
+    }
+
+    /** Complete CPU-side frame time represented by the measured phases. */
+    public func totalNs(): UInt64 {
+        buildNs + layoutNs + eventNs + semanticsNs + beginNs + treeNs + resolveNs + presentNs
+    }
+}
+
 class FrameProfileSignals {
     let passes: Int64
     let input: Bool
@@ -297,8 +362,7 @@ class FrameProfiler {
     }
 }
 
-internal func percentileOfSorted(sorted: Array<UInt64>, percent: Int64): UInt64 {
-    if (sorted.isEmpty()) {
+internal func percentileOfSorted(sorted: Array<UInt64>, percent: Int64): UInt64 {    if (sorted.isEmpty()) {
         return UInt64(0)
     }
     let rank = max(Int64(0), (sorted.size * percent + 99) / 100 - 1)
@@ -311,4 +375,9 @@ private func maxSample(samples: Array<UInt64>): UInt64 {
         maximum = max(maximum, sample)
     }
     maximum
+}
+
+/* One monotonic clock read for HostedFrameCost. Always on: a drawn frame takes eight of them. */
+internal func hostedNow(): UInt64 {
+    PerformanceClock.ticksNanoseconds()
 }

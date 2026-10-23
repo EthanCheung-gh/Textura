@@ -74,6 +74,23 @@ public class FrameScheduler {
         }
     }
 
+    /*
+     * Non-throwing form of the ownership question, for callers that choose between running an action
+     * inline and posting it. An unclaimed scheduler answers true: this thread would become the owner,
+     * which is exactly what the inline path does.
+     */
+    protected func ownsCurrentThread(): Bool {
+        let current = Thread.currentThread
+        let ownerSnapshot = owner.load()
+        if (sameOwner(ownerSnapshot, unclaimedFrameSchedulerOwner)) {
+            return true
+        }
+        match (ownerSnapshot.thread) {
+            case Some(ownerThread) => sameThread(ownerThread, current)
+            case None => false
+        }
+    }
+
     /* State may move to a sequential same-thread app, never across an unfinished transaction. */
     func assertStateTransferSourceIdle(): Unit {
         if (transactionDepth > 0 || flushingTransactionWork) {

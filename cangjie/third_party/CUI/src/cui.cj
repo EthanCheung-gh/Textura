@@ -239,6 +239,7 @@ public import cui.desktop.AccessibilityFailure
 public import cui.desktop.AccessibilityFailureOperation
 public import cui.desktop.AccessibilityFailureSource
 public import cui.desktop.DesktopApp
+public import cui.desktop.HostedFrameCost
 public import cui.desktop.CloseRequest
 public import cui.desktop.DesktopPostStats
 public import cui.media.CanvasWidget
