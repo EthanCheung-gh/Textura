@@ -200,8 +200,28 @@ public class ButtonView <: Widget {
         Size(min(desired, availableWidth), min(metrics.height, max(available.h, 0.0)))
     }
 
-    public func layout(_: UiContext, rect: Rect): Unit {
+    public func layout(ctx: UiContext, rect: Rect): Unit {
         frame = rect
+        // Buttons built during build carry a build-order identity; publish it as an accessible
+        // button so screen readers and tests can find/activate the same control a click does.
+        // (`id == "UiButton"` means the control was constructed in layout, where ids are not
+        // unique; registering those would collide across rows.)
+        if (id != "UiButton") {
+            ctx.registerSemantics(
+                SemanticsNode(id, Semantics(label: label, role: SemanticsRole.Button, enabled: isEnabled), rect,
+                    actions: [SemanticsAction.Activate]), perform: {action =>
+                    match (action) {
+                        case SemanticsAction.Activate =>
+                            if (isEnabled) {
+                                onClick()
+                                true
+                            } else {
+                                false
+                            }
+                        case _ => false
+                    }
+                })
+        }
     }
 
     public func draw(ctx: UiContext): Unit {

@@ -225,61 +225,174 @@ func linkDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, t
     for (ref in executionItemsOf(okrWorkspace, krId)) {
         linked.add(ref.item.id)
     }
-    let candidates = ArrayList<Item>()
+    let selected = ui.linkSelected.value
+    let removed = ui.linkRemoved.value
+    let rows = ArrayList<OkrLinkRowData>()
     for (item in okrLinkCandidates(workspace)) {
         let okrItem = toOkrItem(item)
-        if (matchesQuery(okrWorkspace, okrItem, ui.linkQuery.value)) {
-            candidates.add(item)
+        if (!matchesQuery(okrWorkspace, okrItem, ui.linkQuery.value)) {
+            continue
         }
+        let isLinked = hasIn(linked, item.id)
+        // Linked rows start checked; unchecking one marks it for `deleteEdge` on confirm.
+        let checked = if (isLinked) {
+            !ui.hasIn(removed, item.id)
+        } else {
+            ui.hasIn(selected, item.id)
+        }
+        let area: ?Area = match (item.areaId) {
+            case Some(areaId) => areaById(workspace, areaId)
+            case None => None
+        }
+        let progress: Int64 = if (item.status == ItemStatus.Done) {
+            100
+        } else {
+            match (item.gantt) {
+                case Some(gantt) => Int64(roundPercent(gantt.progress))
+                case None => 0
+            }
+        }
+        rows.add(OkrLinkRowData(item, area, isLinked, checked, Float32(progress)))
     }
-    let selected = ui.linkSelected.value
+    let rowArray = rows.toArray()
+    // The list/selection states are read here on purpose: a row click writes them, and this
+    // read is what makes CUI rebuild the dialog (rows' checkmarks) before the next layout.
+    let _ = ui.linkQuery.value
+    let _ = ui.linkSelected.value
+    let _ = ui.linkRemoved.value
+    let _ = ui.linkScroll.value
     Ui.modal(
         theme,
         ui.linkOpen,
-        {=> ui.linkOpen.value = false},
+        {=> closeLinkDialog(ui)},
         title: "关联执行项",
         description: "为「${krTitle}」挑选支撑它的项目或行动。",
         width: 640.0,
+        focus: ui.linkFocus,
+        initialFocus: "okr-link-search",
         footer: {=>
+            // `.okr-link-count { margin-right: auto; font-size: 12px }`
             Label("已选 ${selected.size}").fontSize(fp(12.0)).foregroundColor(c.textMuted)
             Spacer()
-            Ui.button(theme, "取消", {=> ui.linkOpen.value = false}, variant: ButtonVariant.Ghost)
+            Ui.button(theme, "取消", {=> closeLinkDialog(ui)}, variant: ButtonVariant.Ghost)
             Ui.button(
                 theme,
                 "关联所选",
-                {=>
-                    var count = 0
-                    for (id in ui.linkSelected.value) {
-                        ctx.store.linkOkr(krId, id)
-                        count += 1
-                    }
-                    ui.linkOpen.value = false
-                    if (count > 0) {
-                        ctx.store.notify("已关联 ${count} 个执行项", tone: NoticeTone.Success)
-                    }
-                },
+                {=> confirmLink(ctx, ui, krId)},
                 variant: ButtonVariant.Primary,
-                enabled: selected.size > 0
+                enabled: selected.size > 0 || removed.size > 0
             )
         }
     ) { =>
-        HStack(spacing: vp(OKR_S2)) {
-            Ui.icon(theme, IconGlyph.Search, side: 15.0, color: c.textFaint)
-            Ui.textInput(theme, ui.linkQuery, key: "okr-link-search", placeholder: "搜索项目或行动（标题、标签、负责人）…")
+        VStack(spacing: vp(8.0)) {
+            // `.okr-link-search { display:flex; gap:8px }` + `.input { flex:1 }`
+            HStack(spacing: vp(8.0)) {
+                Ui.icon(theme, IconGlyph.Search, side: 15.0, color: c.textFaint)
+                linkSearchField(tokens, ui)
+            }.crossAxisAlignment(CrossAxisAlignment.Center).hug().fillWidth()
+            // `.okr-dialog-hint { margin-top: 8px; font-size: 11.5px; line-height: 1.5 }`
+            Label("来自甘特 / GTD 的项目与行动。已通过层级挂在 KR 下的子项也会显示为「已关联」。")
+                .fontSize(fp(11.5)).foregroundColor(c.textMuted)
         }.hug().fillWidth()
-        Label("来自甘特 / GTD 的项目与行动。已通过层级挂在 KR 下的子项也会显示为「已关联」。")
-            .fontSize(fp(11.5)).foregroundColor(c.textMuted)
-        ScrollView(key: "okr-link-list") {
-            VStack(spacing: vp(2.0)) {
-                for (item in candidates) {
-                    linkCandidateRow(ctx, ui, theme, tokens, c, workspace, item, hasIn(linked, item.id))
-                }
-            }.hug().fillWidth()
-        }.height(300.0)
-        if (candidates.size == 0) {
+        // `.okr-link-list`: 46vh scroll window, 2px row gap (see okr_link_list.cj).
+        OkrLinkList(tokens, theme, rowArray, ui.linkScroll) {id => toggleLinkRow(ui, linked, id)}
+        if (rowArray.isEmpty()) {
             Ui.emptyState(theme, "没有匹配的执行项", description: "换个关键词，或先在甘特 / GTD 中创建行动。",
                 glyph: IconGlyph.Search, compact: true)
         }
+    }
+}
+
+/** `.input` 的搜索框：尺寸/边框/焦点色与 `Ui.textInput` 相同，但需要 `.flex()` 占满剩余宽度。 */
+func linkSearchField(tokens: ThemeTokens, ui: OkrUiState): Unit {
+    let field = TextField(ui.linkQuery, key: "okr-link-search")
+    field.style(TextInputStyle(
+        padding: LengthInsets(Length(10.0, LengthUnit.Vp), Length(7.0, LengthUnit.Vp)),
+        textColor: tokens.color.text,
+        placeholderColor: tokens.color.textFaint,
+        cursorColor: tokens.color.accent,
+        surface: SurfaceStyle(tokens.color.surface, border: tokens.color.border, radius: tokens.radius.md,
+            borderWidth: tokens.metrics.borderWidth),
+        focusedSurface: SurfaceStyle(tokens.color.surface, border: tokens.color.accent, radius: tokens.radius.md,
+            borderWidth: tokens.metrics.borderWidth)
+    ))
+    field.placeholder("搜索项目或行动（标题、标签、负责人）…")
+    field.textStyle(TextStyle(fontSize: fp(13.5)))
+    field.height(34.0)
+    let _ = field.flex()
+}
+
+func closeLinkDialog(ui: OkrUiState): Unit {
+    ui.linkOpen.value = false
+    ui.linkSelected.value = []
+    ui.linkRemoved.value = []
+    ui.linkScroll.value = 0.0
+    ui.linkFocus.cancel()
+}
+
+/** 勾选/取消：已关联项写入 `linkRemoved`（确认时删边），其余写入 `linkSelected`。 */
+func toggleLinkRow(ui: OkrUiState, linked: ArrayList<String>, rowId: String): Unit {
+    // The list hands back its row's semantic id; the item id follows the prefix.
+    let id = if (rowId.startsWith("okr-link-row-")) {
+        rowId[OKR_LINK_ROW_ID_PREFIX.size..rowId.size]
+    } else {
+        rowId
+    }
+    if (hasIn(linked, id)) {
+        let next = ArrayList<String>()
+        var removed = false
+        for (value in ui.linkRemoved.value) {
+            if (value == id) {
+                removed = true
+            } else {
+                next.add(value)
+            }
+        }
+        if (!removed) {
+            next.add(id)
+        }
+        ui.linkRemoved.value = next.toArray()
+        return
+    }
+    let next = ArrayList<String>()
+    var dropped = false
+    for (value in ui.linkSelected.value) {
+        if (value == id) {
+            dropped = true
+        } else {
+            next.add(value)
+        }
+    }
+    if (!dropped) {
+        next.add(id)
+    }
+    ui.linkSelected.value = next.toArray()
+}
+
+/** 确认：先建 `okr` 边，再删除被取消勾选条目对应的边。 */
+func confirmLink(ctx: ViewContext, ui: OkrUiState, krId: String): Unit {
+    var linked = 0
+    for (id in ui.linkSelected.value) {
+        ctx.store.linkOkr(krId, id)
+        linked += 1
+    }
+    var unlinked = 0
+    let workspace = ctx.store.state.value()
+    for (id in ui.linkRemoved.value) {
+        for (edge in workspace.edges) {
+            if (edge.edgeType == EdgeType.Okr && edge.from == krId && edge.to == id) {
+                ctx.store.deleteEdge(edge.id)
+                unlinked += 1
+            }
+        }
+    }
+    closeLinkDialog(ui)
+    if (linked > 0 && unlinked > 0) {
+        ctx.store.notify("已关联 ${linked} 个执行项，解除 ${unlinked} 个", tone: NoticeTone.Success)
+    } else if (linked > 0) {
+        ctx.store.notify("已关联 ${linked} 个执行项", tone: NoticeTone.Success)
+    } else if (unlinked > 0) {
+        ctx.store.notify("已解除 ${unlinked} 个执行项", tone: NoticeTone.Info)
     }
 }
 
@@ -290,71 +403,6 @@ func hasIn(values: ArrayList<String>, id: String): Bool {
         }
     }
     false
-}
-
-func linkCandidateRow(ctx: ViewContext, ui: OkrUiState, theme: Theme, tokens: ThemeTokens, c: TokenColors,
-    workspace: Workspace, item: Item, alreadyLinked: Bool): Unit {
-    let selected = ui.hasIn(ui.linkSelected.value, item.id)
-    let progress: Int64 = if (item.status == ItemStatus.Done) {
-        100
-    } else {
-        match (item.gantt) {
-            case Some(gantt) => Int64(roundPercent(gantt.progress))
-            case None => 0
-        }
-    }
-    HStack(spacing: vp(OKR_S2)) {
-        Ui.button(
-            theme,
-            if (alreadyLinked) {
-                "已关联"
-            } else if (selected) {
-                "已选"
-            } else {
-                "选择"
-            },
-            {=>
-                if (!alreadyLinked) {
-                    ui.toggleSelected(item.id)
-                }
-            },
-            variant: if (alreadyLinked || selected) {
-                ButtonVariant.Primary
-            } else {
-                ButtonVariant.Ghost
-            },
-            size: ControlSize.Sm,
-            enabled: !alreadyLinked
-        )
-        VStack(spacing: vp(2.0)) {
-            Label(item.title).fontSize(fp(13.0)).foregroundColor(if (alreadyLinked) {
-                c.textMuted
-            } else {
-                c.text
-            })
-            HStack(spacing: vp(6.0)) {
-                Ui.badge(theme, okrKindLabel(item.kind), tone: BadgeTone.Neutral)
-                Ui.badge(theme, okrStatusLabel(item.status), tone: okrStatusTone(item.status))
-                match (item.areaId) {
-                    case Some(areaId) => match (areaById(workspace, areaId)) {
-                        case Some(area) => Label(area.name).fontSize(fp(10.5)).foregroundColor(c.textMuted)
-                        case None => ()
-                    }
-                    case None => ()
-                }
-                Label(scheduleText(item)).fontSize(fp(10.5)).foregroundColor(c.textMuted).fontFamily(fontMono())
-            }.hug()
-        }.hug().flex()
-        Ui.progress(theme, Float32(progress), size: ControlSize.Sm, showLabel: true)
-        let _ = tokens
-    }.hug().fillWidth().padding(vp(6.0))
-}
-
-func scheduleText(item: Item): String {
-    match (item.gantt) {
-        case Some(gantt) => formatSchedule(OkrSchedule(start: gantt.start, end: gantt.end))
-        case None => "未排期"
-    }
 }
 
 /** 目标「更多操作」菜单（`ObjectiveCard.tsx` 的 okr-menu）。 */

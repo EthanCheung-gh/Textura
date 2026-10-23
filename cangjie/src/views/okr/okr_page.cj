@@ -41,6 +41,14 @@ class OkrUiState {
     let linkKr: State<String>
     let linkQuery: State<String>
     let linkSelected: State<Array<String>>
+    /**
+     * 已关联但被用户取消勾选的执行项（确认时删除对应的 `okr` 边）。
+     * Web 版把已关联项禁用；本实现按用户要求允许取消，因此需要与「待关联」分开记。
+     */
+    let linkRemoved: State<Array<String>>
+    /** 候选列表的滚动偏移（46vh 窗口）。 */
+    let linkScroll: State<Float32>
+    let linkFocus: FocusRequest
     let confirmObjective: State<String>
     let confirmKr: State<String>
     let statusKr: State<String>
@@ -84,6 +92,9 @@ class OkrUiState {
         this.linkKr = rememberState<String>("okr-link-kr") {""}
         this.linkQuery = rememberState<String>("okr-link-query") {""}
         this.linkSelected = rememberState<Array<String>>("okr-link-selected") {[]}
+        this.linkRemoved = rememberState<Array<String>>("okr-link-removed") {[]}
+        this.linkScroll = rememberState<Float32>("okr-link-scroll") {0.0}
+        this.linkFocus = FocusRequest()
         this.confirmObjective = rememberState<String>("okr-confirm-objective") {""}
         this.confirmKr = rememberState<String>("okr-confirm-kr") {""}
         this.statusKr = rememberState<String>("okr-status-kr") {""}

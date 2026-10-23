@@ -587,7 +587,11 @@ func okrOwnerPatch(owner: String): ItemPatch {
 /** 打开「关联执行项」对话框（LinkItemsDialog.tsx）。 */
 func openLinkDialog(page: OkrPage, krId: String): Unit {
     page.ui.linkKr.value = krId
-    page.ui.linkQuery.value = ""
+    // LinkItemsDialog seeds its query from the global search on open.
+    page.ui.linkQuery.value = page.store.ui.value().search
     page.ui.linkSelected.value = []
+    page.ui.linkRemoved.value = []
+    page.ui.linkScroll.value = 0.0
     page.ui.linkOpen.value = true
+    page.ui.linkFocus.request("okr-link-search")
 }

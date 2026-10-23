@@ -6,7 +6,7 @@ import std.sort.*
 import cui.*
 import textura.core.data.{Area, Edge, EdgeType, Item, ItemKind, ItemStatus, Metric, Workspace, areaById,
     childrenOf, currentQuarter, itemById, itemKindLabel, itemStatusLabel, itemsOfKind, objectivesOfPeriod,
-    okrPeriods}
+    okrPeriods, parentPathText}
 import textura.ui.{BadgeTone, ProgressTone}
 import textura.views.okr.logic.{CivilDate, ConfidenceBucket, ExecutionVia, MetricDraft, OkrArea, OkrData, OkrEdge,
     OkrEdgeType, OkrItem, OkrItemKind, OkrItemStatus, OkrMetric, OkrSchedule, OkrSummary, OkrWorkspace, ObjectiveView,
@@ -415,15 +415,33 @@ let OKR_KR_STATUSES: Array<ItemStatus> = [
     ItemStatus.Dropped
 ]
 
-/** 链接执行项弹窗的候选池：全部项目 + 行动（按标题/标签等匹配查询）。 */
+/**
+ * 链接执行项弹窗的候选池（`LinkItemsDialog.tsx` 的 `candidates`）。
+ *
+ * 全部项目 + 行动，排除 `dropped`（已放弃的条目不该再被关联），按「父级路径 → 标题」
+ * 排序，让同一目标/项目下的执行项连续出现（Web 版依赖创建顺序，这里给出稳定顺序）。
+ */
 func okrLinkCandidates(workspace: Workspace): Array<Item> {
     let pool = ArrayList<Item>()
     for (item in itemsOfKind(workspace, ItemKind.Project)) {
-        pool.add(item)
+        if (item.status != ItemStatus.Dropped) {
+            pool.add(item)
+        }
     }
     for (item in itemsOfKind(workspace, ItemKind.Action)) {
-        pool.add(item)
+        if (item.status != ItemStatus.Dropped) {
+            pool.add(item)
+        }
     }
+    sort(pool, lessThan: {left, right =>
+        let leftPath = parentPathText(workspace, left.id)
+        let rightPath = parentPathText(workspace, right.id)
+        if (leftPath != rightPath) {
+            leftPath < rightPath
+        } else {
+            left.title < right.title
+        }
+    }, stable: true)
     pool.toArray()
 }
 
