@@ -179,6 +179,8 @@ class OkrPage <: Widget {
 
     private var canvas: ?PageCanvas = None
     private var contentHeight: Float32 = 0.0
+    private var measured: Bool = false
+    private var measuredWidth: Float32 = -1.0
     private var registeredIds = ArrayList<String>()
 
     init(ctx: ViewContext, ui: OkrUiState) {
@@ -321,8 +323,29 @@ class OkrPage <: Widget {
 
     // ---------------------------------------------------------------- Widget
 
+    /**
+     * `.page.okr-page` 的高度是**内容高度的和**（行高全部来自 okr.css 的固定值），只有跑一遍布局
+     * 才知道；而外层 `.shell-content` 的 `ScrollView` 会先 `child.measure(...)` 再
+     * `child.layout(Rect(…, measured.h))`。
+     *
+     * 修复前的 `measure` 直接返回上一次布局缓存 `contentHeight`，新实例第一次被量时它是 0：
+     * 换路由进入 OKR 那一帧量到 0 → VStack 只分到 0 高 → `layout` 仍会被调用（rect 高 0），
+     * 但页面内容被父级裁掉，而且此后没有脏标记再触发重新测量，于是**永久空白**（首次启动能显示，
+     * 是因为窗口尺寸变化额外引发了一次 measure→layout）。见 docs/DEVICE-NOTES.md §12。
+     *
+     * 因此这里在未知高度时先跑一遍「只算高度」的布局（`PageCanvas(measureOnly: true)`：
+     * 相同的行/列公式，但不构造控件、不提交草稿、不写焦点状态），把真实高度交给父级；
+     * 真正的 `layout` 仍按原路径执行一次，交互与像素都不变。
+     */
     public func measure(ctx: UiContext, available: Size): Size {
-        Size(min(OKR_PAGE_MAX_W, max(0.0, available.w)), contentHeight)
+        let pageW = min(OKR_PAGE_MAX_W, max(0.0, available.w))
+        if (!measured || measuredWidth != pageW) {
+            let probe = PageCanvas(tokens, theme, measureOnly: true)
+            layoutPage(ctx, probe, Rect(0.0, 0.0, pageW, 1.0))
+            measured = true
+            measuredWidth = pageW
+        }
+        Size(pageW, contentHeight)
     }
 
     public func layout(ctx: UiContext, rect: Rect): Unit {
@@ -413,7 +436,9 @@ class OkrPage <: Widget {
     private func layoutPage(ctx: UiContext, cv: PageCanvas, rect: Rect): Unit {
         let pageW = min(OKR_PAGE_MAX_W, max(0.0, rect.w))
         let x0 = rect.x + (rect.w - pageW) / 2.0
-        commitPendingEdits(ctx)
+        if (!cv.measureOnly) {
+            commitPendingEdits(ctx)
+        }
         var y = rect.y
         y = layoutHeader(ctx, cv, x0, pageW, y)
         y += OKR_S4
@@ -437,7 +462,9 @@ class OkrPage <: Widget {
             }
         }
         contentHeight = y - rect.y
-        ui.focusTrack.value = focusedField(ctx)
+        if (!cv.measureOnly) {
+            ui.focusTrack.value = focusedField(ctx)
+        }
     }
 
     // ---------------------------------------------------------------- 页头

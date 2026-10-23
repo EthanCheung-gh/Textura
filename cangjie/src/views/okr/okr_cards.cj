@@ -554,6 +554,9 @@ func startTitleEdit(page: OkrPage, id: String, value: String): Unit {
 /** 行内标题输入框：透明 surface + 0 内边距，与按钮态文字同位。 */
 func addTitleField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, value: String, rect: Rect,
     fontSize: Float32, weight: Int64, ink: Color): Unit {
+    if (cv.measureOnly) {
+        return
+    }
     let state = page.ui.field("title-${id}", value)
     let field = TextField(state, key: id)
     field.style(
@@ -577,6 +580,9 @@ func addTitleField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, va
 /** `.input.okr-metric-input`（78×28 / 单位 64×28，padding 2px 7px，字号 12）。 */
 func addNumericField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, rect: Rect, state: State<String>,
     placeholder: String, warn: Bool): Unit {
+    if (cv.measureOnly) {
+        return
+    }
     let c = page.tokens.color
     let field = TextField(state, key: id)
     field.style(
@@ -611,6 +617,9 @@ func addNumericField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, 
 /** `.okr-add-kr-input`：透明、无边框，仅占位提示用 faint 色。 */
 func addInlineField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, rect: Rect, state: State<String>,
     placeholder: String, onSubmit: (String) -> Unit): Unit {
+    if (cv.measureOnly) {
+        return
+    }
     let c = page.tokens.color
     let transparent = Color.rgba(0, 0, 0, 0)
     let field = TextField(state, key: id)
@@ -633,6 +642,9 @@ func addInlineField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, r
 /** 负责人输入（96×28）。 */
 func addTextField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, rect: Rect, fontSize: Float32,
     weight: Int64, state: State<String>, placeholder: String, onSubmit: (String) -> Unit): Unit {
+    if (cv.measureOnly) {
+        return
+    }
     let c = page.tokens.color
     let field = TextField(state, key: id)
     field.style(

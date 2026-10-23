@@ -60,10 +60,21 @@ class PageCanvas {
     let children = ArrayList<Widget>()
     let childRects = ArrayList<Rect>()
     let hotspots = ArrayList<OkrHotspot>()
+    /**
+     * Height-only pass (`OkrPage.measure`): record geometry but construct no child widget.
+     *
+     * The page's intrinsic height has to be known before it is laid out — a page measured at height
+     * 0 makes the hugging shell allocate nothing and the page never gets a real layout (see
+     * `OkrPage.measure`). Running the normal layout code with this flag set reuses every row/height
+     * formula while skipping the controls (which own `State`s and, for `TextField.autofocus`, a
+     * frame subscriber) — those must be created exactly once, in the real layout pass.
+     */
+    let measureOnly: Bool
 
-    init(tokens: ThemeTokens, theme: Theme) {
+    init(tokens: ThemeTokens, theme: Theme, measureOnly!: Bool = false) {
         this.tokens = tokens
         this.theme = theme
+        this.measureOnly = measureOnly
     }
 
     func color(): TokenColors {
@@ -165,6 +176,11 @@ class PageCanvas {
     /** 加入一个子控件并立即给它 frame（控件按 ui.css 自绘）。 */
     func addChild(ctx: UiContext, widget: Widget, rect: Rect): Rect {
         let snapped = snap(rect)
+        if (measureOnly) {
+            // Height-only pass: the caller already fixed this row's height; constructing a control
+            // here would create a second, discarded owner of the same focus id and `State`s.
+            return snapped
+        }
         widget.layout(ctx, snapped)
         children.add(widget)
         childRects.add(snapped)
@@ -173,6 +189,10 @@ class PageCanvas {
 
     /** `textura.ui` 徽章：宽度按其自身测量，高度用 CSS 的 23.6（border-box）。 */
     func badge(ctx: UiContext, x: Float32, y: Float32, text: String, tone: BadgeTone, dot!: Bool = false): Float32 {
+        if (measureOnly) {
+            // The returned width only advances a horizontal cursor; no row height depends on it.
+            return 0.0
+        }
         let widget = BadgeView(tokens, text, tone: tone, dot: dot)
         let measured = widget.measure(ctx, Size(10000.0, OKR_BADGE_H))
         addChild(ctx, widget, Rect(x, y, measured.w, OKR_BADGE_H))
@@ -181,6 +201,9 @@ class PageCanvas {
 
     /** `textura.ui` 进度条（无标签）；返回轨道矩形。 */
     func progress(ctx: UiContext, rect: Rect, value: Float32, tone: ProgressTone, size: ControlSize): Rect {
+        if (measureOnly) {
+            return rect
+        }
         let widget = ProgressView(tokens, value, tone: tone, size: size)
         addChild(ctx, widget, rect)
         rect
