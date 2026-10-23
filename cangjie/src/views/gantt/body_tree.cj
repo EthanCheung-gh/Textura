@@ -83,7 +83,7 @@ func drawTreeRow(ctx: UiContext, body: GanttBody, index: Int64, top: Float32): U
     let ink = body.ink
     let rect = body.treeRect()
     let row = body.rows[index]
-    let selected = isRowSelected(body.selectedId, row)
+    let selected = body.rowSelected(row)
     let hovered = body.state.hoverRow == treeRowId(row)
 
     // 背景：分组 `--bg-subtle`，选中 `--accent-soft`，悬停 `--surface-2`

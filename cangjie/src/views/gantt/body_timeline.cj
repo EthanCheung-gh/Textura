@@ -100,7 +100,7 @@ func drawTimelineRow(ctx: UiContext, body: GanttBody, index: Int64, y: Float32):
     let ink = body.ink
     let rect = body.timelineRect()
     let row = body.rows[index]
-    let selected = isRowSelected(body.selectedId, row)
+    let selected = body.rowSelected(row)
     let hovered = body.state.hoverRow == treeRowId(row)
     match (row) {
         case GanttTreeRow.Group(_) =>
@@ -167,7 +167,7 @@ func drawSummaryBars(ctx: UiContext, body: GanttBody, window: WindowRange, rect:
                         let y = rect.y + HEADER_H + Float32(index) * ROW_H - body.scrollTop + 14.0
                         let barRect = Rect(x, y, width, 8.0)
                         if (barRect.right() > rect.x && barRect.x < rect.right()) {
-                            let selected = isRowSelected(body.selectedId, body.rows[index])
+                            let selected = body.rowSelected(body.rows[index])
                             fillRound(ctx, barRect, 4.0, tokens.color.surface2)
                             let fillWidth = clampRange(Float32(group.progress) / 100.0, 0.0, 1.0) * width
                             if (fillWidth > 0.0) {
@@ -236,7 +236,7 @@ func drawBar(ctx: UiContext, body: GanttBody, item: GanttItemRow, geometry: BarG
     let tokens = body.tokens
     let ink = body.ink
     let row = item.row
-    let selected = item.id == body.selectedId
+    let selected = item.id == body.selectedId || item.id == body.state.pressedRow
     let dragging = match (body.state.gesture) {
         case Some(gesture) => gesture.id == item.id
         case None => false

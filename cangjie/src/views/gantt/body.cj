@@ -200,7 +200,8 @@ class GanttBody <: Widget {
     }
 
     func handleMove(x: Float32, y: Float32): Bool {
-        // 拖拽中：只更新吸附后的天数增量（跨帧手势，写入后递增 rev）。
+        // 拖拽中：只更新吸附后的天数增量。`drawDragTip` / 任务条预览在 draw 里直接读 gesture，
+        // 本帧的绘制就能看见，因此不递增 `rev`（那会重建整个 shell）。
         match (state.gesture) {
             case Some(gesture) =>
                 let px = Float32(zoomConfig(zoom).pxPerDay)
@@ -208,15 +209,14 @@ class GanttBody <: Widget {
                 let delta = tsRound(Float64((x - gesture.startX) / px))
                 if (delta != gesture.deltaDays) {
                     gesture.deltaDays = delta
-                    rev.value = rev.value + 1
                 }
                 return true
             case None => ()
         }
+        // 悬停行同理：`drawTreeRow` / `drawTimelineRow` 每帧读 `hoverRow`，只重绘即可。
         let rowId = rowIdAt(y)
         if (rowId != state.hoverRow) {
             state.hoverRow = rowId
-            rev.value = rev.value + 1
         }
         false
     }
@@ -233,15 +233,19 @@ class GanttBody <: Widget {
                 match (rows[index]) {
                     case GanttTreeRow.Group(group) =>
                         if (x >= tree.x + 8.0 + 18.0) {
+                            state.pressedRow = treeRowId(rows[index])
                             onSelect(match (group.item) {
                                 case Some(item) => item.id
                                 case None => ""
                             })
                         } else {
+                            // 折叠改变行集合：必须重建（rows 是 render 期算出来的）。
                             state.toggleGroup(group.id)
                             rev.value = rev.value + 1
                         }
-                    case GanttTreeRow.Item(item) => onSelect(item.id)
+                    case GanttTreeRow.Item(item) =>
+                        state.pressedRow = item.id
+                        onSelect(item.id)
                 }
                 return true
             }
@@ -252,13 +256,14 @@ class GanttBody <: Widget {
         let hit = barAt(x, y)
         match (hit) {
             case Some(target) =>
+                state.pressedRow = target.id
                 onSelect(target.id)
                 state.gesture = Some(DragGesture(target.id, target.mode, x, target.range, target.rowIndex))
-                rev.value = rev.value + 1
                 true
             case None =>
                 let index = rowIndexAt(y)
                 if (index >= 0) {
+                    state.pressedRow = treeRowId(rows[index])
                     match (rows[index]) {
                         case GanttTreeRow.Group(group) => onSelect(match (group.item) {
                             case Some(item) => item.id
@@ -267,6 +272,7 @@ class GanttBody <: Widget {
                         case GanttTreeRow.Item(item) => onSelect(item.id)
                     }
                 } else {
+                    state.pressedRow = ""
                     onSelect("")
                 }
                 true
@@ -276,11 +282,11 @@ class GanttBody <: Widget {
     func handleUp(x: Float32, y: Float32): Bool {
         let _ = x
         let _ = y
+        state.pressedRow = ""
         match (state.gesture) {
             case Some(gesture) =>
                 let preview = gesture.preview()
                 state.gesture = None
-                rev.value = rev.value + 1
                 if (preview.start != gesture.origin.start || preview.end != gesture.origin.end) {
                     onCommitBar(gesture.id, preview)
                 }
@@ -312,6 +318,17 @@ class GanttBody <: Widget {
             return ""
         }
         treeRowId(rows[index])
+    }
+
+    /**
+     * 一行是否按「选中」绘制：`store.selectedId` 是权威来源，`state.pressedRow` 只是本帧的
+     * 按下反馈，让点击的视觉反馈在 store 重建之前的那一帧就出现（两者同色，视觉无变化）。
+     */
+    func rowSelected(row: GanttTreeRow): Bool {
+        if (isRowSelected(selectedId, row)) {
+            return true
+        }
+        !state.pressedRow.isEmpty() && treeRowId(row) == state.pressedRow
     }
 
     /** 任务条命中：区分整体拖动与左右边缘拖拽（`.gantt-bar-handle` 宽 7）。 */
