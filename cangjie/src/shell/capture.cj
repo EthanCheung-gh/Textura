@@ -315,27 +315,11 @@ public func buildQuickCapture(
         "（保存在收件箱）"
     }
     /*
-     * Build the input here, in the build phase, and only `emit` it inside the modal body.
-     *
-     * `ModalHost` invokes its `body` closure from `layout` (it needs the panel width to measure the
-     * three rows). CUI has no active state store during layout, so a `TextField` constructed there
-     * never registers its focus id in the focus graph: the next commit clears `ctx.focus(id)` and
-     * the caret never appears. That is also why `TextField.autofocus()` — whose subscriber focuses
-     * during the frame tick — could not keep the field focused. Constructing the field while the
-     * shell body is building registers it like any other control, so the shell's one-shot focus
-     * request (see `ShellHost.noteQuickCaptureVisibility`) sticks.
+     * The input is declared inside the dialog body. `Ui.modal` builds that body during the build
+     * phase (through a `Portal`), so the field registers its focus id like any other control —
+     * which is what lets a click put a caret in it and lets the shell's one-shot focus request
+     * (see `ShellHost.noteQuickCaptureVisibility`) stick on every open. See docs/DEVICE-NOTES.md §16.
      */
-    let inputField: ?Widget = if (open) {
-        Some(
-            TextField(text, key: CAPTURE_INPUT_ID)
-                .style(captureInputStyle(tokens))
-                .placeholder("例如：给财务回电确认发票抬头 #财务 @电话 !低能 /明天")
-                .textStyle(TextStyle(fontSize: fp(15.0)))
-                .height(44.5)
-        )
-    } else {
-        None
-    }
     Ui.modal(theme, presented, onClose, title: "收集到 GTD 收件箱",
         description: "先记录，稍后再澄清。Enter 连续收集，⌘/Ctrl + Enter 收集并关闭。", width: 560.0,
         footer: {=>
@@ -351,24 +335,24 @@ public func buildQuickCapture(
                 // .capture-label { 12px; 600; text-muted }
                 Label("收集什么？").fontSize(Length(12.0, LengthUnit.Fp)).fontWeight(FontWeight(600))
                     .foregroundColor(c.textMuted)
-                match (inputField) {
-                    case Some(field) =>
-                        EventHandler(onEvent: {ctx, event =>
-                            match (event) {
-                                case UiEvent.KeyDown(Key.Enter, isRepeat) =>
-                                    if (isRepeat || !parsed.hasContent) {
-                                        false
-                                    } else {
-                                        onCollect(text.value, ctx.eventModifiers().command)
-                                        true
-                                    }
-                                case _ => false
+                EventHandler(onEvent: {ctx, event =>
+                    match (event) {
+                        case UiEvent.KeyDown(Key.Enter, isRepeat) =>
+                            if (isRepeat || !parsed.hasContent) {
+                                false
+                            } else {
+                                onCollect(text.value, ctx.eventModifiers().command)
+                                true
                             }
-                        }) {
-                            emit(field)
-                        }.fillWidth()
-                    case None => ()
-                }
+                        case _ => false
+                    }
+                }) {
+                    TextField(text, key: CAPTURE_INPUT_ID)
+                        .style(captureInputStyle(tokens))
+                        .placeholder("例如：给财务回电确认发票抬头 #财务 @电话 !低能 /明天")
+                        .textStyle(TextStyle(fontSize: fp(15.0)))
+                        .height(44.5)
+                }.fillWidth()
                 // .capture-chips { display:flex; gap:8; min-height:22 }
                 HStack(spacing: vp(tokens.space.s2)) {
                     if (hasPreview) {

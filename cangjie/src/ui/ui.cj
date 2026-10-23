@@ -21,6 +21,11 @@ import cui.*
  * the tokens themselves — either `tokensOf(theme, explicit: tk)` or the widget constructors
  * (`ButtonView(tokens, ...)` etc.), which take `ThemeTokens` as their first parameter.
  */
+/** Prompt panel width: wide enough for a date, a metric label or a checklist entry. */
+private let PROMPT_WIDTH: Float32 = 440.0
+/** `.textarea` inside a prompt: two comfortable lines plus the 7vp padding. */
+private let PROMPT_AREA_HEIGHT: Float32 = 92.0
+
 public struct Ui {
     // ---------------------------------------------------------------- button / icon button
 
@@ -267,6 +272,11 @@ public struct Ui {
     /**
      * `.modal` — Esc or a backdrop press dismisses; the page underneath is blocked while open.
      * `footer` receives the footer row (right-aligned, `--surface-2` strip).
+     *
+     * `body` runs during **build** (inside a `Portal`), not during layout: only then do the
+     * `TextField`s it declares register their focus ids, which is what makes a click put a caret
+     * in them (see `modal.cj` and docs/DEVICE-NOTES.md §16). Pass `focus` — a caller-owned
+     * `FocusRequest` — plus `initialFocus` to put the caret into one control when the dialog opens.
      */
     public static func modal(
         theme: Theme,
@@ -276,14 +286,143 @@ public struct Ui {
         description!: String = "",
         width!: Float32 = 520.0,
         footer!: ?() -> Unit = None,
+        focus!: ?FocusRequest = None,
+        initialFocus!: String = "",
         body!: () -> Unit
     ): Unit {
         if (!presented.value) {
             return
         }
-        ModalHost(tokensOf(theme), onDismiss, title: title, description: description, width: width, footer: footer,
-            body: body)
+        let tokens = tokensOf(theme)
+        let c = tokens.color
+        let frame = ModalFrame(tokens, title, width, onDismiss)
+        // Chrome layer: scrim + panel surface + Esc/backdrop/Tab, registered *below* the content.
+        ModalHost(frame)
+        // Content layer: built here, in the build phase, then laid out at the panel rect.
+        Portal(frame.contentOwner(), true, {ctx => frame.resolve(ctx)},
+            blocksInput: false) {
+            let column = VStack(spacing: vp(0.0)) {
+                // .modal-header: padding 16px 24px, space-between, align-items flex-start
+                frame.attachHeader(
+                    HStack(spacing: vp(tokens.space.s4)) {
+                        VStack(spacing: vp(2.0)) {
+                            if (!title.isEmpty()) {
+                                // .modal-title { font-size: 15px; font-weight: 650 } (ui.css:492-495)
+                                Label(title)
+                                    .fontSize(Length(TextSize.subheading, LengthUnit.Fp))
+                                    .fontWeight(FontWeight(650))
+                                    .foregroundColor(c.text)
+                            }
+                            if (!description.isEmpty()) {
+                                Label(description)
+                                    .fontSize(Length(TextSize.controlSmall, LengthUnit.Fp))
+                                    .foregroundColor(c.textMuted)
+                            }
+                        }.hug().flex()
+                        // Modal.tsx renders a small ghost close button in the header.
+                        IconButtonView(tokens, IconGlyph.Close, onDismiss, variant: IconButtonVariant.Ghost,
+                            size: ControlSize.Sm, tooltip: "关闭")
+                    }
+                        .crossAxisAlignment(CrossAxisAlignment.Start)
+                        .hug()
+                        .padding(tokens.space.s5, MODAL_HEADER_VPAD, tokens.space.s5, MODAL_HEADER_VPAD)
+                )
+                Divider().foregroundColor(c.border)
+                // The body absorbs the leftover height the frame assigned (flex), and scrolls
+                // once its content is taller than the 80vh budget.
+                ScrollView(key: "${frame.owner()}-body") {
+                    frame.attachBody(
+                        VStack(spacing: vp(tokens.space.s3)) {
+                            body()
+                            match (focus) {
+                                case Some(request) => FocusOnceView(request)
+                                case None => ()
+                            }
+                        }.hug().fillWidth().padding(MODAL_BODY_PAD)
+                    )
+                }.flex()
+                match (footer) {
+                    case Some(footerBody) =>
+                        Divider().foregroundColor(c.border)
+                        frame.attachFooter(
+                            HStack(spacing: vp(tokens.space.s2)) {
+                                Spacer()
+                                footerBody()
+                            }
+                                // `.modal-footer { align-items: center; justify-content: flex-end }`
+                                .crossAxisAlignment(CrossAxisAlignment.Center)
+                                .hug()
+                                .padding(tokens.space.s5, MODAL_FOOTER_VPAD, tokens.space.s5, MODAL_FOOTER_VPAD)
+                                .background(c.surface2, corners: Corners.bottom(tokens.radius.lg))
+                        )
+                    case None => ()
+                }
+            }
+            frame.attachColumn(column)
+        }
     }
+
+    /**
+     * The shared "edit one field" overlay: a small modal with a single-line or multi-line
+     * editor, Enter to save (single line), Esc to cancel, an optional validation error and a
+     * caller-owned draft `State`.
+     *
+     * Canvas-painted views (SOP, OKR, GTD rows) cannot host an inline `TextField`: they lay
+     * their content out during `layout`, where CUI registers no focus stop. Editing through
+     * this prompt keeps the canvas untouched and gives the field a real, focusable build-time
+     * control (docs/DEVICE-NOTES.md §16).
+     */
+    public static func prompt(
+        theme: Theme,
+        text: State<String>,
+        presented: Bindable<Bool>,
+        onDismiss: () -> Unit,
+        title!: String,
+        key!: String,
+        label!: String = "",
+        placeholder!: String = "",
+        hint!: String = "",
+        error!: String = "",
+        multiline!: Bool = false,
+        confirmLabel!: String = "保存",
+        cancelLabel!: String = "取消",
+        focus!: ?FocusRequest = None,
+        onSave!: (String) -> Unit
+    ): Unit {
+        if (!presented.value) {
+            return
+        }
+        let tokens = tokensOf(theme)
+        let submit: () -> Unit = {=> onSave(text.value)}
+        modal(theme, presented, onDismiss, title: title, width: PROMPT_WIDTH, focus: focus, initialFocus: key,
+            footer: {=>
+                button(theme, cancelLabel, onDismiss, variant: ButtonVariant.Ghost, size: ControlSize.Sm)
+                button(theme, confirmLabel, submit, variant: ButtonVariant.Primary, size: ControlSize.Sm)
+            }, body: {=>
+                VStack(spacing: vp(tokens.space.s3)) {
+                    field(theme, label: label, hint: hint, error: error) {
+                        if (multiline) {
+                            let area = TextArea(text, key: optionalKey(key))
+                            area.style(inputStyle(tokens, false))
+                            area.height(PROMPT_AREA_HEIGHT)
+                            if (!placeholder.isEmpty()) {
+                                area.placeholder(placeholder)
+                            }
+                        } else {
+                            let editor = TextField(text, key: optionalKey(key))
+                            editor.style(inputStyle(tokens, false))
+                            editor.placeholder(placeholder)
+                            editor.textStyle(TextStyle(fontSize: fp(13.5)))
+                            editor.height(34.0)
+                            // Enter saves; the field consumes the key after IME composition commits.
+                            editor.onSubmit {_ => submit()}
+                        }
+                    }
+                }.hug().fillWidth()
+            })
+    }
+
+    // Prompt geometry lives at file scope (Cangjie has no private struct statics).
 
     // --------------------------------------------------------------------------- internal
 

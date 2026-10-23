@@ -67,7 +67,9 @@ func commandPaletteOpensOnCtrlKAndClosesOnEscape(): Unit {
         let body = {=> buildShell(host)}
         // Some views keep a *paint-only* layer registered (the calendar's quick-add placeholder
         // overlay declines every event with `handleEvent: {_, _ => false}`), so the assertion is
-        // "the palette adds exactly one layer and gives it back", not "the stack is empty".
+        // "the palette adds exactly its layers and gives them back", not "the stack is empty".
+        // A dialog is two layers by design: the scrim/panel chrome (Esc, backdrop, Tab) and the
+        // content portal that holds the build-time controls (see `src/ui/modal.cj`).
         let baseline = testHost.frame(KEYS_RECT, body: body).metrics.overlayCount
         @Expect(host.store.ui.value().paletteOpen, false)
         let _ = pressKey(testHost, Key.Letter(UInt8(75)), MOD_CTRL, body)
@@ -77,7 +79,7 @@ func commandPaletteOpensOnCtrlKAndClosesOnEscape(): Unit {
         let stillOpen = host.store.ui.value().paletteOpen
         let closedOverlays = testHost.frame(KEYS_RECT, body: body).metrics.overlayCount
         @Expect(opened, true)
-        @Expect(openOverlays, baseline + 1)
+        @Expect(openOverlays, baseline + 2)
         @Expect(stillOpen, false)
         @Expect(closedOverlays, baseline)
         // With the dialog gone the page underneath must take input again.

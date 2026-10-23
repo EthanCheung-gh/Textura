@@ -105,7 +105,8 @@ func closedOverlaysLeaveNoLayerBehind(): Unit {
     @Expect(testHost.context.overlayCount(), 0)
     host.store.setUi({state => state.paletteOpen = true})
     let open = testHost.frame(SWITCH_RECT, body: body)
-    @Expect(open.metrics.overlayCount, 1)
+    // Chrome layer (scrim/panel/Esc/backdrop) + content portal (build-time controls).
+    @Expect(open.metrics.overlayCount, 2)
     host.closePalette()
     let closed = testHost.frame(SWITCH_RECT, body: body)
     @Expect(closed.metrics.overlayCount, 0)
