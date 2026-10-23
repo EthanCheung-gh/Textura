@@ -50,6 +50,8 @@ class SopInspRects {
     let card: Rect
     let head: Rect
     let body: Rect
+    /** Unscrolled bottom of the last painted element (for `inspectorMaxScroll`). */
+    let contentBottom: Float32
     // SOP variant.
     let nameInput: Rect
     let notesArea: Rect
@@ -75,6 +77,7 @@ class SopInspRects {
         card: Rect,
         head: Rect,
         body: Rect,
+        contentBottom: Float32,
         nameInput: Rect,
         notesArea: Rect,
         ownerInput: Rect,
@@ -96,6 +99,7 @@ class SopInspRects {
         this.card = card
         this.head = head
         this.body = body
+        this.contentBottom = contentBottom
         this.nameInput = nameInput
         this.notesArea = notesArea
         this.ownerInput = ownerInput
@@ -124,15 +128,19 @@ func fieldColumnWidth(innerWidth: Float32): Float32 {
  * Computes every inspector box by walking the CSS box model in order (head padding,
  * body padding, 12px gaps, field label + 6px + control). Painting and hit-testing use
  * this single source of truth so the two can never drift apart.
+ *
+ * `scroll` shifts the whole body up by the wheel offset (the body scrolls inside the card,
+ * exactly like `.sop-inspector-body { overflow-y: auto }`); painting clips to `body`, so a
+ * short window scrolls its fields instead of drawing them over the run-history card.
  */
-func inspectorRects(ctx: UiContext, view: SopFrame): SopInspRects {
+func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): SopInspRects {
     let card = view.inspectorRect(ctx)
     let innerWidth = card.w - 2.0 - SOP_INSP_BODY_PAD_X * 2.0
     let head = Rect(snapPx(card.x + 1.0), snapPx(card.y + 1.0), card.w - 2.0, SOP_INSP_HEAD_H)
     let bodyX = snapPx(card.x + 1.0 + SOP_INSP_BODY_PAD_X)
     // Every step is pixel-snapped so the 1px rules and input borders stay crisp (matching the
     // browser, whose border boxes also land on whole pixels).
-    var cursor = snapPx(head.bottom() + SOP_INSP_BODY_PAD_TOP)
+    var cursor = snapPx(head.bottom() + SOP_INSP_BODY_PAD_TOP - scroll)
     let labelHeight = SOP_FIELD_LABEL_LINE + SOP_FIELD_GAP
 
     let emptyRect = Rect.zero()
@@ -190,7 +198,8 @@ func inspectorRects(ctx: UiContext, view: SopFrame): SopInspRects {
         buttons.add(("duplicate", Rect(bodyX, cursor + 1.0, rowWidth, SOP_BTN_SM_H)))
         buttons.add(("delete-node", Rect(bodyX + rowWidth + 8.0, cursor + 1.0, rowWidth, SOP_BTN_SM_H)))
         return SopInspRects(SopInspVariant.Node, card, head, Rect(bodyX, head.bottom(), innerWidth,
-            card.h - head.h - 1.0), emptyRect, emptyRect, ownerInput, emptyRect, emptyRect, 0.0, 0.0,
+            card.h - head.h - 1.0), cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, ownerInput, emptyRect,
+            emptyRect, 0.0, 0.0,
             chips.toArray(),
             titleInput, notesArea, durationInput, addChecklist, rows.toArray(), buttons.toArray(), emptyRect,
             Array<(String, Rect)>())
@@ -210,7 +219,8 @@ func inspectorRects(ctx: UiContext, view: SopFrame): SopInspRects {
         let buttons = ArrayList<(String, Rect)>()
         buttons.add(("delete-edge", Rect(bodyX, cursor + 1.0, innerWidth, SOP_BTN_SM_H)))
         return SopInspRects(SopInspVariant.Edge, card, head, Rect(bodyX, head.bottom(), innerWidth,
-            card.h - head.h - 1.0), emptyRect, emptyRect, emptyRect, emptyRect, emptyRect, 0.0, 0.0,
+            card.h - head.h - 1.0), cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, emptyRect, emptyRect,
+            emptyRect, 0.0, 0.0,
             Array<(String, Rect)>(),
             emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), buttons.toArray(), labelInput,
             presets.toArray())
@@ -251,9 +261,9 @@ func inspectorRects(ctx: UiContext, view: SopFrame): SopInspRects {
     cursor = snapPx(cursor + 1.0 + SOP_BLOCK_PAD_TOP)
     cursor = snapPx(cursor + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP)
     cursor += SOP_BADGE_H
-    let _ = cursor
+    let contentBottom = cursor + scroll
     return SopInspRects(SopInspVariant.SopSettings, card, head, Rect(bodyX, head.bottom(), innerWidth,
-        card.h - head.h - 1.0), nameInput, notesArea, ownerInput, areaInput, progressTrack, statsTop, recentTop,
+        card.h - head.h - 1.0), contentBottom, nameInput, notesArea, ownerInput, areaInput, progressTrack, statsTop, recentTop,
         chips.toArray(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), Array<(String, Rect)>(),
         emptyRect, Array<(String, Rect)>())
 }
@@ -291,10 +301,29 @@ func checklistOf(item: Item): Array<ChecklistEntry> {
     }
 }
 
+/** `.sop-inspector-body { overflow-y: auto }`: how far the body can scroll for this window. */
+func inspectorMaxScroll(ctx: UiContext, view: SopFrame): Float32 {
+    let rects = inspectorRects(ctx, view)
+    max(0.0, rects.contentBottom + SOP_INSP_BODY_PAD_BOTTOM - rects.body.bottom())
+}
+
+/** Clamps the retained scroll offset to the current content (content shrinks on edits). */
+func clampInspectorScroll(ctx: UiContext, view: SopFrame): Float32 {
+    let limit = inspectorMaxScroll(ctx, view)
+    if (view.state.inspectorScroll > limit) {
+        view.state.inspectorScroll = limit
+    }
+    if (view.state.inspectorScroll < 0.0) {
+        view.state.inspectorScroll = 0.0
+    }
+    view.state.inspectorScroll
+}
+
 /** Inspector card: head (eyebrow / title / badge) + body per variant. */
 func paintInspector(ctx: UiContext, view: SopFrame): Unit {
     let tk = view.tk
-    let rects = inspectorRects(ctx, view)
+    let scroll = clampInspectorScroll(ctx, view)
+    let rects = inspectorRects(ctx, view, scroll: scroll)
     let card = rects.card
     fillRound(ctx, card, SOP_RADIUS_PANEL, tk.color.surface)
     strokeRound(ctx, card, SOP_RADIUS_PANEL, SOP_BORDER, tk.color.border)
@@ -344,11 +373,15 @@ func paintInspector(ctx: UiContext, view: SopFrame): Unit {
     // ---- body --------------------------------------------------------------------
     let bodyX = rects.body.x
     let innerWidth = rects.body.w
+    // The body is a scroll viewport: fields beyond the card bottom are clipped (they are
+    // reachable by wheel, see `handleInspector`), never drawn over the run-history card.
+    ctx.renderer.pushClip(rects.body)
     match (rects.variant) {
         case SopInspVariant.Node => paintNodeInspector(ctx, view, rects)
         case SopInspVariant.Edge => paintEdgeInspector(ctx, view, rects)
         case _ => paintSopInspector(ctx, view, rects)
     }
+    ctx.renderer.popClip()
     let _ = bodyX
     let _ = innerWidth
 }
@@ -479,7 +512,7 @@ func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
     }
     paintFieldLabel(ctx, view, "标题", rects.titleInput.x, rects.titleInput.y)
     paintInputBox(ctx, tk, rects.titleInput, item.title, "")
-    paintFieldLabel(ctx, view, "说明", rects.nodeNotesArea.x, rects.nodeNotesArea.y)
+    paintFieldLabel(ctx, view, "描述", rects.nodeNotesArea.x, rects.nodeNotesArea.y)
     paintTextAreaBox(ctx, tk, rects.nodeNotesArea, item.notes, "这一步要做什么、注意什么…")
     paintFieldLabel(ctx, view, "负责人", rects.ownerInput.x, rects.ownerInput.y)
     let owner = match (item.sop) {
@@ -667,6 +700,19 @@ func paintHistory(ctx: UiContext, view: SopFrame): Unit {
 /** Inspector + history interactions (checklist, type chips, duplicate/delete, presets). */
 func handleInspector(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     match (event) {
+        case UiEvent.MouseWheel(x, y, _, dy) =>
+            let rects = inspectorRects(ctx, view)
+            if (!rects.body.contains(x, y)) {
+                return false
+            }
+            // Wheel scrolls the clipped inspector body (`.sop-inspector-body { overflow-y: auto }`).
+            let limit = inspectorMaxScroll(ctx, view)
+            if (limit <= 0.0) {
+                return false
+            }
+            view.state.inspectorScroll = min(limit, max(0.0, view.state.inspectorScroll - dy * 40.0))
+            ctx.requestFrame()
+            return true
         case UiEvent.MouseDown(button, x, y) =>
             if (!isPrimaryPointerButton(button)) {
                 return false
@@ -676,7 +722,12 @@ func handleInspector(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
             if (!rect.contains(x, y) && !history.contains(x, y)) {
                 return false
             }
-            let rects = inspectorRects(ctx, view)
+            let scroll = clampInspectorScroll(ctx, view)
+            let rects = inspectorRects(ctx, view, scroll: scroll)
+            // Only the visible part of the body is interactive.
+            if (history.contains(x, y) || !rects.body.contains(x, y)) {
+                return false
+            }
             match (rects.variant) {
                 case SopInspVariant.Node => return handleNodeInspector(ctx, view, rects, x, y)
                 case SopInspVariant.Edge => return handleEdgeInspector(view, rects, x, y)
@@ -699,8 +750,17 @@ func handleSopSettings(view: SopFrame, rects: SopInspRects, x: Float32, y: Float
         openSopPrompt(view.state, SopPromptKind.SopTitle, sop.id, sop.title)
         return true
     }
+    if (rects.notesArea.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.SopNotes, sop.id, sop.notes)
+        return true
+    }
     if (rects.ownerInput.contains(x, y)) {
         openSopPrompt(view.state, SopPromptKind.SopOwner, sop.id, sopOwnerOf(sop))
+        return true
+    }
+    if (rects.areaInput.contains(x, y)) {
+        openSopAreaPicker(view.state, sopAreaChoices(view.workspace), sop.areaId)
+        view.state.touch()
         return true
     }
     false
@@ -716,10 +776,14 @@ func sopOwnerOf(item: Item): String {
     }
 }
 
-/** 节点检查器：标题 / 负责人 / 预计耗时 / 检查项文本都走编辑浮层。 */
+/** 节点检查器：标题 / 描述 / 负责人 / 预计耗时 / 检查项文本都走编辑浮层。 */
 func handleNodeFields(view: SopFrame, rects: SopInspRects, item: Item, x: Float32, y: Float32): Bool {
     if (rects.titleInput.contains(x, y)) {
         openSopPrompt(view.state, SopPromptKind.NodeTitle, item.id, item.title)
+        return true
+    }
+    if (rects.nodeNotesArea.contains(x, y)) {
+        openSopPrompt(view.state, SopPromptKind.NodeNotes, item.id, item.notes)
         return true
     }
     if (rects.ownerInput.contains(x, y)) {

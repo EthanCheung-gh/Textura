@@ -320,6 +320,14 @@ class SopViewState {
     var promptEntry: State<String> = State<String>("")
     var promptError: State<String> = State<String>("")
     var promptFocus: FocusRequest = FocusRequest()
+    /*
+     * Area 下拉（`sop_area_picker.cj`）：检查器里唯一的多选一字段，弹层由 Overlay 承载。
+     * `areaIndex` 是「未指定」+ `workspace.areas` 的候选下标。
+     */
+    var areaOpen: Bool = false
+    var areaIndex: Int64 = 0
+    /** `.sop-inspector-body` 的滚动偏移（内容高于卡片时窗口内滚动，而非压到卡片外）。 */
+    var inspectorScroll: Float32 = 0.0
 
     init(generation: State<Int64>) {
         this.generation = generation

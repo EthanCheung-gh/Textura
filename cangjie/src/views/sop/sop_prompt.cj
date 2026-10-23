@@ -23,8 +23,10 @@ let SOP_PROMPT_INPUT: String = "sop-prompt-input";
 /** 字段种类：画布上的哪一个「输入框」被点了。 */
 enum SopPromptKind {
     | SopTitle
+    | SopNotes
     | SopOwner
     | NodeTitle
+    | NodeNotes
     | NodeOwner
     | NodeDuration
     | CheckText
@@ -34,8 +36,10 @@ enum SopPromptKind {
 func sopPromptKindId(kind: SopPromptKind): String {
     match (kind) {
         case SopPromptKind.SopTitle => "sop-title"
+        case SopPromptKind.SopNotes => "sop-notes"
         case SopPromptKind.SopOwner => "sop-owner"
         case SopPromptKind.NodeTitle => "node-title"
+        case SopPromptKind.NodeNotes => "node-notes"
         case SopPromptKind.NodeOwner => "node-owner"
         case SopPromptKind.NodeDuration => "node-duration"
         case SopPromptKind.CheckText => "check-text"
@@ -46,7 +50,9 @@ func sopPromptKindId(kind: SopPromptKind): String {
 func parseSopPromptKind(id: String): SopPromptKind {
     match (id) {
         case "sop-title" => SopPromptKind.SopTitle
+        case "sop-notes" => SopPromptKind.SopNotes
         case "sop-owner" => SopPromptKind.SopOwner
+        case "node-notes" => SopPromptKind.NodeNotes
         case "node-owner" => SopPromptKind.NodeOwner
         case "node-duration" => SopPromptKind.NodeDuration
         case "check-text" => SopPromptKind.CheckText
@@ -78,20 +84,30 @@ private class SopPromptCopy {
     let label: String
     let placeholder: String
     let hint: String
+    let multiline: Bool
 
-    init(title: String, label: String, placeholder: String, hint: String) {
+    init(title: String, label: String, placeholder: String, hint: String, multiline!: Bool = false) {
         this.title = title
         this.label = label
         this.placeholder = placeholder
         this.hint = hint
+        this.multiline = multiline
     }
 }
 
+/**
+ * 浮层文案。SOP 级与步骤级的备注字段统一叫「描述」（产品术语统一；Web 原版两级
+ * 用了两个不同的词，本次按用户要求合并）。
+ */
 private func sopPromptCopy(kind: SopPromptKind): SopPromptCopy {
     match (kind) {
         case SopPromptKind.SopTitle => SopPromptCopy("编辑流程名称", "名称", "例如：客户投诉处理", "名称会显示在左侧流程列表。")
+        case SopPromptKind.SopNotes => SopPromptCopy("编辑描述", "描述", "这个流程解决什么问题、适用范围…",
+            "支持多行；Ctrl+Enter 保存，Esc 取消。可以留空。", multiline: true)
         case SopPromptKind.SopOwner => SopPromptCopy("编辑默认负责人", "默认负责人", "未指定", "留空表示未指定。")
         case SopPromptKind.NodeTitle => SopPromptCopy("编辑步骤标题", "标题", "用一个动词开头", "标题会显示在画布节点上。")
+        case SopPromptKind.NodeNotes => SopPromptCopy("编辑描述", "描述", "这一步要做什么、注意什么…",
+            "支持多行；Ctrl+Enter 保存，Esc 取消。可以留空。", multiline: true)
         case SopPromptKind.NodeOwner => SopPromptCopy("编辑负责人", "负责人", "谁来做", "留空表示未指派。")
         case SopPromptKind.NodeDuration => SopPromptCopy("编辑预计耗时", "预计耗时（分钟）", "5",
             "只接受整数分钟；留空表示未估算。")
@@ -111,7 +127,9 @@ func sopPromptDialog(theme: Theme, store: AppStore, state: SopViewState): Unit {
     let copy = sopPromptCopy(kind)
     Ui.prompt(theme, state.promptText, state.promptOpen, {=> closeSopPrompt(state)}, title: copy.title,
         key: SOP_PROMPT_INPUT, label: copy.label, placeholder: copy.placeholder, hint: copy.hint,
-        error: state.promptError.value, focus: state.promptFocus) {value => commitSopPrompt(store, state, value)}
+        multiline: copy.multiline, error: state.promptError.value, focus: state.promptFocus) {value =>
+        commitSopPrompt(store, state, value)
+    }
 }
 
 /** 写回 store（Esc 不会走到这里，因此取消不改数据）。 */
@@ -140,6 +158,9 @@ func commitSopPrompt(store: AppStore, state: SopViewState, raw: String): Unit {
                 return
             }
             store.updateItem(target, ItemPatch().withTitle(value))
+        case SopPromptKind.NodeNotes | SopPromptKind.SopNotes =>
+            // 描述允许为空；多行文本按原样保存（不 trim，保留用户的分行与缩进）。
+            store.updateItem(target, ItemPatch().withNotes(raw))
         case SopPromptKind.NodeOwner =>
             let patch = SopPatch()
             patch.owner = SetValue<?String>.Value(if (value.isEmpty()) {

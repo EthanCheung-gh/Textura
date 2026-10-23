@@ -132,6 +132,8 @@ class SopPageWidget <: Widget {
                 paintList(ctx, active)
                 paintCanvas(ctx, active)
                 paintInspector(ctx, active)
+                // Area 下拉：注册在页面之上的 Overlay（列表本体在 overlay render 里画）。
+                paintSopAreaPicker(ctx, active)
                 paintHistory(ctx, active)
                 if (active.running()) {
                     paintRunBar(ctx, active)

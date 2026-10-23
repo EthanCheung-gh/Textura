@@ -402,11 +402,25 @@ public struct Ui {
                 VStack(spacing: vp(tokens.space.s3)) {
                     field(theme, label: label, hint: hint, error: error) {
                         if (multiline) {
-                            let area = TextArea(text, key: optionalKey(key))
-                            area.style(inputStyle(tokens, false))
-                            area.height(PROMPT_AREA_HEIGHT)
-                            if (!placeholder.isEmpty()) {
-                                area.placeholder(placeholder)
+                            // `TextArea` owns Enter (it inserts a newline, like the Web
+                            // `<textarea>` it ports), so the save chord is Ctrl/Cmd+Enter.
+                            // `EventHandler` runs before its child, which is what lets the
+                            // chord be claimed without patching CUI's TextArea.
+                            EventHandler(onEvent: {ctx, event =>
+                                match (event) {
+                                    case UiEvent.KeyDown(Key.Enter, isRepeat) where
+                                        !isRepeat && ctx.eventModifiers().command =>
+                                        submit()
+                                        true
+                                    case _ => false
+                                }
+                            }) {
+                                let area = TextArea(text, key: optionalKey(key))
+                                area.style(inputStyle(tokens, false))
+                                area.height(PROMPT_AREA_HEIGHT)
+                                if (!placeholder.isEmpty()) {
+                                    area.placeholder(placeholder)
+                                }
                             }
                         } else {
                             let editor = TextField(text, key: optionalKey(key))
