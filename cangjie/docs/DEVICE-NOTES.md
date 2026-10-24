@@ -1610,12 +1610,82 @@ layout，只挂 layout 会漏掉重建期间丢失的焦点。
   一项都没有做**，不做任何「已目视确认」的声明。
 - 探针：出货包 `PROBE_COMPILED_ON = false`（§1），所以新包里没有 `diag.log`；上面的取证方案要重新出诊断包。
 
-**解锁后按序复测（每项都要 `ev#` 或截图）**：
+#### 26.5.1 解锁后的复测清单（给用户照着做，每项都要留下 `ev#` 或截图）
 
-1. **OKR**：点 KR「当前」→ 输入 `42`（应**全选替换**，不是 `4742`）→ Enter 写回 → 立刻点「单位」/侧栏/主题按钮，必须立即响应；
-2. **GTD**：日期盒 placeholder（未点/点击后都应是 `YYYY-MM-DD`）→ 输入 `2026-11-05` 写回 → 输入 `2026-13-01`
-   报错且 Esc 可关；
-3. **SOP**：Area 展开在字段下方 → 点选一行写回 → 再点字段/Esc/点外部都能关 → 点两个不同输入框不跳节点 →
-   分隔线不与类型 chips 重叠（给前后像素 y）→ 保存后立刻点下一个输入框可输入；
-4. **稳定性**：七路由轮一遍 + 开关弹层，3 分钟内 `pidof com.ethancheung.textura` 不消失；
-   诊断包同会话 `fail n=` 计数为 0。
+**0. 前置（一次做完）**
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+SANDBOX=/data/app/el2/100/base/com.ethancheung.textura/files/textura
+# 设备解锁后
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+$HDC shell rm -f $SANDBOX/diag.log            # 本次会话从空日志开始
+$HDC shell "hilog -r"                          # 清 hilog 环，之后只看本轮
+# 抓宿主页日志（另开一个终端常驻）
+$HDC shell "hilog" | grep -E 'Textura/(HOST|FOCUS)'
+```
+
+- 诊断包必须用 `TEXTURA_PROBE=1 scripts/harmony/build_ohos.sh && scripts/harmony/assemble_hap.sh` 出
+  （出货包探针编出，`diag.log` 不会存在）。装包：`$HDC uninstall com.ethancheung.textura` → `$HDC install -r …/entry-default-signed.hap`。
+- **窗口原点**：注入用屏幕坐标，SDL 收窗口坐标，差一个窗口原点。本次会话的原点从
+  `hilog` 的 `textura-geometry window=<left>,<top> <w>x<h>` 读，不要沿用旧值（窗口位置会变）。
+- 点击注入用 `uitest uiInput swipe <x1> <y1> <x2> <y2> 60`（起止差 1~5px，零长度不产生事件），
+  按键用 `uinput -K -d <keycode>`（Tab=2049 / Enter=2054 / Esc=2070），滚轮用 `uinput -M -s -4`。
+  字符（`42`、`2026-11-05`）**用软键盘点数字/字母键**最可靠，`uinput -K` 只送按键码。
+- 每项失败时先截图：`$HDC shell snapshot_display -f /data/local/tmp/x.jpeg && $HDC file recv /data/local/tmp/x.jpeg .`
+
+**1. OKR：全选替换 + 提交后立即能点别处**
+
+| 步 | 操作 | 预期 |
+|---|---|---|
+| 1.1 | 侧栏 OKR → 点首个 KR 的「当前」数字框 | 编辑器**压在框上**（不是左上角），框内值**全选**（有选中高亮） |
+| 1.2 | 软键盘输入 `42` → Enter | 输入框显示 `42`（**不是 `4742`**），编辑器关闭，行内进度/数字同步 |
+| 1.3 | **立刻**点「单位」框 | 编辑器立刻出现在单位框上（这是原问题的判据：不能出现「点了没反应」） |
+| 1.4 | 立刻点侧栏「日历」、再点顶栏主题按钮 | 路由/主题立即切换 |
+| 1.5 | 再点一次「当前」→ Esc | 值不变（Esc 不写回） |
+
+失败要抓：`grep -c 'ev#' $SANDBOX/diag.log` 在 1.3 前后是否增长（不增长 ⇒ 事件没进 SDL，看
+`ime-detached` / `ok=` 两行）；`grep 'ime\|repush\|focus' $SANDBOX/diag.log`；截图。
+
+**2. GTD：日期格式三态一致 + 非法不关闭**
+
+| 步 | 操作 | 预期 |
+|---|---|---|
+| 2.1 | 侧栏 GTD → 「下一步」首行的日期盒**不点击** | 盒内显示 `YYYY-MM-DD`（灰） |
+| 2.2 | 点该日期盒 | 编辑器占位同为 `YYYY-MM-DD`，且**全选** |
+| 2.3 | 输入 `2026-11-05` → Enter | 行内显示 `2026-11-05`，`gantt.end` 变，编辑器关闭 |
+| 2.4 | 再点该盒 → 输入 `2026-13-01` → Enter | **报错行**（「日期格式应为 YYYY-MM-DD…」），编辑器**不关**，行内旧值不变 |
+| 2.5 | Esc | 关闭，值仍是 `2026-11-05` |
+
+失败要抓：`ev#` 里 `KeyDown key=Enter` / `KeyDown key=Escape` 是否成对到达；截图（错误行文字 + 行内旧值）。
+
+**3. SOP：Area 浮层、分割线、连续点两个输入框**
+
+| 步 | 操作 | 预期 |
+|---|---|---|
+| 3.1 | 侧栏 SOP → 检查器「领域」框点一下 | 浮层展开在**字段下方**（不是左上角/侧栏），高亮当前领域，点它外面能关 |
+| 3.2 | 点「运营」一行 | 写回并关闭；节点/侧栏颜色标记同步 |
+| 3.3 | 再展开 → 再点触发字段 | 关闭（toggle），不写回 |
+| 3.4 | 再展开 → Esc | 关闭；再展开 → 点画布空白 | 关闭，**画布不选中节点/连线** |
+| 3.5 | 点「名称」→ Esc → 点「描述」→ Esc | 两次都贴在各自字段上，**节点选中项不跳** |
+| 3.6 | 选中任一节点看检查器 | 「检查项」分隔线在类型 chips **下方 ≥11px**，不压 chips（记前后的 y） |
+| 3.7 | 点「名称」→ 输入 → Ctrl+Enter 保存 → **立刻**点「描述」 | 描述编辑器立刻出现并可输入 |
+
+失败要抓：3.1/3.4 失败抓 `ev#` 的 `x/y` 与 `MouseDown button=`（是否落到画布）；3.6 失败给两侧
+像素 y（截图 + 目测值）。
+
+**4. 稳定性：3 分钟七路由 + 开关弹层**
+
+```bash
+for i in $(seq 1 36); do $HDC shell "pidof com.ethancheung.textura" || echo "GONE at $i"; sleep 5; done
+```
+
+| 步 | 操作 | 预期 |
+|---|---|---|
+| 4.1 | 侧栏 7 条路由各点 2 遍（dashboard/calendar/okr/gtd/gantt/sop/settings） | 每次标题+内容区都切换 |
+| 4.2 | 每路由打开并关闭一个弹层（OKR 关联 / GTD 澄清 / SOP 分支面板 / 设置项） | 都能打开、都能关 |
+| 4.3 | 期间每 5s 采一次 `pidof` | 3 分钟内进程**始终存在** |
+| 4.4 | 收尾 | `grep -c 'fail n=' $SANDBOX/diag.log` == **0**；`grep 'fail n=' …` 无输出 |
+
+失败要抓：`fail n=<k> route='…' error='…'` 原文（有 `n` 就用它定位是第几次失败）、崩溃时间点附近的
+`hilog` 全文（`$HDC shell "hilog" > /tmp/hilog.txt`）与 `/data/log/faultlog/`。
