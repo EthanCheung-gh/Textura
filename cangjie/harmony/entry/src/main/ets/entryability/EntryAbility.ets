@@ -51,10 +51,11 @@ class SafeImeController {
     // A text control has focus: the IME owns character keys and Escape/Ctrl from here on
     // (pages/Index.ets stops forwarding them, because the native path works while the IME is up).
     TextInputState.attached = true;
-    // Keep SDL's config: the page re-attaches with the same inputAttribute plus a caret position
-    // (SDL cannot tell HarmonyOS where the caret is — it has no SetTextInputArea implementation).
+    // Keep SDL's config: the page re-posts the caret with `updateCursor` as it moves (SDL cannot
+    // tell HarmonyOS where the caret is — it has no SetTextInputArea implementation).
     TextInputState.config = textConfig;
     TextInputState.cursorKey = '';
+    TextInputState.cursorLogCount = 0;
     try {
       this.controller.attach(showKeyboard, textConfig as inputMethod.TextConfig,
         callback as (error: BusinessError<void>) => void);

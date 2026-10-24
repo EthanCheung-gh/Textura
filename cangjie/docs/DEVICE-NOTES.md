@@ -1125,11 +1125,34 @@ openharmony 视频后端没有 `SetTextInputArea` 实现：CUI 每帧算好的 `
 2. **C 桥**：`entry/src/main/cpp/textura_keys.c` 的 `getImeAnchor()` 用 `dlsym` 取符号（不引入
    链接期依赖），越界/无锚点返回 `null`；
 3. **ArkTS**：`Index.ets` 每 120ms 读一次，换算成屏幕 px（`windowRect.left/top` + `densityPixels`），
-   矩形**变了才**重新 `controller.attach(true, {inputAttribute, cursorInfo})`——系统只在 attach 时
-   读取光标位置，所以「跟随」= 重新 attach；矩形没变时零成本。
+   矩形**变了才**把新位置交给输入法，并且**只调 `controller.updateCursor(cursorInfo)`**——不再
+   `attach`。
 
-判据：光标在字段里左右移动时，候选条跟着走；`TextInputState.attached` 为假时整条链路直接返回
-（没有输入框就没有锚点）。
+**为什么不是 attach（2026-10 修正，之前的写法就是「只能删、加不进数字」的根因）**：
+`attach(true, {inputAttribute, cursorInfo})` 不是「告诉系统光标在哪」，而是**重新绑定一个输入会话**；
+它会把上一个会话正在投递的东西一起丢掉。插入符位置恰好**每打一个字符变一次**（宿主侧实测：
+`4` 之后打 `2`，锚点键从 `527` 变成 `534`；不打字时一整段空闲帧键一次都不变），所以旧写法等于
+**每敲一个字符就把会话重建一次**。真机上这就表现为：
+
+| 操作 | 走的路径 | 结果 |
+|---|---|---|
+| 退格 | SDL 键盘事件 → `UiEvent.KeyDown(Key.Backspace)` | **正常**（与会话无关） |
+| 数字 / 字母 | 输入法 `insertText` → SDL → `UiEvent.TextInput` | **丢**（会话正在被重建） |
+
+这也解释了为什么 GTD 日期框（矩形稳定、几乎不发光标更新）没事，而 OKR 卡片（画布每帧重排、
+插入符随输入移动）没好。
+
+修改后的约定：**整条链路只有 SDL 自己在「文本输入开始/结束」时 attach**（`SafeImeController`），
+页面只 `updateCursor`；只有在不支持该接口的 SDK 上才退回 attach，且节流到
+`IME_ATTACH_FALLBACK_MS = 500ms` 一次（绝不是每键一次）。
+
+判据（下一轮装包后看 hilog，`hdc shell hilog | grep textura-ime`）：
+
+- `event=cursor n=… key=…`：每打一个字符出一条，不打字时**一条都不出** → 光标跟踪正常且不再碰会话；
+- 若空闲时也每 ~120ms 出一条，说明锚点本身在抖（CUI 侧插入符矩形随布局浮动），那时应在页面加
+  容差而不是重新 attach；
+- `event=cursor-rejected code=…`：会话已断（12800009）或尚未绑定（12800003），只记一次；
+- `event=attach-fallback`：走到了老 SDK 的兜底路径，正常情况下**不应出现**。
 
 ---
 

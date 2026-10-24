@@ -297,13 +297,13 @@ private func buildShellHost(dir: ?String, viewportWidth: Int64, viewportHeight: 
  *
  * Why this exists: SDL's HarmonyOS port has no `SetTextInputArea` implementation (the openharmony
  * video backend never reads `window->text_input_rect`), so `SDL_SetTextInputArea` is a no-op there —
- * measured in the vendored source. The IME candidate window is positioned by ArkUI's
- * `inputMethodController.attach(showKeyboard, textConfig, …)`, whose `TextConfig.cursorInfo` is the
- * only caret input the system accepts ("absolute coordinate of the physical screen, unit is px").
- * CUI already computes the right rectangle every frame (`UiContext.textInputAnchorRect()`, the same
- * one it hands to `SDL_SetTextInputArea` on desktop); the host therefore republishes it for the
- * ArkTS page, which converts it to screen px and re-attaches the IME with it
- * (docs/DEVICE-NOTES.md §21).
+ * measured in the vendored source. The IME candidate window is positioned from the caret the client
+ * reports ("absolute coordinate of the physical screen, unit is px"): `TextConfig.cursorInfo` once
+ * per session at attach, then `InputMethodController.updateCursor()` for every move. CUI already
+ * computes the right rectangle every frame (`UiContext.textInputAnchorRect()`, the same one it hands
+ * to `SDL_SetTextInputArea` on desktop); the host therefore republishes it for the ArkTS page, which
+ * converts it to screen px and posts it with `updateCursor` — never with a second `attach`, which
+ * would restart the session mid-keystroke (docs/DEVICE-NOTES.md §21).
  *
  * Layout vs draw: the anchor is cleared at the start of every frame's draw and set by the focused
  * control while it paints, so the only correct read point is *after* the tree drew — which is what

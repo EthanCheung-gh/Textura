@@ -44,12 +44,26 @@ const SURFACE_PUSH_DEBOUNCE_MS: number = 32;
 const FOCUS_RETRY_DELAYS_MS: number[] = [0, 80, 240, 600, 1500];
 
 /*
- * IME caret sync period. HarmonyOS takes the caret position only as `TextConfig.cursorInfo` at
- * attach time (there is no "move the candidate window" call), so following the caret means
- * re-attaching while the rectangle changes. 120ms is fast enough to look continuous and slow
- * enough that an unchanged caret costs nothing (the rectangle is compared first).
+ * IME caret sync period: poll CUI's caret rectangle and forward it with `updateCursor` (see
+ * moveImeCaret). 120ms keeps the candidate window visually attached to the caret, and an unchanged
+ * rectangle costs nothing because the key is compared first.
  */
 const IME_ANCHOR_TICK_MS: number = 120;
+
+/*
+ * Minimum spacing for the *fallback* path (an SDK without `InputMethodController.updateCursor`),
+ * where moving the caret still has to re-attach. 500ms is far below "the candidate window feels
+ * stuck" and far above a keystroke, so the fallback cannot restart the session once per character
+ * the way the old unconditional re-attach did.
+ */
+const IME_ATTACH_FALLBACK_MS: number = 500;
+
+/*
+ * How many caret updates are logged per input session (`textura-ime event=cursor …`). The device
+ * question this answers is "is the caret posted per keystroke, per frame, or not at all"; a bounded
+ * number keeps a shipping build quiet while still covering one editing session end to end.
+ */
+const IME_CURSOR_LOG_LIMIT: number = 40;
 
 /* SDL_Scancode values (SDL_scancode.h) for the keys this page forwards into SDL. */
 const SDL_SCANCODE_A: number = 4;
@@ -116,6 +130,9 @@ struct Index {
   private imeController: inputMethod.InputMethodController | null = null;
   /* Last value of TextInputState.attached seen by the IME tick, for the detach edge (§26.4). */
   private imeWasAttached: boolean = false;
+  /* Last fallback re-attach (ms, see attachImeWithCaret) and the once-per-session rejection log. */
+  private lastImeAttachMs: number = 0;
+  private imeCursorWarned: boolean = false;
   private densityPixels: number = 1;
   private windowLeft: number = 0;
   private windowTop: number = 0;
@@ -386,6 +403,11 @@ struct Index {
       TextInputState.cursorKey = '';
       return;
     }
+    if (!this.imeWasAttached) {
+      // Rising edge of a session: the one-shot rejection log may fire again for this one.
+      this.imeCursorWarned = false;
+      this.lastImeAttachMs = 0;
+    }
     this.imeWasAttached = true;
     const read: (() => number[] | null) | undefined = getImeAnchor;
     if (read === undefined) {
@@ -418,16 +440,98 @@ struct Index {
       width: Math.max(1, Math.round(anchor[2] * density)),
       height: Math.max(1, Math.round(anchor[3] * density))
     };
+    this.moveImeCaret(controller, base, cursorInfo, key);
+  }
+
+  /*
+   * Move the caret inside the *current* input session; never start a new one.
+   *
+   * What was wrong: this used to satisfy a caret change with `attach(true, …)`, justified by the
+   * assumption that HarmonyOS has no "move the candidate window" call. It does — `updateCursor`,
+   * API 10+ — and `attach` is not that call: it (re)binds an input session for this window, which
+   * discards what the system is about to deliver through the previous one. The caret changes
+   * exactly once per typed character (measured on the host bridge: `527` → `534` when a second
+   * digit is appended to `4`, and no change at all on idle frames), so with `attach` the page tore
+   * the session down **once per keystroke**, half a tick after the key. On device that reads as
+   * "Backspace deletes, characters never arrive": a character reaches CUI as `insertText` through
+   * the session (SDL → `UiEvent.TextInput`), while Backspace is a key event on the SDL keyboard
+   * path and needs no session at all — which is exactly the split the report describes, and why
+   * the GTD date field (stable rectangle, so no caret change was posted) kept working.
+   *
+   * The only attach left is SDL's own (SafeImeController, on text-input start/stop), so a
+   * composition in progress can never be interrupted by caret tracking: `updateCursor` is defined
+   * as "notify the input method that the cursor has changed" and leaves the session alone.
+   *
+   * Fallback: an SDK without `updateCursor` keeps the old re-attach, but throttled and rate-limited
+   * (IME_ATTACH_FALLBACK_MS) instead of per keystroke; `cursorKey` is cleared while throttled so the
+   * caret is still posted once the window opens.
+   */
+  private moveImeCaret(controller: inputMethod.InputMethodController, base: inputMethod.TextConfig,
+    cursorInfo: inputMethod.CursorInfo, key: string): void {
+    const updater: ((info: inputMethod.CursorInfo) => Promise<void>) | undefined = controller.updateCursor;
+    if (updater === undefined) {
+      this.attachImeWithCaret(controller, base, cursorInfo, key);
+      return;
+    }
+    try {
+      controller.updateCursor(cursorInfo).then(() => {
+        this.logImeCaret(key);
+      }).catch((error: BusinessError) => {
+        this.onImeCaretRejected(error.code ?? -1);
+      });
+    } catch (e) {
+      this.onImeCaretRejected(-1);
+    }
+  }
+
+  /*
+   * Bounded evidence line (`textura-ime event=cursor n=1 key=527,503,1,14,0,0`): the caret moved,
+   * and how many times this session. A device run that shows one line per typed character and none
+   * while the user is idle is the proof that caret tracking no longer touches the session; a line
+   * every ~120ms with no typing would mean the anchor itself jitters and the tolerance lives here.
+   */
+  private logImeCaret(key: string): void {
+    if (TextInputState.cursorLogCount >= IME_CURSOR_LOG_LIMIT) {
+      return;
+    }
+    TextInputState.cursorLogCount += 1;
+    hilog.info(DOMAIN, TAG, 'textura-ime event=cursor n=%{public}d key=%{public}s',
+      TextInputState.cursorLogCount, key);
+  }
+
+  /*
+   * A rejected cursor update means the session is gone (12800009 detached) or was never bound
+   * (12800003): forget the key so a later tick re-posts the caret once SDL has attached again, and
+   * log it once per session — this line is the evidence to look for on device.
+   */
+  private onImeCaretRejected(code: number): void {
+    TextInputState.cursorKey = '';
+    if (!this.imeCursorWarned) {
+      this.imeCursorWarned = true;
+      hilog.warn(DOMAIN, TAG, 'textura-ime event=cursor-rejected code=%{public}d', code);
+    }
+  }
+
+  /* Fallback for an SDK without `updateCursor`: one re-attach per IME_ATTACH_FALLBACK_MS at most. */
+  private attachImeWithCaret(controller: inputMethod.InputMethodController, base: inputMethod.TextConfig,
+    cursorInfo: inputMethod.CursorInfo, key: string): void {
+    const now = Date.now();
+    if (now - this.lastImeAttachMs < IME_ATTACH_FALLBACK_MS) {
+      TextInputState.cursorKey = '';
+      return;
+    }
+    this.lastImeAttachMs = now;
     const next: inputMethod.TextConfig = {
       inputAttribute: base.inputAttribute,
       cursorInfo: cursorInfo
     };
+    hilog.warn(DOMAIN, TAG, 'textura-ime event=attach-fallback key=%{public}s', key);
     try {
       controller.attach(true, next).catch((error: BusinessError) => {
-        hilog.warn(DOMAIN, TAG, 'ime: re-attach failed code=%{public}d', error.code ?? -1);
+        hilog.warn(DOMAIN, TAG, 'ime: attach fallback failed code=%{public}d', error.code ?? -1);
       });
     } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'ime: re-attach threw (ignored)');
+      hilog.warn(DOMAIN, TAG, 'ime: attach fallback threw (ignored)');
     }
   }
 

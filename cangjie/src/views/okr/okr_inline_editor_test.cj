@@ -880,3 +880,41 @@ func okrSlotReopeningAnotherFieldUsesThatFieldsValue(): Unit {
         case None => @Expect("a stored metric", "none")
     }
 }
+
+/**
+ * 打开的**同一帧**里出现「无焦点帧」（模拟重建窗口）时不得丢字符。
+ *
+ * 与 `okrSlotTypingSurvivesAFocusGapBetweenDigits` 的差别在时序：空的焦点 id 出现在**刚打开**、
+ * 还没有 `sawFocus` 的那个窗口里。`InlineEditFrame` 的失焦去抖依赖「曾经拥有过焦点」，所以这一帧
+ * 只能由打开时的那次 `FocusRequest` 自己重试回来（`FocusRequest` 在没人拥有焦点时最多重试 3 帧）；
+ * 如果它不重试，编辑器会留在原地但没有焦点 —— 下一个字符无处可去，用户读作「打不进去」。
+ */
+@Test
+func okrSlotOpensThroughAFocusGapAndKeepsTheFirstCharacter(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    okrSlowTap(harness, testHost, spot)
+    let ui = harness.stateOrFail()
+    let krId = harness.promptTarget()
+    @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+    // 打开后的第一帧就是重建窗口：树被重新描述，编辑器自己的焦点 id 还没被重新采纳。
+    testHost.context.clearFocus()
+    harness.build(testHost)
+    @Expect(ui.promptOpen.value, true)
+    @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+    // 于是第一个字符仍然落进同一个草稿，并且是「替换原值」而不是追加。
+    okrTypeChar(harness, testHost, "4")
+    @Expect(ui.promptText.value, "4")
+    okrTypeChar(harness, testHost, "2")
+    @Expect(ui.promptText.value, "42")
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(ui.promptOpen.value, false)
+    @Expect(okrCurrentMetric(harness.store, krId), Float64(42.0))
+}

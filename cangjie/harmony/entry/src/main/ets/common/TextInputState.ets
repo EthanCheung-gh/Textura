@@ -22,6 +22,13 @@ export class TextInputState {
    * with a fresh `cursorInfo` whenever CUI's caret rectangle moves (see pages/Index.ets).
    */
   static config: ESObject | null = null;
-  /** Last cursorInfo handed to the IME, so an unchanged caret costs no extra attach. */
+  /** Last cursorInfo handed to the IME, so an unchanged caret costs no extra update. */
   static cursorKey: string = '';
+  /**
+   * How many caret updates this session has logged (`textura-ime event=cursor`), bounded by the
+   * page so a shipping build stays quiet. Reset when a new session attaches, because the question
+   * the line answers — "does the caret move once per character, per frame, or never" — is a
+   * per-session one.
+   */
+  static cursorLogCount: number = 0;
 }
