@@ -22,7 +22,7 @@
 
 | 证据 | 内容 | 行格式 |
 |---|---|---|
-| 事件流 | 前 200 个指针/键盘事件，CUI **Capture 阶段**在原树根记录：类型、`x/y`、**解码后的 button 与 `primary=`**、SDL 原始光标位、焦点/悬浮/按压 id、修饰键 | `ev#N …` |
+| 事件流 | 前 800 个指针/键盘事件，CUI **Capture 阶段**在原树根记录：类型、`x/y`、**解码后的 button 与 `primary=`**、SDL 原始光标位、焦点/悬浮/按压 id、修饰键（上限 2026-10 由 200 提到 800，见 §26.4） | `ev#N …` |
 | 帧耗时（墙钟） | 每 60 个宿主 `step()`：`drawn`（真画了）/`idle`（只空等）分开统计 avg/min/p95，`cost=` 是**帧自身成本**，附视口/缩放/后端/超采样/文本计数/`partial` | `step#N …` |
 | 帧耗时（分段） | 每个统计窗口的**相位均值**：build / layout / event / semantics / begin / tree / resolve / present（纳秒→ms），外加 `events=`（每帧事件数）与 `partial=` | `phases …` |
 | 偏好落盘 | 一次：解析出的 `ui-prefs.json` 路径、写入是否成功、当时的 route、失败原因 | `prefs path='…' wrote=… route='…' error='…'` |
@@ -1487,3 +1487,135 @@ $HDC shell aa start -a EntryAbility -b com.ethancheung.textura
 $HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg   # 后缀必须是 .jpeg
 $HDC file recv /data/local/tmp/shot.jpeg ~/.cache/textura-device/
 ```
+
+---
+
+## 26. 收敛三组并行修复 + IME 关闭后的指针输入（本轮）
+
+本轮把三个并行 worker 未提交的改动（原位编辑器焦点/去抖、SOP Area 浮层与分割线、SOP dagre 布局记忆）
+收敛成可出货状态，并处理新报的现场：**提交一次编辑之后，指针事件整体失效**。
+
+### 26.1 保留了什么（三组改动，均不回退）
+
+| 组 | 文件 | 语义 |
+|---|---|---|
+| 焦点/去抖/全选 | `src/ui/inline_editor.cj`、`src/ui/ui.cj`、`src/views/{okr,gtd,sop}/*` | 一帧「无焦点主」不算失焦（`INLINE_BLUR_FRAMES=2`）；打开时全选（`selectAllOnOpen`），槽位型字段（指标数字、日期）第一个字符替换原值；提交后焦点按 `FocusRequest.release()` 交还原字段；GTD 日期统一 `YYYY-MM-DD` + 校验 + 非法不关闭 |
+| SOP 设置 | `src/views/sop/sop_area_picker.cj`、`sop.cj`、`sop_inspector.cj`、`sop_model.cj` | Area 浮层改在 **layout** 登记（draw 登记会在下一帧被 `clearActiveOverlay` 清掉 → 收不到事件、点击穿透画布、锚点退化 (0,0) 跑到侧栏）；浮层消费所有指针事件；字段矩形跨帧刷新（`syncSopAreaAnchor`），字段不可见即关闭；检查器分隔线改用 `inspectorRects()` 算出的 `checklistRuleY`（不再从加号按钮反推 5.5px） |
+| dagre 布局记忆 | `src/views/sop/logic/layout.cj` | 按输入记忆布局结果，崩溃率 22% → ~1%（运行时 `toRegion2Idx` 缺陷仍在，见该文件注释） |
+
+### 26.2 去抖：一帧「没有焦点主」不是失焦
+
+CUI 只在**本次 build** 里重新认领焦点 id：只要某个 `State` 让子树重新描述，那一帧 `focusId` 会是空串，
+`observeFocus` 的旧实现当场提交。真机后果是两个一起出现的坏体验——编辑在用户敲字时被静默结束，
+值被校验拒绝时编辑器留在原地**但已经没有焦点**，之后的字符全落到页面上。
+
+现在的判定：
+
+| 一帧的状态 | 行为 |
+|---|---|
+| `focusId == 编辑器 key` | 记 `sawFocus`，清去抖计数 |
+| 焦点为空、去抖计数 < `INLINE_BLUR_FRAMES`(2) | **不提交**：`ctx.focus(key)` 把插入符要回来 + 请求下一帧（重建窗口，不是失焦） |
+| 焦点交给了**别的控件**（`focusId` 非空且不是自己） | 同一帧提交（Web 的「点别处 = 完成」） |
+| 焦点为空且持续 2 帧以上 | 提交 |
+| Esc / Enter / 点 backdrop / 字段滚出窗口 | 取消 / 提交 / 提交 / 取消（§25.3，未变） |
+
+`InlineEditorHost` 另外用 `subscribeFrame` 每帧跑一次 `observeFocus`：保留图会跳过「本帧没变化」子树的
+layout，只挂 layout 会漏掉重建期间丢失的焦点。
+
+两条**过时断言**按新语义重写（没有删用例，也没有放宽范围）：
+
+| 用例 | 旧断言 | 新断言 | 原因 |
+|---|---|---|---|
+| `ui/inline_editor_test.cj::inlineEditorCommitsWhenFocusLeaves` | `clearFocus()` 之后第一个事件就写回 | 焦点**交给另一个真实存在的控件**时同一帧写回（用例里加了第二个原位编辑器当交接目标；CUI 每帧会丢弃「画不出控件」的焦点 id，交接对象必须在焦点图里） | 空焦点现在被判定为重建窗口，不再等于失焦 |
+| `ui/inline_editor_test.cj::inlineEditorKeepsTheEditWhenAFrameHasNoFocusOwner`（新增） | — | 空焦点一帧：不提交、不取消、`focusId` 回到编辑器、后续字符仍进草稿 | 钉住 §26.2 的真机根因 |
+| `views/sop/sop_area_picker_test.cj::areaPopupAnchorFollowsTheScrolledField` | 1440×900 下 `inspectorScroll=40` → 弹层上移 40 | 用 560px 矮窗口，先滚到「还能回滚 40px」处让 Area 字段进入 body，再滚 40px；断言弹层同期上移 40px + 锚点等于字段矩形 | 1440×900 下 SOP 设置内容正好放得下，`inspectorMaxScroll == 0`，`clampInspectorScroll` 把 40 夹回 0——旧断言只测到夹取逻辑，字段本来就不动 |
+
+### 26.3 门禁（本轮实测）
+
+| 项 | 结果 |
+|---|---|
+| `cjpm build -j` | `cjpm build success`（41 warnings，全部是既有的 unused） |
+| `cjpm test` | **670 / 670 PASSED**，13 个测试包，`SKIPPED: 0, ERROR: 0`（`textura.core.data` 106、`shell` 117、`views.okr` 48、`views.sop` 21、`views.gtd` 9、`ui` 19、`views.sop.logic` 64、`views.gtd.logic` 78、`views.calendar.logic` 76、其余见日志） |
+| `scripts/parity.sh --theme both` + `scripts/diff.sh --theme both` | **14/14 PASS**（`ruleΔ ≤ 1.5px`、`shift (0,0)`、`edge ≥ 90%`、blur SSIM ≥ 0.95、ΔRGB≤32 ≥ 95%）；SOP 分割线/浮层改动**没有**改变静态像素（sop-light `diff 9.02% / SSIM 0.9538`，与上一轮同口径；浮层是打开态，不参与对拍） |
+
+`.arts/`（DevEco 本地工作区配置）已加入仓库根 `.gitignore`；`.hap`、`harmony/.certs/`、
+`harmony/out/`、`build-profile.json5` 仍按既有规则不入库（`build-profile.json5` 由
+`set_signing_material.sh` 生成，含机器相关的密文密码）。仓库里没有 scratch 测试文件，
+`src/` 的生产代码没有调试 `println`（只有 `main.cj` 的 CLI 输出）。
+
+### 26.4 「提交后丢指针」：现场、已排除项与已加的取证（**真机未验证**）
+
+**现场（SOP worker 提交编辑后实测）**：完成一次编辑提交（Enter / 点外部）后，指针事件**整体**消失——
+点主题按钮、点侧栏行、点下一个输入框都没有反应；**键盘仍有效**（Tab 仍能移动焦点）；ArkUI 窗口本身正常
+（画面在动、帧在跑）。
+
+**推论（按「指针按位置路由、按键按焦点路由」这一条区分）**：
+
+- 画面与帧正常 ⇒ CUI 树、store、宿主帧循环都没坏；
+- Tab 有效 ⇒ 按键路径活着（而 Tab 恰好是本页在 `TextInputState.attached == false` 时**自己**用
+  NAPI 桥转发进 SDL 的，所以它不能证明 XComponent 仍持有 ArkUI 焦点）；
+- 指针整体失效 ⇒ 缺的是「按位置」的那条链：XComponent 节点不在 ArkUI 的命中/焦点链里，或它的
+  布局矩形变成了非真实值（`OPENHARMONY_SyncSurfaceSize`，§19）。
+
+**已排除**（读码 + 主机用例）：
+
+| 假设 | 结论 |
+|---|---|
+| CUI 的透明 backdrop 在提交后仍然登记、把指针吃掉（键盘不受影响，症状一样） | 浮层栈每帧 `clearActiveOverlay`，`open == false` 时不登记；`ui/inline_editor_test.cj` 与 `views/sop/sop_area_picker_test.cj` 的关闭路径用例全绿 |
+| `leftMouseDown` 卡在 true（MouseUp 被浮层吃掉） | `DesktopApp.completePointer` 在派发后无条件清 `leftMouseDown`/`dragId`/`pressedId`，与谁消费无关 |
+| 宿主的指针解码（`RawCode(0/1)` vs `Left`） | 真机 `ev#` 行实测 `MouseDown button=Left primary=true`，且 `textura.ui.isPrimaryPointerButton` 是唯一解码点（`pointer_gate_test.cj` 有源码门禁） |
+| 宿主侧有「IME 期间不派发指针」的闸门 | `harmony/host/src/*.cj` 里没有任何 IME 相关的指针分支 |
+
+**已加（低风险、健康时为空操作、带日志）**。`harmony/entry/src/main/ets/pages/Index.ets`：
+
+1. IME 轮询（120ms）里检测 `TextInputState.attached` 的 true→false 边沿 → `onImeDetached()`；
+2. `onImeDetached()`：`requestSurfaceFocus('ime-detached')`（+120ms 再试一次，`150003` 在面板退场时是正常噪声）
+   ——把 XComponent 重新放回 ArkUI 焦点链；
+3. 强制重推一次测量到的 surface 尺寸（`repushSurfaceSize()`：先清「已推送」缓存，再 `pushSurfaceSize()`）
+   ——IME 期间键盘避让若让 ArkUI 重排过，SDL/缓冲几何不会停在旧尺寸；
+4. 三个日志点：`textura-ime event=detached surfaceFocused=…`、`textura-focus request=ime-detached ok=…`、
+   `textura-size repush px=…`。
+
+**没有做的事（等证据）**：`inputMethod.getController().stopInputSession()`。`hideTextInput()` 只收面板、
+不断会话，会话残留是「输入法窗口继续吃触摸」这一假设的核心，但它同时可能打断下一次 `attach`
+（§21 的候选窗跟随就是靠反复 `attach` 实现的）。在没有真机日志之前不做这一步，避免把「指针失效」
+换成「文本输入整体失效」。
+
+**取证方案（解锁后，按顺序）**：
+
+1. `TEXTURA_PROBE=1 scripts/harmony/build_ohos.sh && scripts/harmony/assemble_hap.sh`（诊断包，
+   探针只编进快照，工作树默认仍是 `PROBE_COMPILED_ON = false`）；事件上限已从 200 提到 **800**
+   ——上一轮 65 秒就用完了 200 条，真出现问题的时刻日志已经瞎了；
+2. 装包 → 打开 → 复现一次「提交编辑后点侧栏」；
+3. `hdc shell 'grep -nE "ev#|ime|repush|focus" <sandbox>/textura/diag.log'`：
+   - **点侧栏后有 `ev#` 行** ⇒ 事件到了 CUI，问题在树里（浮层/命中），与 IME 无关；
+   - **没有任何 `ev#` 行**，但同时间段有 `size`/`step` 行 ⇒ 事件没进 SDL：看 `textura-ime event=detached`
+     与 `textura-focus request=ime-detached ok=`；`ok=false` 或 `surfaceFocused=false` 就坐实「焦点被收走」；
+   - **有 `ev#` 但 `x/y` 全是 0 或越界** ⇒ 坐标/表面尺寸问题，对照同期 `size w=… h=…` 行。
+4. 若 `ok=false`：把 `stopInputSession()` 加进 `SafeImeController.hideTextInput` 的收尾（同样带日志），
+   重测「提交后立刻点下一个输入框」。
+
+### 26.5 本轮真机状态：**被锁屏阻塞，未做任何逐项验收**
+
+- 交叉编译：`scripts/harmony/build_ohos.sh` 成功（`libtextura_host.so` 17 437 520 B，
+  `ELF 64-bit LSB shared object, ARM aarch64`，导出 `SDL_AppInit/Iterate/Event/Quit` + `textura_host_ready/error`）。
+- 签名：`set_signing_material.sh --store-file/--cert/--profile`（绝对路径，store/key 两份密码，
+  profile 的 `bundleName` 与 `com.ethancheung.textura` 一致，UDID `35381726910894F7…` 在白名单）→
+  `assemble_hap.sh`（带 sync）→ `entry-default-signed.hap` **30 077 068 B**，
+  sha256 `aba6b7a9b12ee2a976f8df3295f60b7532c0cf24af6228d666014333fbb8dc6e`，`STATUS: installable`。
+- `hdc uninstall` → `hdc install -r` **成功**；`aa start` **失败**：
+  `Error Code:10106102 The device screen is locked during the application launch, unlock screen failed`
+  （开发者模式不允许自动解锁）。设备当前停在锁屏（需密码/指纹），`snapshot_display` 只能拍到锁屏/息屏，
+  `uitest uinput` 注入无法穿过锁屏。**因此本轮的 OKR/GTD/SOP 逐项验收、提交后指针复测、七路由稳定性采样
+  一项都没有做**，不做任何「已目视确认」的声明。
+- 探针：出货包 `PROBE_COMPILED_ON = false`（§1），所以新包里没有 `diag.log`；上面的取证方案要重新出诊断包。
+
+**解锁后按序复测（每项都要 `ev#` 或截图）**：
+
+1. **OKR**：点 KR「当前」→ 输入 `42`（应**全选替换**，不是 `4742`）→ Enter 写回 → 立刻点「单位」/侧栏/主题按钮，必须立即响应；
+2. **GTD**：日期盒 placeholder（未点/点击后都应是 `YYYY-MM-DD`）→ 输入 `2026-11-05` 写回 → 输入 `2026-13-01`
+   报错且 Esc 可关；
+3. **SOP**：Area 展开在字段下方 → 点选一行写回 → 再点字段/Esc/点外部都能关 → 点两个不同输入框不跳节点 →
+   分隔线不与类型 chips 重叠（给前后像素 y）→ 保存后立刻点下一个输入框可输入；
+4. **稳定性**：七路由轮一遍 + 开关弹层，3 分钟内 `pidof com.ethancheung.textura` 不消失；
+   诊断包同会话 `fail n=` 计数为 0。
