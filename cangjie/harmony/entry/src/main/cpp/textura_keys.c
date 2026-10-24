@@ -135,11 +135,57 @@ static napi_value SendKey(napi_env env, napi_callback_info info)
     return result;
 }
 
+/*
+ * getImeAnchor(): [x, y, w, h] | null
+ *
+ * The caret rectangle the focused CUI text control reported this frame, in logical pixels. SDL's
+ * HarmonyOS backend has no SetTextInputArea implementation (the openharmony video driver never reads
+ * the rect), so the system IME cannot learn where the caret is from SDL; the ArkTS page reads it
+ * here and passes it as `TextConfig.cursorInfo` when it (re)attaches the input method, which is what
+ * makes the candidate window follow the field instead of sitting in a screen corner.
+ *
+ * The value comes from the Cangjie host's `textura_ime_anchor(index)`; the symbol is resolved with
+ * dlsym so this module keeps no link-time dependency on the host library (which is loaded by
+ * requireCJLib before the page exists).
+ */
+typedef int32_t (*tx_ime_anchor_fn)(int32_t);
+
+static napi_value GetImeAnchor(napi_env env, napi_callback_info info)
+{
+    napi_value result = NULL;
+    tx_ime_anchor_fn anchor = NULL;
+    void *host = dlopen("libtextura_host.so", RTLD_NOW | RTLD_GLOBAL);
+    anchor = (tx_ime_anchor_fn)dlsym(host ? host : RTLD_DEFAULT, "textura_ime_anchor");
+    if (!anchor) {
+        napi_get_null(env, &result);
+        return result;
+    }
+    int32_t x = anchor(0);
+    int32_t y = anchor(1);
+    int32_t w = anchor(2);
+    int32_t h = anchor(3);
+    if (x < 0 || y < 0 || w <= 0 || h <= 0) {
+        napi_get_null(env, &result);
+        return result;
+    }
+    napi_create_array_with_length(env, 4, &result);
+    napi_value values[4];
+    napi_create_int32(env, x, &values[0]);
+    napi_create_int32(env, y, &values[1]);
+    napi_create_int32(env, w, &values[2]);
+    napi_create_int32(env, h, &values[3]);
+    for (uint32_t index = 0; index < 4; index++) {
+        napi_set_element(env, result, index, values[index]);
+    }
+    return result;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         { "sendKey", NULL, SendKey, NULL, NULL, NULL, napi_default, NULL },
+        { "getImeAnchor", NULL, GetImeAnchor, NULL, NULL, NULL, napi_default, NULL },
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

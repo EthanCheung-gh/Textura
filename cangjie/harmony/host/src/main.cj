@@ -290,6 +290,76 @@ private func buildShellHost(dir: ?String, viewportWidth: Int64, viewportHeight: 
     ShellHost(store, runtime, today, true, loadError, viewportWidth, viewportHeight)
 }
 
+/* ------------------------------------------------------------------------- IME caret anchor */
+
+/*
+ * The caret rectangle the focused text control reported while drawing, in logical pixels.
+ *
+ * Why this exists: SDL's HarmonyOS port has no `SetTextInputArea` implementation (the openharmony
+ * video backend never reads `window->text_input_rect`), so `SDL_SetTextInputArea` is a no-op there —
+ * measured in the vendored source. The IME candidate window is positioned by ArkUI's
+ * `inputMethodController.attach(showKeyboard, textConfig, …)`, whose `TextConfig.cursorInfo` is the
+ * only caret input the system accepts ("absolute coordinate of the physical screen, unit is px").
+ * CUI already computes the right rectangle every frame (`UiContext.textInputAnchorRect()`, the same
+ * one it hands to `SDL_SetTextInputArea` on desktop); the host therefore republishes it for the
+ * ArkTS page, which converts it to screen px and re-attaches the IME with it
+ * (docs/DEVICE-NOTES.md §21).
+ *
+ * Layout vs draw: the anchor is cleared at the start of every frame's draw and set by the focused
+ * control while it paints, so the only correct read point is *after* the tree drew — which is what
+ * `ImeAnchorView.draw` gives (it is declared last in the root stack, so it paints last).
+ */
+private var imeAnchor: ?Rect = None
+
+/* Zero-sized publisher for the caret anchor; declared after the shell so it draws after it. */
+class ImeAnchorView <: Widget {
+    public init() {
+        emit(this)
+    }
+
+    public func measure(_: UiContext, _: Size): Size {
+        Size.zero()
+    }
+
+    public func layout(_: UiContext, _: Rect): Unit {}
+
+    public func draw(ctx: UiContext): Unit {
+        imeAnchor = ctx.textInputAnchorRect()
+    }
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+
+    public func participatesInLayout(): Bool {
+        false
+    }
+
+    public func needsDetachedLayout(): Bool {
+        true
+    }
+}
+
+/*
+ * Caret anchor component accessor for the ArkTS side (`textura_keys.c` → `getImeAnchor()`).
+ * `index` 0..3 = x / y / w / h in logical pixels; -1 means "no text control has a caret".
+ * Four scalars instead of a struct keep the FFI to plain `Int32` in and `Int32` out.
+ */
+@C
+public func textura_ime_anchor(index: Int32): Int32 {
+    let rect = match (imeAnchor) {
+        case Some(value) => value
+        case None => return -1
+    }
+    match (index) {
+        case 0 => Int32(rect.x)
+        case 1 => Int32(rect.y)
+        case 2 => Int32(rect.w)
+        case 3 => Int32(rect.h)
+        case _ => -1
+    }
+}
+
 /* --------------------------------------------------------------------------- SDL entry points */
 
 /*
@@ -329,7 +399,13 @@ public func SDL_AppInit(appstate: CPointer<Unit>, argc: Int32, argv: CPointer<Un
                     probeEvent(ctx, event)
                     EventOutcome.Continue
                 }) {
-                buildShell(host)
+                ZStack {
+                    buildShell(host)
+                    // Hands the probe the UiContext on frame 1 instead of on the first input event.
+                    ProbeContextView()
+                    // Republishes the focused caret rect for the IME (see ImeAnchorView).
+                    ImeAnchorView()
+                }
             }
         }
         hostedApp = app
@@ -363,6 +439,13 @@ public func SDL_AppIterate(appstate: CPointer<Unit>): Int32 {
                 case Some(host) => host.store.ui.value().route
                 case None => "unknown"
             }, app.takeHostedFailure())
+            // One line per second: window size, resize count, adopted viewport and the height the
+            // visible tree was built with (probe.cj — the resize evidence for docs/DEVICE-NOTES.md §19).
+            match (hostedShell) {
+                case Some(host) =>
+                    probeSize(host.viewportWidth, host.viewportHeight, host.builtViewportHeight)
+                case None => ()
+            }
             // Preferences are written during a build, so by the second frame the first attempt has
             // happened and its outcome can be reported once.
             if (!prefsReported) {

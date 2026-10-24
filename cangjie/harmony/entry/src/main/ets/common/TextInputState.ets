@@ -13,4 +13,15 @@
  */
 export class TextInputState {
   static attached: boolean = false;
+  /*
+   * The `TextConfig` SDL passed to `attach` (TEXTURA-CUI-P06 follow-up).
+   *
+   * SDL's HarmonyOS backend never implements `SDL_SetTextInputArea` (the openharmony video driver
+   * ignores `window->text_input_rect`), so the only way to tell the system IME where the caret is,
+   * is `TextConfig.cursorInfo` at attach time. The page keeps the config SDL used and re-attaches
+   * with a fresh `cursorInfo` whenever CUI's caret rectangle moves (see pages/Index.ets).
+   */
+  static config: ESObject | null = null;
+  /** Last cursorInfo handed to the IME, so an unchanged caret costs no extra attach. */
+  static cursorKey: string = '';
 }

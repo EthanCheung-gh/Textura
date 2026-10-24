@@ -231,6 +231,61 @@ private func probeKey(key: Key): String {
     }
 }
 
+/* ------------------------------------------------------------------ window size / resize probe */
+
+/*
+ * One `size` line per second — the authoritative answer to "did a window resize reach the app?".
+ *
+ * The resize path is three hops: SDL reports the new surface size (`SDL_EVENT_WINDOW_RESIZED`, or the
+ * openharmony backend's own 250ms surface probe), CUI copies `window.width/height` into
+ * `UiContext.viewportWidth/Height` each frame, and the shell turns that into `ViewContext.width/height`
+ * for the views. A break in any hop looks identical on screen ("pages keep the launch size"), so the
+ * line prints every hop's number side by side:
+ *
+ *   w/h      what the driver reports for the window right now (logical px)
+ *   changes  how many distinct window sizes were seen this session (0 = the app never noticed a resize)
+ *   viewport what the shell adopted from the window (viewpoint of the layout math)
+ *   built    the height the *committed tree* was described with; equal to viewport once the rebuild
+ *            has run, smaller/larger while a resize is still one frame away
+ *
+ * `scale` is the content scale the driver reports, i.e. the factor between window pixels and logical
+ * points; a resize that changes it must not be read as a resize in logical px.
+ */
+private let PROBE_SIZE_INTERVAL_MS: UInt64 = 1000
+private var probeSizeLastEmitMs: UInt64 = 0
+private var probeSizeEmitted: Bool = false
+private var probeSizeLastW: Float32 = -1.0
+private var probeSizeLastH: Float32 = -1.0
+private var probeSizeChanges: Int64 = 0
+
+func probeSize(hostViewportWidth: Int64, hostViewportHeight: Int64, builtHeight: Int64): Unit {
+    if (!probeActive) {
+        return
+    }
+    let ctx = match (probeContext) {
+        case Some(value) => value
+        case None => return
+    }
+    let w = ctx.viewportWidth
+    let h = ctx.viewportHeight
+    if (w != probeSizeLastW || h != probeSizeLastH) {
+        if (probeSizeLastW >= 0.0) {
+            probeSizeChanges += 1
+        }
+        probeSizeLastW = w
+        probeSizeLastH = h
+    }
+    let now = PerformanceClock.ticksMilliseconds()
+    if (probeSizeEmitted && now - probeSizeLastEmitMs < PROBE_SIZE_INTERVAL_MS) {
+        return
+    }
+    probeSizeEmitted = true
+    probeSizeLastEmitMs = now
+    let scale = ctx.displayScale
+    probeEmit("size w=${w} h=${h} scale=${scale} changes=${probeSizeChanges}" +
+        " viewport=${hostViewportWidth}x${hostViewportHeight} built=${builtHeight}")
+}
+
 /* ------------------------------------------------------------------ hosted frame failures */
 
 /*
@@ -449,6 +504,52 @@ private func probeDescribeContext(ctx: UiContext, tag: String): Unit {
         return
     }
     probeEmit("ctx ${tag} ${probeSurfaceReport()}")
+}
+
+/*
+ * Zero-sized widget that hands the probe the session's `UiContext` on the very first frame.
+ *
+ * `probeEvent` used to be the only capture point, which made every size/timing line depend on the
+ * operator moving the pointer first — exactly the wrong dependency for a resize investigation, where
+ * the interesting moment is "launch, then maximise, without touching the app".
+ */
+class ProbeContextView <: Widget {
+    public init() {
+        emit(this)
+    }
+
+    public func measure(_: UiContext, _: Size): Size {
+        Size.zero()
+    }
+
+    public func layout(ctx: UiContext, _: Rect): Unit {
+        probeCaptureContext(ctx)
+    }
+
+    public func draw(_: UiContext): Unit {}
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+
+    public func participatesInLayout(): Bool {
+        false
+    }
+
+    public func needsDetachedLayout(): Bool {
+        true
+    }
+}
+
+/* Records the session context once; inert (one Bool test) while the probe is off. */
+func probeCaptureContext(ctx: UiContext): Unit {
+    if (!probeActive) {
+        return
+    }
+    if (probeContext.isNone()) {
+        probeContext = Some(ctx)
+        probeDescribeContext(ctx, "first-frame")
+    }
 }
 
 private func percentileIndex(size: Int64, fraction: Float64): Int64 {

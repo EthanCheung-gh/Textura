@@ -12,7 +12,9 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { KeyCode } from '@kit.InputKit';
-import { sendKey } from 'libtextura_keys.so';
+import { inputMethod } from '@kit.IMEKit';
+import { display, window } from '@kit.ArkUI';
+import { sendKey, getImeAnchor } from 'libtextura_keys.so';
 import { TextInputState } from '../common/TextInputState';
 
 const DOMAIN: number = 0x0000;
@@ -30,6 +32,14 @@ const SURFACE_ID: string = 'SDL_XComponent';
  * that never ends would fight the system focus manager.
  */
 const FOCUS_RETRY_DELAYS_MS: number[] = [0, 80, 240, 600, 1500];
+
+/*
+ * IME caret sync period. HarmonyOS takes the caret position only as `TextConfig.cursorInfo` at
+ * attach time (there is no "move the candidate window" call), so following the caret means
+ * re-attaching while the rectangle changes. 120ms is fast enough to look continuous and slow
+ * enough that an unchanged caret costs nothing (the rectangle is compared first).
+ */
+const IME_ANCHOR_TICK_MS: number = 120;
 
 /* SDL_Scancode values (SDL_scancode.h) for the keys this page forwards into SDL. */
 const SDL_SCANCODE_A: number = 4;
@@ -86,13 +96,126 @@ struct Index {
   private pressedByPage: boolean = false;
   private focusRetryTimer: number = -1;
   private focusRetryAttempt: number = 0;
+  /* IME caret bridge (see syncImeAnchor): timer, cached controller and window geometry. */
+  private imeTimer: number = -1;
+  private imeController: inputMethod.InputMethodController | null = null;
+  private densityPixels: number = 1;
+  private windowLeft: number = 0;
+  private windowTop: number = 0;
 
   aboutToAppear(): void {
     this.startFocusConvergence('appear');
+    this.startImeAnchorSync();
   }
 
   aboutToDisappear(): void {
     this.cancelFocusRetry();
+    this.stopImeAnchorSync();
+  }
+
+  /*
+   * IME candidate-window anchoring (docs/DEVICE-NOTES.md §21).
+   *
+   * The system IME positions its candidate bar from `TextConfig.cursorInfo`, "absolute coordinate of
+   * the physical screen, unit is px". SDL cannot supply it: the openharmony video backend has no
+   * `SetTextInputArea` implementation, so `SDL_SetTextInputArea` — which CUI calls on every caret
+   * move — is a no-op here and the bar stayed wherever the system decided.
+   *
+   * CUI still computes the right rectangle every frame (`UiContext.textInputAnchorRect`), the host
+   * republishes it as `textura_ime_anchor(index)` and this page polls it through the NAPI module,
+   * converts logical px to screen px (window origin + display density) and re-attaches the IME with
+   * the same `inputAttribute` SDL used. Unchanged rectangles are skipped, so an idle field is free.
+   */
+  private startImeAnchorSync(): void {
+    this.resolveWindowGeometry();
+    this.imeTimer = setInterval(() => this.syncImeAnchor(), IME_ANCHOR_TICK_MS);
+  }
+
+  private stopImeAnchorSync(): void {
+    if (this.imeTimer !== -1) {
+      clearInterval(this.imeTimer);
+      this.imeTimer = -1;
+    }
+  }
+
+  /* One-shot: the caret rectangle is window-relative, the IME wants screen-relative px. */
+  private async resolveWindowGeometry(): Promise<void> {
+    try {
+      this.densityPixels = display.getDefaultDisplaySync().densityPixels;
+    } catch (e) {
+      this.densityPixels = 1;
+      hilog.warn(DOMAIN, TAG, 'ime: display density unavailable, assuming 1');
+    }
+    try {
+      const win = await window.getLastWindow(getContext(this));
+      const rect = win.getWindowProperties().windowRect;
+      this.windowLeft = rect.left;
+      this.windowTop = rect.top;
+    } catch (e) {
+      this.windowLeft = 0;
+      this.windowTop = 0;
+      hilog.warn(DOMAIN, TAG, 'ime: window rect unavailable, anchoring window-relative');
+    }
+  }
+
+  private imeControllerOrNull(): inputMethod.InputMethodController | null {
+    if (this.imeController === null) {
+      try {
+        this.imeController = inputMethod.getController();
+      } catch (e) {
+        return null;
+      }
+    }
+    return this.imeController;
+  }
+
+  private syncImeAnchor(): void {
+    if (!TextInputState.attached) {
+      TextInputState.cursorKey = '';
+      return;
+    }
+    const read: (() => number[] | null) | undefined = getImeAnchor;
+    if (read === undefined) {
+      return;
+    }
+    let anchor: number[] | null = null;
+    try {
+      anchor = read();
+    } catch (e) {
+      return;
+    }
+    if (anchor === null || anchor.length !== 4) {
+      return;
+    }
+    const key: string = `${anchor[0]},${anchor[1]},${anchor[2]},${anchor[3]},` +
+      `${Math.round(this.windowLeft)},${Math.round(this.windowTop)}`;
+    if (key === TextInputState.cursorKey) {
+      return;
+    }
+    const controller = this.imeControllerOrNull();
+    const base: inputMethod.TextConfig | null = TextInputState.config as inputMethod.TextConfig | null;
+    if (controller === null || base === null) {
+      return;
+    }
+    TextInputState.cursorKey = key;
+    const density = this.densityPixels;
+    const cursorInfo: inputMethod.CursorInfo = {
+      left: Math.round(this.windowLeft + anchor[0] * density),
+      top: Math.round(this.windowTop + anchor[1] * density),
+      width: Math.max(1, Math.round(anchor[2] * density)),
+      height: Math.max(1, Math.round(anchor[3] * density))
+    };
+    const next: inputMethod.TextConfig = {
+      inputAttribute: base.inputAttribute,
+      cursorInfo: cursorInfo
+    };
+    try {
+      controller.attach(true, next).catch((error: BusinessError) => {
+        hilog.warn(DOMAIN, TAG, 'ime: re-attach failed code=%{public}d', error.code ?? -1);
+      });
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'ime: re-attach threw (ignored)');
+    }
   }
 
   /*
@@ -265,6 +388,14 @@ struct Index {
       Column() {
         XComponent({ id: SURFACE_ID, type: XComponentType.SURFACE, libraryname: 'SDL3' })
           .id(SURFACE_ID)
+          // The surface must track the window, not the launch size: SDL creates its EGL surface
+          // from the XComponent's size on the first frame, and `OPENHARMONY_SyncSurfaceSize()`
+          // only re-creates it when the *buffer geometry* it reads from this component changed.
+          // With no width/height the component was sized once at start-up, so growing the window
+          // (maximise / fullscreen) left the surface at the old size and SDL never emitted
+          // WINDOW_RESIZED — the page kept laying out for the launch size (docs/DEVICE-NOTES §19).
+          .width('100%')
+          .height('100%')
           // Keyboard delivery (see the header comment): without these the XComponent is never in
           // the focus chain and SDL's key callback is never called.
           .focusable(true)
@@ -282,8 +413,12 @@ struct Index {
             this.startFocusConvergence('blur');
           })
       }
+      // Both axes: the Column is the surface's only parent, so a missing height here stops the
+      // XComponent from ever being taller than its first-frame content (see the comment above).
       .width('100%')
+      .height('100%')
     }
+    .width('100%')
     .height('100%')
     // TEXTURA-CUI-P05 key bridge: key events bubble to this root, which is the only place Tab can be
     // seen before ArkUI's focus traversal consumes it. Returning true stops the traversal, so CUI
