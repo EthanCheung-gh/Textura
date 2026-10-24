@@ -618,6 +618,11 @@ $HDC file recv /data/local/tmp/textura.jpeg /tmp/textura.jpeg
 `cangjie/harmony/.certs/textura-debug/`（`keyAlias=textura-debug`，`bundle-name=com.ethancheung.textura`，
 profile 内 `debug-info.device-ids` 含 1 个 UDID）。**该目录被 `cangjie/.gitignore` 忽略，只在本地存在。**
 
+> **`build-profile.json5` 每轮设备构建前由 `set_signing_material.sh` 生成，不得入库**：它写的是本机
+> 材料路径与 hvigor 用的密文密码，密文只在那台机器的 `~/.ohos/config/material` 工作密钥下能解
+> （§7.1b 第 2 条），提交上去对别人无用、对本机是噪音。收尾时 `git checkout -- cangjie/harmony/build-profile.json5`
+> 还原成仓库里的「历史阻塞项」版本即可，下一轮重新跑脚本。
+
 历史上这一项是阻塞的：早期 `product=default` 复用参考项目的材料
 （`PixCap-Cangjie/.certs/pixcapt-debug/`），hvigor 在 `SignHap` 阶段直接拒绝：
 
