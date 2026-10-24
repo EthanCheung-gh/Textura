@@ -1,5 +1,6 @@
 package textura.views.sop
 
+import std.collection.ArrayList
 import std.env.*
 import std.unittest.*
 import std.unittest.testmacro.*
@@ -56,6 +57,11 @@ private class SopEditorHarness {
      *
      * 视图状态在 render 之前先按**同样的 key**取一次（`remember` 是幂等的），
      * 这样测试拿到的就是 `render` 内部用的那份 `SopViewState`。
+     *
+     * 注意：这里只复刻**组合形状不变**的一帧。真机上「write → autosave 窗口 → 壳给 body 多套
+     * 一层 `FrameHandler` → `remember` 键跟着变 → 状态壳重建」那一步无法在 `WidgetTestHost`
+     * 里稳定复刻（宿主会重放整棵子树，body 不一定重跑），所以那一步由
+     * `sopNodeInspectorSurvivesALostStateShell` 直接构造一个全新的 `SopViewState` 来钉住。
      */
     func build(testHost: WidgetTestHost, events!: Array<UiEvent> = []): Unit {
         let _ = testHost.frame(viewport, events: events) {
@@ -228,6 +234,368 @@ func sopInspectorNextFieldOpensRightAfterCommit(): Unit {
     ])
     @Expect(state.promptOpen.value, true)
     @Expect(state.promptKind.value, "sop-notes")
+}
+
+/* ---------------- 节点检查器：改一次字段不许被踢回「SOP 设置」 ---------------- */
+
+private func sopPress(x: Float32, y: Float32): Array<UiEvent> {
+    [
+        UiEvent.MouseDown(MouseButton.Left, x, y),
+        UiEvent.MouseUp(MouseButton.Left, x, y)
+    ]
+}
+
+private func sopIsNodeVariant(rects: SopInspRects): Bool {
+    match (rects.variant) {
+        case SopInspVariant.Node => true
+        case _ => false
+    }
+}
+
+private func sopSelectedNodeId(state: SopViewState): String {
+    match (state.selectedNodeId) {
+        case Some(id) => id
+        case None => "<none>"
+    }
+}
+
+/** 画布上第一个节点的中心（真实按下点，走 `handleCanvas` 的命中判定）。 */
+private func sopFirstNodeCenter(view: SopFrame): (String, Float32, Float32) {
+    let item = view.nodes[0]
+    let rect = view.nodeRect(item)
+    (item.id, rect.centerX(), rect.centerY())
+}
+
+/** 画布 flow 区的左下角：一定没有节点/连线，且落在 `view.flow` 内（不是检查器）。 */
+private func sopBlankPanePoint(view: SopFrame): (Float32, Float32) {
+    (view.flow.x + 3.0, view.flow.bottom() - 3.0)
+}
+
+private func sopItemTitle(store: AppStore, id: String): String {
+    match (itemById(store.state.value(), id)) {
+        case Some(item) => item.title
+        case None => "<missing>"
+    }
+}
+
+/**
+ * 选中节点 → 点「标题」→ 输入 → Enter（一次 store 写入）→ 检查器必须仍停在该节点。
+ *
+ * 真机现场：节点检查器里改一个字段，右侧立刻跳回「SOP 设置」变体（标题变「流程设置」）。
+ * 变体只有一条判据（`inspectorRects` 看 `selectedNode()`），所以这条用例同时钉住
+ * 「`selectedNodeId` 还在」与「`nodes` 里还能按 id 找到那个节点」。
+ */
+@Test
+func sopNodeInspectorStaysOnTheNodeAfterAFieldCommit(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (nodeId, nodeX, nodeY) = sopFirstNodeCenter(first)
+    // 真实链路：点画布上的节点（`handleCanvas` → `stateSelectNode`）。
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    @Expect(sopSelectedNodeId(state), nodeId)
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    @Expect(sopIsNodeVariant(rects), true)
+    // 点「标题」→ 原位编辑器打开在字段上。
+    harness.build(testHost, events: sopPress(rects.titleInput.centerX(), rects.titleInput.centerY()))
+    @Expect(state.promptOpen.value, true)
+    @Expect(state.promptKind.value, "node-title")
+    @Expect(state.promptTarget.value, nodeId)
+    // 输入并提交（一次 store 写入）。
+    state.promptText.value = "逐条核对告警"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(state.promptOpen.value, false)
+    @Expect(sopItemTitle(harness.store, nodeId), "逐条核对告警")
+    // 提交之后的下一帧：选中项与检查器变体都不许变。
+    harness.build(testHost)
+    @Expect(sopSelectedNodeId(state), nodeId)
+    let after = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let afterRects = inspectorRects(testHost.context, after)
+    @Expect(sopIsNodeVariant(afterRects), true)
+    let painted = match (after.selectedNode()) {
+        case Some(item) => item.title
+        case None => "<none>"
+    }
+    @Expect(painted, "逐条核对告警")
+    // 节点变体才有这些盒子；SOP 设置变体给的是 `Rect.zero()`。
+    @Expect(afterRects.titleInput.w > 0.0, true)
+    @Expect(afterRects.typeChips.isEmpty(), false)
+}
+
+/**
+ * 提交后**紧接着**点同一检查器里的下一个字段：仍打开编辑器、仍停在节点变体。
+ *
+ * 这是真机现象的第二半：即使选中项还在，提交后第一下点击若被画布空白吃掉，编辑器就不会出现。
+ */
+@Test
+func sopNodeInspectorNextFieldStillOpensAfterCommit(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (nodeId, nodeX, nodeY) = sopFirstNodeCenter(first)
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    harness.build(testHost, events: sopPress(rects.titleInput.centerX(), rects.titleInput.centerY()))
+    state.promptText.value = "重新排队"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(state.promptOpen.value, false)
+    // 提交后立刻点「负责人」：这一下必须当场打开，并且目标还是这个节点。
+    harness.build(testHost, events: sopPress(rects.ownerInput.centerX(), rects.ownerInput.centerY()))
+    @Expect(state.promptOpen.value, true)
+    @Expect(state.promptKind.value, "node-owner")
+    @Expect(state.promptTarget.value, nodeId)
+    @Expect(sopSelectedNodeId(state), nodeId)
+    let after = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    @Expect(sopIsNodeVariant(inspectorRects(testHost.context, after)), true)
+}
+
+/**
+ * 提交后点**画布空白**：这时才允许清空选中、回到「SOP 设置」。
+ *
+ * 与上面两条互为正反面：修复不能把「点空白取消选中」一起改掉。
+ */
+@Test
+func sopNodeInspectorBlankCanvasStillClearsTheSelection(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (_, nodeX, nodeY) = sopFirstNodeCenter(first)
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    harness.build(testHost, events: sopPress(rects.titleInput.centerX(), rects.titleInput.centerY()))
+    state.promptText.value = "先改一次"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(sopSelectedNodeId(state) == "<none>", false)
+    let (blankX, blankY) = sopBlankPanePoint(view)
+    harness.build(testHost, events: sopPress(blankX, blankY))
+    @Expect(sopSelectedNodeId(state), "<none>")
+    let after = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    @Expect(sopIsNodeVariant(inspectorRects(testHost.context, after)), false)
+}
+
+/**
+ * 编辑提交后其它节点的 id 不许漂移：检查器按 id 找回节点，id 一变就必然跳回整体设置。
+ */
+@Test
+func sopNodeInspectorCommitKeepsEveryNodeId(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let before = ArrayList<String>()
+    for (item in first.nodes) {
+        before.add(item.id)
+    }
+    let (nodeId, nodeX, nodeY) = sopFirstNodeCenter(first)
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    harness.build(testHost, events: sopPress(rects.titleInput.centerX(), rects.titleInput.centerY()))
+    state.promptText.value = "换一个说法"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    let after = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    @Expect("${after.nodes.size}", "${before.size}")
+    var index = 0
+    for (item in after.nodes) {
+        @Expect(item.id, before[index])
+        index += 1
+    }
+    @Expect(sopSelectedNodeId(state), nodeId)
+}
+
+/**
+ * 真机那条链路：提交一次字段（= 一次 store 写入）之后，**状态壳被重建**，检查器必须仍停在该节点。
+ *
+ * 为什么状态壳会被重建（不是猜的，宿主侧两次探针）：
+ * 1. `appshell.cj` 在 `runtime.needsTick(store)` 为真时把整个 body 包进一层 `FrameHandler`，
+ *    而任何一次 store 写入都会让 `observeWorkspace` 把 `savePhase` 置成 `saving`
+ *    （探针：`updateItem` 后 `needsTick` false → true）；
+ * 2. CUI 的 `remember` 键 = 组合祖先作用域 + key（`automatic_composition.cj` 的
+ *    `@VStack[1]` 逐层拼进 `scopedKey`），祖先多一段就换一个 `State`
+ *    （探针：body 多包一层 FrameHandler 后，remember 的计数器 6 → 3，即重新从 0 开始）。
+ *
+ * 于是 `sop-view-state` 解析成另一个 `State`，`SopViewState` 全新构造、`selectedNodeId` 归零，
+ * `inspectorRects` 找不到 `selectedNode()`，右侧从「节点」跳回「SOP 设置」——真机现象。
+ *
+ * 这里直接复刻「壳没了」这一步（宿主里套 FrameHandler 不能稳定复刻，见 `build` 的注释）：
+ * 一个全默认的新 `SopViewState` 重新描述页面，断言选中项从 store 补了回来。
+ */
+@Test
+func sopNodeInspectorSurvivesALostStateShell(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (nodeId, nodeX, nodeY) = sopFirstNodeCenter(first)
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    harness.build(testHost, events: sopPress(rects.titleInput.centerX(), rects.titleInput.centerY()))
+    @Expect(state.promptKind.value, "node-title")
+    state.promptText.value = "按区域回访"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(sopItemTitle(harness.store, nodeId), "按区域回访")
+    // 壳被重建：全新 `SopViewState`（全默认值，等价于 remember 换了 key 之后的那一个）。
+    let lost = SopViewState(State<Int64>(0))
+    @Expect(lost.selectedNodeId.isNone(), true)
+    @Expect("${lost.runSeq}", "0")
+    @Expect(lost.inspectorOpen, true)
+    let rebuilt = buildFrame(testHost.context, harness.store.state.value(), harness.store, harness.theme,
+        harness.tokens, lost, view.pageRect(), SOP_EDITOR_TODAY)
+    // 选中项没跟着状态壳一起丢：真源在 store（`stateSelectNode` 早就写过）。
+    @Expect(sopSelectedNodeId(lost), nodeId)
+    let rebuiltRects = inspectorRects(testHost.context, rebuilt)
+    @Expect(sopIsNodeVariant(rebuiltRects), true)
+    let painted = match (rebuilt.selectedNode()) {
+        case Some(item) => item.title
+        case None => "<none>"
+    }
+    @Expect(painted, "按区域回访")
+    // 新壳上的检查器照常可编辑：点「负责人」当场打开，目标仍是这个节点。
+    @Expect(handleInspector(testHost.context, rebuilt, UiEvent.MouseDown(MouseButton.Left,
+        rebuiltRects.ownerInput.centerX(), rebuiltRects.ownerInput.centerY())), true)
+    @Expect(lost.promptOpen.value, true)
+    @Expect(lost.promptKind.value, "node-owner")
+    @Expect(lost.promptTarget.value, nodeId)
+    closeSopPrompt(lost)
+}
+
+/**
+ * 反方向：用户点了画布空白（`store.select(None)`）之后，状态壳重建**不许**把选中项复活。
+ * 修复只补「状态壳被重建」丢的那一份，不改变用户明确的取消。
+ */
+@Test
+func sopClearedSelectionIsNotResurrectedByALostStateShell(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let first = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (_, nodeX, nodeY) = sopFirstNodeCenter(first)
+    harness.build(testHost, events: sopPress(nodeX, nodeY))
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let (blankX, blankY) = sopBlankPanePoint(view)
+    harness.build(testHost, events: sopPress(blankX, blankY))
+    let lost = SopViewState(State<Int64>(0))
+    let rebuilt = buildFrame(testHost.context, harness.store.state.value(), harness.store, harness.theme,
+        harness.tokens, lost, view.pageRect(), SOP_EDITOR_TODAY)
+    @Expect(sopSelectedNodeId(lost), "<none>")
+    @Expect(sopIsNodeVariant(inspectorRects(testHost.context, rebuilt)), false)
 }
 
 /**

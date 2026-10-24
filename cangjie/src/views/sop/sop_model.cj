@@ -361,6 +361,70 @@ class SopViewState {
 }
 
 /**
+ * 选中项的真源是 store，`SopViewState` 里的镜像每帧按需补回。
+ *
+ * 为什么必须这样：`SopViewState` 由 `remember<SopViewState>("sop-view-state")` 持有，而 CUI 的
+ * `remember` 键是**组合祖先作用域 + key**（自动作用域形如 `@VStack[1]`，见
+ * `third_party/CUI/src/core/automatic_composition.cj` 的 `nextAutomaticScopeIdentity`）。
+ * 壳在 autosave 窗口打开时把整个 body 包进一层 `FrameHandler`（`appshell.cj` 的
+ * `needsTick` 分支），而**任何一次 store 写入**都会让 `observeWorkspace` 把 `savePhase`
+ * 置为 `saving`。于是：检查器里改一个字段（一次 `store.updateItem`）→ 下一次 build
+ * 多出一层 `FrameHandler` → 作用域路径多一段 → `sop-view-state` 解析成**另一个** `State`
+ * → `SopViewState` 全新构造，`selectedNodeId` 归零 → `inspectorRects` 找不到
+ * `selectedNode()`，右侧从「节点」跳回「SOP 设置」。真机现象就是这个顺序。
+ *
+ * 选中项本来就不只活在这份易失的镜像里：画布、列表、运行条、检查器每一次改变选中都写
+ * `store.select(...)`。所以这里在镜像为空时用 store 的值把它补回来——不覆盖用户在
+ * **这一帧**做的选择，只让被重建的状态壳回到用户实际选中的那个 SOP / 节点。
+ */
+func restoreSelectionFromStore(workspace: Workspace, store: AppStore, summaries: Array<SopSummary>,
+    state: SopViewState): Unit {
+    // 本帧已经有了选中（用户刚点过）就什么都不做：绝不覆盖。
+    if (state.selectedNodeId.isSome() || state.selectedEdgeId.isSome()) {
+        return
+    }
+    let selected = match (store.selected()) {
+        case Some(item) => item
+        case None => return
+    }
+    if (selected.kind == ItemKind.Sop) {
+        for (summary in summaries) {
+            if (summary.sop.id == selected.id) {
+                state.selectedSopId = Some(selected.id)
+                return
+            }
+        }
+        return
+    }
+    if (selected.kind != ItemKind.Step) {
+        return
+    }
+    // 步骤可以嵌在自建的分组里：向上找第一个 SOP 祖先（`sopGraph` 用的是同一套归属）。
+    var sopId = ""
+    for (ancestor in ancestorsOf(workspace, selected.id)) {
+        if (ancestor.kind == ItemKind.Sop) {
+            sopId = ancestor.id
+            break
+        }
+    }
+    if (sopId.isEmpty()) {
+        return
+    }
+    var known = false
+    for (summary in summaries) {
+        if (summary.sop.id == sopId) {
+            known = true
+        }
+    }
+    if (!known) {
+        return
+    }
+    // 先把所在 SOP 恢复回来，否则多 SOP 工作区会退回第一条 SOP，节点照样找不到。
+    state.selectedSopId = Some(sopId)
+    state.selectedNodeId = Some(selected.id)
+}
+
+/**
  * One frame of SOP data: the active SOP, its graph, the display positions (saved
  * canvas coords or the compact preview layout) and the canvas transform.
  */

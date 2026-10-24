@@ -246,6 +246,8 @@ func buildFrame(
     state.pageRect = page
 
     let summaries = sopList(workspace)
+    // 选中项的真源是 store（见 `restoreSelectionFromStore`）：状态壳被重建时从这里补回来。
+    restoreSelectionFromStore(workspace, store, summaries, state)
     let activeSop = resolveActiveSop(summaries, state)
     var nodes = Array<Item>()
     var edges = Array<Edge>()
