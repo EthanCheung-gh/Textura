@@ -749,6 +749,9 @@ calendarPageHeight(ctx.height) / SOP measure(windowHeight) / gantt pageBodyHeigh
   `layout(ctx)` 把 `ctx.viewportWidth/Height` 写回 host；变化时 `ctx.requestFrame()`。
 - `ViewContext` 在 build 阶段构造，所以**收到新尺寸的那一帧仍按旧尺寸画一次**，下一帧
   build 读到新值后所有页面重算。桌面连续 resize 无感；真机全屏切换会多一帧。
+  > 更正（§19.5）：**「下一帧 build 会读到新值」这句当时是错的** —— 只更新字段不会让 CUI 的
+  > build 作用域变脏，树根本不会重建。真正的补丁是 `viewportEpoch`（视口世代 + `buildShell`
+  > 根依赖），见 §19。
 - 视口来源：`UiContext.viewportWidth/Height`。OHOS 上 `SdlWindow` 创建后立刻
   `refreshSize()` 回读真实窗口（`third_party/cangjie-sdl/src/window.cj:153`），
   `SDL_EVENT_WINDOW_RESIZED` 时再次回读（`desktop_app.cj:829`）；XComponent surface 的
@@ -848,11 +851,11 @@ $HDC file recv /data/local/tmp/shot.jpeg cangjie/docs/assets/harmony/
 
 ---
 
-## 19. 全屏 / 窗口缩放：surface 尺寸不跟随（本轮修复）
+## 19. 全屏 / 窗口缩放：surface 尺寸与「树的重建」（本轮修复）
 
-### 19.1 三跳链路（哪一跳断了都在屏幕上是同一个症状）
+### 19.1 四跳链路（哪一跳断了，屏幕上都是「窗口大了、页面没变」）
 
-窗口从「启动尺寸」变成「最大化尺寸」，要经过三跳才变成一次重排：
+窗口从「启动尺寸」变成「最大化尺寸」，要经过四跳才变成一次重排：
 
 ```text
 ① ArkTS 侧 XComponent 的布局尺寸
@@ -860,11 +863,16 @@ $HDC file recv /data/local/tmp/shot.jpeg cangjie/docs/assets/harmony/
 ② SDL_EVENT_WINDOW_RESIZED  →  cangjie-sdl SdlWindow.refreshSize()
         ↓ 每帧
 ③ UiContext.viewportWidth/Height（DesktopApp 从 window.width/height 拷贝）
-        ↓  零尺寸 ViewportSyncView（src/shell/appshell.cj）
-④ ShellHost.viewportWidth/Height  →  ViewContext.width/height  →  各页面重排
+        ↓  零尺寸 ViewportSyncView（src/shell/appshell.cj）→ syncViewport() 写 epoch
+④ ShellHost.viewportEpoch（CUI State）→ buildShell 根读它 → 树按新尺寸**重新描述**
+        ↓
+   ViewContext.width/height → 各页面重算高度/列宽
 ```
 
-③④ 是上一轮修的（§18.2：`ViewportSyncView` + `syncViewport`）；本轮确认 ① 仍然是断的。
+- ①② 是上一轮修的（§19.2/19.3：XComponent `width/height: 100%`）；
+- ③ 是再上一轮修的（§18.2：`ViewportSyncView` + `syncViewport`）；
+- ④ 是本轮加固的（§19.5）：**只更新字段不会让 CUI 重跑 build**，树会一直带着旧
+  `ViewContext`，屏幕上就是「背景铺满（surface 大了）、内容仍按旧尺寸贴在左上、右下留白」。
 
 ### 19.2 根因：XComponent 没有跟着父容器长
 
@@ -896,30 +904,90 @@ Row() {
 
 只动尺寸；`id`、`libraryname: 'SDL3'`、`type: SURFACE`、三个 focus 属性、`onKeyEvent` 全部保留。
 
-### 19.4 诊断证据：`size` 行（`PROBE_COMPILED_ON=true` 的包）
+### 19.4 诊断证据：`build#` 行与 `size` 行（`PROBE_COMPILED_ON=true` 的包）
 
-探针每秒打一行，把三跳的数字并排放在一起（口径见 `harmony/host/src/probe.cj`）：
+两类行（口径见 `harmony/host/src/probe.cj`）。`size` 每秒一行，看整体；`build#` 只在「树的尺寸或
+epoch 变了」时打一行，是事件证据：
 
 ```text
-t=101  size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
-t=1115 size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
-t=2115 size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
+t=67   ctx first-frame vp=1930.000000x1021.000000 scale=1.000000 font=1.000000 driver=opengles2 super=1 …
+t=111  build#2 size=1930x1021 epoch=1 viewport=1930x1021
+t=111  size w=1930.000000 h=1021.000000 scale=1.000000 changes=0 viewport=1930x1021 built=1930x1021 epoch=1 builds=2
 ```
 
-- `w/h`：驱动此刻报的窗口逻辑尺寸（`UiContext.viewportWidth/Height`）；
-- `changes`：本次会话见过的**不同尺寸个数**——`0` 表示还没发生过一次 resize（启动后的第一帧也算
-  「第一次见到」，不计入变化）；
-- `viewport=`：宿主采纳的尺寸（布局数学的输入）；
-- `built=`：**已提交的树**是按什么高度描述的（比 viewport 小/大 = resize 还差一帧）。
-
-判据：
-
-| 现象 | 含义 |
+| 字段 | 含义 |
 |---|---|
-| 最大化后 `changes` 从 0 变 1、`w/h` 变大 | ① 修好了，resize 到了 SDL（进入第 ② / ③ 步核对） |
-| 最大化后 `changes` 仍是 0、`w/h` 不变 | surface 还是没长：按 19.5 用 `hidumper` 取 buffer 尺寸对照 |
+| `build#N` | 本次会话 `buildShell` 描述过树的总次数（`ShellHost.buildCount`） |
+| `size=WxH` | **已提交的树**是按什么尺寸描述的（`ViewContext.width/height`，`ShellHost.builtViewport*`） |
+| `epoch=` | 视口世代（`ShellHost.viewportEpoch`），每次真实 resize +1 |
+| `viewport=WxH` | 宿主采纳的视口（`syncViewport` 的结果，布局数学的输入） |
+| `w/h`、`changes` | 驱动此刻报的逻辑尺寸，以及本会话见过的不同尺寸个数（`0` = 启动后还没 resize 过） |
 
-### 19.5 若 `size` 仍不变：拿 buffer 尺寸和探针对照
+判据（缺一不可）：
+
+| 现象 | 结论 |
+|---|---|
+| 最大化后 `w/h` 变大、`changes` 0→1 | ① ArkTS/surface 与 ② SDL 采纳都通了（否则看 §19.7） |
+| `epoch` +1、`build#N` 变大 | ③→④ 通了：**树真的按新尺寸重建了**（不是只重排） |
+| `size` == `viewport` | 这一帧的树已经用新尺寸描述完（`size` 落后 = 还差一帧，或重建根本没发生） |
+
+本轮真机实测（诊断包，`t=111` 是启动第一帧）：`epoch` 从 0 变 1、`build#2`、`size == viewport`。
+即启动时窗口尺寸（1440×900 请求 → 1930×1021 实际 surface）就走过一次「视口变化 → 重建」，说明
+③→④ 这一跳在真机上是通的；`changes=0` 是因为启动后还没有第二次尺寸变化。
+
+### 19.5 第四跳：视口 epoch（本轮加固，§18.2 的补丁不够）
+
+`ViewportSyncView` + `syncViewport` 只做了「把 `ctx.viewportWidth/Height` 写进 host 字段 + 请求一帧」。
+`ViewContext` 在 **build** 阶段构造，而 CUI 的增量引擎只在**被读过的 `State` 变化**时重跑 build
+作用域；窗口尺寸变化既不脏任何 `State`，也不会让 build 重跑 —— 于是布局用新视口重排、页面高度却仍是
+`ViewContext` 里的旧值。这和 §5（store → CUI 缺响应式桥）是同一种断法。
+
+现在：
+
+- `ShellHost.viewportEpoch: State<Int64>`，`syncViewport` 在尺寸真的变化时 +1；
+- `buildShell` 的**最外层第一件事**读 `host.viewportToken()`，建立 build 依赖（和 store 的
+  `revisionToken()` 并排）；
+- `ViewportSyncView.layout` 写 epoch 后，CUI 的稳定化循环（`buildAndLayoutStable`）发现世代变了，
+  **同一帧内**再描述一次树，第二遍读到新视口、写完即稳定（`MAX_STABILIZATION_PASSES=3`）；
+- `host.noteBuild()` 在 `ViewContext` 构造处调用（内容区 fragment 内），记录
+  `builtViewportWidth/Height` 与 `buildCount` —— 它是「这棵树是按什么尺寸描述的」的唯一证据，
+  也是主机测试与探针共用的数字。
+
+主机侧证据（`src/shell/viewport_test.cj`）：
+
+| 用例 | 断言 |
+|---|---|
+| `windowResizedEventRebuildsTheShellForTheNewSize` | 注入 `UiEvent.WindowResized(2880,1620)` → `epoch` 0→1、`builtViewport` 2880×1620、`buildCount` 增长；同尺寸空闲帧**不再**重建；缩回 1440×900 → `epoch`=2 |
+| `everyRouteUsesTheMaximisedWindow` | 七路由在 2880×1620 下都有节点越过启动窗口（1930×1020）的右边界，且无节点越出新窗口 |
+| `shrinkingAfterAMaximisedWindowKeepsEveryRouteInside`（`narrow_layout_test.cj`） | 从 2880×1620 缩回 1024×640：`builtViewport` = 1024×640，七路由仍无横向溢出 |
+| `windowResizeRebuildsTheViewsForTheNewHeight` | 1920×1200 / 1024×640 两个方向都重算页面高度 |
+
+Xvfb 复核：`./scripts/parity.sh --width 2880 --height 1620 --out tools/parity/out-2880`（不入库）——
+日历网格、甘特主体、SOP 画布都铺到右/下边缘（保留 24 内边距）；GTD 页按 Web `shell.css:262`
+的 `.page { max-width: 1280px; margin: 0 auto }` 居中收窄，这是**参考实现的既有行为**，不是留白 bug。
+
+### 19.6 仍需用户执行的一次最大化（本轮交付停在这里）
+
+> 后续：这一跳的缺环已被定位为「ArkUI 从未把新尺寸告诉 SDL」，修法与真机数字见 **§24**（本节保留原始现场）。
+
+诊断包已装（`PROBE_COMPILED_ON=true`，`entry-default-signed.hap` 30004675 B，
+sha256 `062e10f1…`，`21423` 首次安装后 `pidof` 有值、`diag.log` 已开始写）。当前窗口是启动尺寸
+1930×1021（`hidumper -s WindowManagerService -a '-a'` 里 `textura0` 一行），所以：
+
+1. 解锁设备，把 Textura 窗口最大化/全屏（`uinput`/`uitest` 拖不动窗口边缘，只能手工）；
+2. 读日志：
+
+   ```bash
+   HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+   $HDC shell "grep -E 'build#|size ' /data/app/el2/100/base/com.ethancheung.textura/files/textura/diag.log | tail -8"
+   ```
+
+3. 期望看到：`w/h` 变大、`changes` 0→1、`epoch` +1、`build#N` 变大、`size == viewport`；
+   - `w/h` 没变、`changes=0` → 回到 §19.7（buffer 尺寸对照）；
+   - `w/h` 变了、`build#` 与 `epoch` 没变 → 回到 §19.5（重建没发生，这是本轮要排除的）；
+4. 目视：侧栏 240；内容区右/下贴边（GTD 居中收窄属正常）；缩回后页面高度回到原值。
+
+### 19.7 若 `size` 仍不变：拿 buffer 尺寸和探针对照
 
 ```bash
 HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
@@ -932,15 +1000,43 @@ $HDC shell hidumper -s RenderService -a 'surface' | grep -E "default-size|name =
   - **两者一致**、但 `w/h` 停在启动尺寸 → buffer 确实没变，问题在 ArkTS 布局（回到 19.3）；
   - **buffer 变大了、探针 `w/h` 没变** → SDL 采纳逻辑没跟上（`OPENHARMONY_SyncSurfaceSize()` 认为
     已同步）：这时才需要在 vendored SDL 侧打最小补丁，并在 `third_party/README.md` 登记。
+- 旁证不用另开探针：SDL 补丁自己会 `SDL_Log` 一行（走 hilog）
 
-### 19.6 仍需用户执行的一次复测
+  ```text
+  PixCap surface sync: adopted surface size 2880x1620 px (window was 1930x1021)
+  ```
 
-`uinput` 拖不动窗口边缘（§7），全屏只能手工：
+  有这行 = ② 采纳成功；没有这行 = buffer 几何没被认出来。
 
-1. 解锁设备，应用在前台（任意路由，建议 SOP）；
-2. 把窗口最大化/全屏，盯 `diag.log`：`size` 行的 `w/h` 应变大且 `changes` 变 1；
-3. 目视：侧栏仍 240、内容区右边缘贴住窗口、日历网格/SOP 画布/甘特主体随窗口变高；
-4. 退出全屏，`w/h` 回到原值（证明两个方向都重新排版）。
+### 19.8 签名：每轮设备构建前要重新指一次材料
+
+仓库里提交的 `harmony/build-profile.json5` 指向**参考项目**的调试材料（`com.ethancheung.pixcapt`），
+hvigor 会以 `00303074` 拒绝为本 bundle 签名，于是 `assemble_hap.sh` 回落 unsigned，而设备拒收
+unsigned（`code:9568320 error: no signature file`）。本机的 Textura 材料在
+`cangjie/harmony/.certs/textura-debug/`（gitignore，只在本地），每轮设备构建先跑一次：
+
+```bash
+cd cangjie
+C=$PWD/harmony/.certs/textura-debug
+PW="$(cat harmony/.certs/textura-debug/password.txt)"
+./scripts/harmony/set_signing_material.sh \
+  --store-file "$C/textura-debug.p12" --key-alias textura-debug \
+  --cert "$C/TexturaDebug.cer" --profile "$C/TexturaProfileDebug.p7b" \
+  --store-password "$PW" --key-password "$PW"
+./scripts/harmony/assemble_hap.sh          # 必须带 sync：脚本读的是快照里的 build-profile.json5
+```
+
+`--store-file` 等必须是**绝对路径**（相对路径 hvigor 报 `00303107 Invalid storeFile`）。
+
+### 19.9 主机回归数字
+
+- `cjpm test`（整树）：除一条**既有**偶发崩溃外全绿；崩溃与本节无关，先记在这里：打包成
+  1 s 级别的 `textura.shell` 套件里，`commandPaletteOpensOnCtrlKAndClosesOnEscape` 偶发
+  `SIGSEGV`（GC 栈扫描栈帧时崩在 `textura.views.sop.logic.dgBarycenter`
+  `dagre_layout.cj:1005`）。`git stash` 掉本轮改动后 **2/6** 复现，本轮改动后 **4/10**，
+  属同一条既有问题（SOP 布局 + GC），不是 resize 改动引入的。
+- `./scripts/parity.sh --theme both` + `./scripts/diff.sh --theme both`：**14/14 PASS**
+  （窗口尺寸变化不影响 1440×900 基线）。
 
 ---
 
@@ -1080,7 +1176,8 @@ $HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg   # 桌面/任务�
 
 **本轮没做到的两件事，原因都是设备停在锁屏**（`power-shell wakeup` 只唤醒屏幕，界面仍是时钟）：
 
-1. **最大化一次、看 `size` 行的 `changes` / `w/h` 是否变化**——`uinput` 拖不动窗口边缘，只能手工；
+1. **最大化一次、看 `size` 行的 `changes` / `w/h` 是否变化**——`uinput` 拖不动窗口边缘，只能手工
+   （修法与自动化的替代手段见 §24.2 / §24.5）；
 2. **桌面/任务栏图标的肉眼确认**——锁屏期间 `snapshot_display` 只有锁屏时钟，
    `hidumper -s RenderService -a 'surface'` 也看不到应用的 surface（前台才有）。
 
@@ -1095,3 +1192,187 @@ $HDC shell snapshot_display -i 0 -f /data/local/tmp/icon.jpeg
 #    （诊断包才有 diag.log：把 probe.cj 的 PROBE_COMPILED_ON 改回 true 重出包）
 $HDC shell "cat /data/app/el2/100/base/com.ethancheung.textura/files/textura/diag.log | grep size | tail -5"
 ```
+
+---
+
+## 24. ArkUI 主动推送：窗口尺寸与屏幕密度（本轮）
+
+> 任务书里把这一节叫「§20」，但 §20 已被「原位编辑器」占用（§20.1–§20.3），所以追加为 **§24**；
+> 引用点（§19.6、§23）已就地指向本节。
+
+### 24.1 断点定位：第五跳（页面 → SDL）从来没有存在过
+
+§19 的四跳（XComponent 尺寸 → SDL surface → CUI 视口 → 树重建）在启动时是通的：首帧
+`build#2 size=1930x1020 epoch=1`。但**最大化窗口**这条路里没有任何一跳是「ArkUI 把新尺寸告诉 SDL」——
+ArkUI 只改自己的布局，SDL 的 openharmony 视频后端在**建窗时**采纳一次 surface 尺寸后就不再采纳后来的变化
+（`window->w/h` 只能由 `SDL_SetWindowSize` 或驱动回调写）。于是探针永远是启动尺寸：
+
+```text
+t=62   ctx first-frame vp=1930.000000x1020.000000 scale=1.000000 font=1.000000 driver=opengles2 …
+t=111  build#2 size=1930x1020 epoch=1 viewport=1930x1020
+t=12293 size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1930x1020 epoch=1 builds=2
+```
+
+同一时刻窗口管理器里的窗口是 `textura0 [ 0 0 2880 1620 ]`（`hidumper -s WindowManagerService -a '-a'`），
+即**窗口 2880×1620、SDL 认为 1930×1020**，屏幕上就是「内容贴左上、右/下空白」。用户看到的大片空白不是布局
+`max-width` 造成的，是 surface 比窗口小。
+
+同一条日志还暴露出第二个断点：`scale=1.000000`。这台机器 `display.getDefaultDisplaySync().densityPixels = 1.75`，
+而 openharmony 后端报 pixel density 1.0，于是 CUI 把 **像素当逻辑单位**排版，1.75× 屏上所有控件与字号都偏小。
+
+### 24.2 修法：页面测量，宿主在自己的线程上应用
+
+链路（五个位置，每个只做一件事）：
+
+```text
+XComponent.onAreaChange(area)                       ets/pages/Index.ets
+   ├─ vp2px(area) ──32ms 去抖──► setSurfaceSize(pxW, pxH)      ─┐
+   └─ display.getDefaultDisplaySync().densityPixels ───────────┤  libtextura_keys.so（NAPI，textura_keys.c）
+                                                               │  只写两个标量，不调用 SDL
+                                                               ▼
+                          textura_push_surface_size / textura_push_display_density   harmony/host/src/display_push.cj
+                                                               │  （@C 导出，NAPI 侧 dlsym，与 §21 同套路）
+                                                               ▼
+                          applyDisplayPush(app)  ← 每帧 SDL_AppIterate 开头（帧线程！）
+                                                               ▼
+                          DesktopApp.applyHostWindow(pxW, pxH, density)   CUI-P09
+                                                               ▼
+              setDisplayScaleOverride(density)  →  scale = userScale×density, pixelDensity = 1
+              setSizeInPixels(pxW, pxH)          →  SDL_SetWindowSize + refreshSize   SDL-P01
+                                                               ▼
+                         window.width/height = 像素 / 密度  →  CUI 视口 → epoch → 树重建（§19.5）
+```
+
+为什么不让 NAPI 直接调 `SDL_SetWindowSize`：NAPI 调用落在 ArkUI 线程，而 SDL 的视频子系统只允许帧线程
+访问（跨线程改窗口会跟事件泵抢状态）。所以 C 桥只写标量，真正碰 SDL 的是 `SDL_AppIterate`。
+
+为什么密度先于尺寸：逻辑尺寸 = 像素 ÷ 密度，密度装晚了会用旧比例算一遍、再重排一遍。
+
+密度公式（`queryWindowDisplayMetrics` 的覆盖分支）：
+
+| 量 | 覆盖前（后端值） | 覆盖后 |
+|---|---|---|
+| `scale`（逻辑 = 像素/scale） | 1.0 | `userScale × density` = 1.75 |
+| `pixelDensity` | 1.0 | 1.0（保持 1，使 `UiContext.displayScale = scale × pixelDensity = density`） |
+| `renderScale`（绘制放大） | 1.0 | 1.75 |
+| 逻辑窗口尺寸 | 像素值本身 | 像素 / 1.75 |
+
+`density <= 0` 不进覆盖分支 ⇒ 桌面构建与 1440×900 基线逐像素不变。
+
+### 24.3 去抖与防回环
+
+`onAreaChange` 每一轮布局都会触发（窗口拖拽时每帧一次），而每次采纳都会让 SDL 改窗口、发 resize、再重排，
+再触发 `onAreaChange`。三层闸门：
+
+1. **页面**：面积（vp）与上次相同直接返回；变化则记 pending 并**重置 32ms 定时器**，一串布局只推一次
+   （`SURFACE_PUSH_DEBOUNCE_MS`）；
+2. **页面**：像素尺寸与上次**被宿主接受**的值相同不推（被拒的推送不记账，下次布局变化会重试）；
+3. **宿主**：`DisplayPushLog.accept()` 比较像素尺寸与「密度千分位」，相同返回 `None`；
+4. **SDL 侧**：`setSizeInPixels` 发现 `SDL_GetWindowSize` 已经是目标值就跳过 `SDL_SetWindowSize`，
+   但**总是**回读一次尺寸（后端可能自己采纳过，缓存必须跟上）。
+
+### 24.4 密度生效证据（真机，`192.168.0.3:36773`，窗口 1930×1085 px）
+
+```text
+t=79   ctx first-frame vp=1930.000000x1020.000000 scale=1.000000 font=1.000000 driver=opengles2 super=1
+t=117  push size=1930x1020 density=1750per1000 logical=1103x583
+t=230  build#3 size=1102x582 epoch=2 viewport=1102x582
+t=1115 size w=1102.000000 h=582.000000 scale=1.750000 changes=1 viewport=1102x582 built=1102x582 epoch=2 builds=3
+```
+
+- `scale` 1.0 → **1.75**：密度真的进了 CUI；
+- `w/h` 1930×1020 → **1102×582**（= 1930÷1.75、1020÷1.75）：布局改用密度无关单位；
+- `changes` 0 → **1**、`epoch` 1 → **2**、`builds` 2 → **3**、`size == viewport`：**树按新尺寸重建了**，
+  不是只重排（§19.5 的判据）；
+- 同时解释了一个旧 bug：IME 候选窗定位（§21）把逻辑 px × `densityPixels`，在 `scale=1` 时这是错的
+  （同一坐标被放大了 1.75×），现在逻辑单位与密度自洽，锚点换算正确。
+
+### 24.5 尺寸推送的真机验证：一半已证，一半待解锁
+
+本轮用临时钩子（**已从提交源码移除**）在 `aboutToAppear` 里调用 `window.resize(1600, 900)` / `window.resize(1100, 582)`，
+让真机自己制造一次真实的 surface 变化，读数如下：
+
+```text
+t=4099  push size=1600x835 density=1750per1000 logical=914x477
+t=4121  size w=1102.000000 h=582.000000 scale=1.750000 changes=1 viewport=1102x582 built=1102x582 epoch=2 builds=3
+t=12131 push size=1100x517 density=1750per1000 logical=629x295
+```
+
+**已证**：`window.resize` 改窗口 → XComponent 面积真的跟着变（1600×835、1100×517 px，扣掉 65px 标题栏）
+→ `onAreaChange` → 32ms 去抖 → NAPI → 宿主 → `applyHostWindow` 全部走通（`push` 行就是宿主收到并采纳的
+记录）。顺带确认 `window.resize()` 在这台机器上按**像素**而非 vp 生效。
+
+**未证**：`size w/h` 没有跟着变，说明 `SDL_SetWindowSize` 之后 `SDL_GetWindowSize` 仍报旧值。两种可能，
+新加的 `adopted=` 字段就是用来分开它们的（诊断包已装）：
+
+| `push` 行 | 结论 |
+|---|---|
+| `adopted=915x478`（≈ 新像素÷1.75） | SDL **采纳了**，只是旧代码的「相同尺寸短路」没回读缓存 —— 已经在 `setSizeInPixels` 里改成总是回读，重跑即修好 |
+| `adopted=1102x582`（旧值） | 后端拒绝了 `SDL_SetWindowSize`；此时改用「只写 `window->w/h` + 发 `SDL_EVENT_WINDOW_RESIZED`」的兜底路径（`SDL_SyncWindow`/驱动回调，需要新增一个 cangjie-sdl 内部入口） |
+
+设备当前**停在锁屏**（`SCBScreenLock13` 可见），`aa start` 被系统拒绝：
+`10106102 The device screen is locked during the application launch`（开发模式下不允许自动解锁），
+所以这一段只能等用户解锁后跑一次。解锁后**不需要手工最大化**：装着的诊断包会在启动 4s / 12s 各做一次
+自动 resize，日志直接给出结论；想再看最大化，就手工最大化一次，读同一批行。
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+# 1) 解锁后启动（诊断包：entry-probe-signed.hap，probe 编译开启）
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+sleep 20
+$HDC shell "grep -E 'push|build#|size ' /data/app/el2/100/base/com.ethancheung.textura/files/textura/diag.log | tail -12"
+# 2) 期望：push size 随窗口变、adopted 等于 push÷density、size/epoch/build# 跟着变
+# 3) 看完换回出货包（probe 关闭、无自动 resize）
+$HDC install -r cangjie/harmony/out/entry-default-signed.hap
+```
+
+### 24.6 输入坐标映射
+
+不变式：**CUI 的坐标始终是逻辑单位，进入 SDL 时才乘 `scale`。** 密度改动只改 `scale`，所以：
+
+- 鼠标：`window.cj` 的 `scaleEventRecord` 用 `scale` 把 SDL 的窗口像素坐标除成逻辑坐标，和布局同一套单位；
+  探针的 `ev# … mouse=… raw=…` 两列在密度生效后仍应成 1.75 倍关系（`raw/mouse = 1.75`），成 1.0 就说明
+  有一条路径没走统一的 `scale`；
+- 窗口尺寸：`SDL_GetWindowSize`（像素）÷ `scale` = 逻辑宽高，和 `ctx.viewportWidth` 同源，不存在第二套换算；
+- 真机复核办法（解锁后）：注入点击侧栏第 2/3 项能切路由，点搜索框能聚焦——若坐标错位，先看 `raw` 与
+  `mouse` 的比例再查 `scale`。
+
+### 24.7 主机门禁与两尺寸布局复核
+
+`src/shell/display_push_test.cj`（新增，7 例）：
+
+| 用例 | 断言 |
+|---|---|
+| `densityOneKeepsTheViewportInPixels` | 密度 1.0 时 1440/900/2880 逐像素不变（基线的护栏） |
+| `densityShrinksTheLogicalViewportProportionally` | 2880×1620 @1.125 → 2560×1440；@1.5/@2.0 同样按比例；1930@1.5 → 1287 |
+| `degenerateDensityAndSizeFallBackToPixels` | 密度 0/负/NaN 不做除法；像素 0 → 逻辑 1（不塌） |
+| `pushIsAppliedOnceAndOnlyWhenItChanges` | 首次采纳；重复不采纳；只改尺寸、只改密度各采纳一次；缩回起点也采纳 |
+| `repeatedDensityIsComparedInThousandths` | 1.125 与 1.1250001 视为相同；1.126 算变化 |
+| `unusablePushesAreIgnoredInsteadOfCollapsingTheWindow` | 0×0 / 负尺寸 / 0 密度 / NaN 都不采纳，且不污染后续比较 |
+| `everyRouteFillsTheDensityScaledExternalScreen` | 七路由在 2560×1440（2880×1620 @1.125）下无越界，且有节点越过启动窗口的 1930 边界 |
+
+`cjpm test`：**632 例，0 失败**（含既有用例；§19.9 记的 `commandPaletteOpensOnCtrlK` 偶发崩溃本轮未复现）。
+`./scripts/parity.sh --theme both` + `./scripts/diff.sh --theme both`：**14/14 PASS**（1440×900 基线不变，
+结构与视觉门限全过）。
+
+七路由布局复核（Xvfb，`tools/parity/out-2880` / `out-2560` / `out-1930`，不入库）：
+
+| 尺寸 | 结论 |
+|---|---|
+| 2880×1620（纯逻辑 px） | 日历/甘特/SOP 画布铺到右/下边缘（24 内边距）；GTD 按 Web `max-width:1280` 居中；无溢出 |
+| 2560×1440（= 2880×1620 @1.125 外接屏） | 同上，右侧无越界 |
+| 1930×1020（启动窗口） | 同 §18.4，无溢出 |
+
+> 说明：2880 **逻辑** px 不是设备上的实际逻辑宽度。设备密度 1.75，最大化后逻辑宽度 = 2880÷1.75 ≈ **1645**，
+> 只有 GTD 的 1280 上限仍然生效（左右各留 ~180），其余路由铺满。「大片空白」在密度生效后不再出现。
+
+### 24.8 本轮包与待办
+
+| 包 | 用途 | 大小 / sha256 前 8 位 |
+|---|---|---|
+| `harmony/out/entry-probe-signed.hap` | **诊断包（已装）**：probe 编译开启 + 启动 4s/12s 自动 resize | 30031865 B / `431d62d2` |
+| `harmony/out/entry-default-signed.hap` | **出货包**：probe 关闭、无自动 resize、无临时钩子 | 30025396 B / `19ac3d41` |
+
+待用户：解锁（开发模式不允许自动解锁）→ `aa start` → 读 §24.5 的 `push` / `size` 行 → 若 `adopted=` 仍是旧值，
+按 24.5 的表格切到兜底路径；随手最大化一次确认 `size` 行与截图（本轮设备全程锁屏，
+`snapshot_display` 只有锁屏时钟，**没有**本应用的截图，不做任何「已目视确认」的声明）。
