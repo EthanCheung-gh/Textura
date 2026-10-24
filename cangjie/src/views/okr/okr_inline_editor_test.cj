@@ -101,6 +101,14 @@ private class OkrEditorHarness {
         }
     }
 
+    /** 本帧的状态壳（`okrTypingNeverWritesTheStore` 等用例要读草稿）。 */
+    func stateOrFail(): OkrUiState {
+        match (ui) {
+            case Some(value) => value
+            case None => OkrUiState()
+        }
+    }
+
     /** 像用户一样点一下：按下 + 抬起都落在盒子里（画布的命中区按这个顺序触发）。 */
     func press(testHost: WidgetTestHost, spot: OkrHotspot): Unit {
         let ctx = testHost.context
@@ -270,8 +278,7 @@ func okrInlineEditorCommitsTheTypedValue(): Unit {
  * 但 Esc 必须仍然能关掉它——「无法消除」是本轮用户现场里最硬的一条。
  */
 @Test
-func okrInvalidValueKeepsTheEditorUntilEscape(): Unit {
-    let harness = OkrEditorHarness()
+func okrInvalidValueKeepsTheEditorUntilEscape(): Unit {    let harness = OkrEditorHarness()
     let testHost = WidgetTestHost()
     harness.build(testHost)
     let spot = match (harness.hotspot("okr-field-")) {
@@ -302,3 +309,192 @@ func okrInvalidValueKeepsTheEditorUntilEscape(): Unit {
     @Expect(okrEditorBoundsOf(testHost, OKR_PROMPT_KEY).w < 0.0, true)
 }
 
+/*
+ * 「编辑期间不写 store」——本轮用户现场（点 KR「当前」→ 输入 42 → 打不进字，随后点什么都像冻住）
+ * 的直接门禁。
+ *
+ * 为什么要数 store 的修订号：`ShellHost.armStoreBridge` 把 `store.state` / `store.ui` 的每一次写入
+ * 都桥接成壳根的 CUI `State`，于是**一次 store 写入 = 一次整壳重建**。如果内联编辑器每按一个键
+ * 就写一次 store，编辑器（连同它的焦点与输入法）每帧都会被重建一次，用户看到的就是「第一个字符
+ * 之后再也打不进去」。这条用例把「打字不写库」钉成数字：连续输入 10 个字符，两个修订号必须
+ * 一字不差。
+ */
+@Test
+func okrTypingNeverWritesTheStore(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    harness.press(testHost, spot)
+    harness.build(testHost)
+    let stateRev = harness.store.state.revision()
+    let uiRev = harness.store.ui.revision()
+    let ui = harness.stateOrFail()
+    var typed = ""
+    // 逐帧输入 10 个字符：每一帧都是「按一次键」。
+    for (offset in 0..10) {
+        let ch = "${offset}"
+        typed += ch
+        harness.build(testHost, events: [UiEvent.TextInput(ch)])
+        // 焦点必须一直在这个控件上：没有焦点，后面的字符会直接落进页面。
+        @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+        @Expect(ui.promptOpen.value, true)
+    }
+    // 指标是槽位：打开即全选，所以草稿就是这 10 个字符本身（不是旧值 + 输入）。
+    @Expect(ui.promptText.value, typed)
+    // 编辑期间 store 零写入：整壳不会因为打字被重建。
+    @Expect(harness.store.state.revision(), stateRev)
+    @Expect(harness.store.ui.revision(), uiRev)
+}
+
+/**
+ * 指标是「槽位」而不是文档：打开即全选，输入 `42` 就是 42。
+ *
+ * 用户现场是「点『当前』→ 输入 42 → 界面显示 42」。如果插入符停在旧值末尾（CUI 默认），
+ * 同样的操作会得到 `4742`——数字确实进去了，但不是用户要的那个，读起来仍然是「没生效」。
+ */
+@Test
+func okrSlotFieldIsReplacedByTheTypedValue(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    harness.press(testHost, spot)
+    harness.build(testHost)
+    let ui = harness.stateOrFail()
+    let krId = harness.promptTarget()
+    harness.build(testHost, events: [UiEvent.TextInput("4")])
+    harness.build(testHost, events: [UiEvent.TextInput("2")])
+    @Expect(ui.promptText.value, "42")
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(ui.promptOpen.value, false)
+    @Expect(okrCurrentMetric(harness.store, krId), Float64(42.0))
+}
+
+/**
+ * 重建窗口里的「一帧无焦点」不是失焦：编辑器不能被这一帧提交掉，下一个字符仍然要落进来。
+ *
+ * CUI 只在 build 阶段重新登记焦点 id，所以「本帧没有拥有者」完全可能只是编辑器正在被重建。
+ * 修之前这里会 `onCommit`：值合法就悄悄结束编辑，值非法（例如指标留空）就留下一个**没有焦点**
+ * 的编辑器 —— 之后的字符无处可去，而背板把每次点击都吃掉，看起来就是整个界面冻住。
+ */
+@Test
+func okrEditorSurvivesAFocusGap(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    harness.press(testHost, spot)
+    harness.build(testHost)
+    let ui = harness.stateOrFail()
+    let stateRev = harness.store.state.revision()
+    harness.build(testHost, events: [UiEvent.TextInput("7")])
+    // 模拟真机上的那一帧：树被重新描述，焦点 id 还没被重新采纳。
+    testHost.context.clearFocus()
+    harness.build(testHost)
+    // 这一帧结束前，逐帧钩子已经把焦点还回编辑器；编辑器没被提交、库没被写。
+    @Expect(ui.promptOpen.value, true)
+    @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+    @Expect(harness.store.state.revision(), stateRev)
+    // 于是**下一个**字符仍然落进同一个草稿（丢字符正是用户说的「打不进去」）。
+    harness.build(testHost, events: [UiEvent.TextInput("8")])
+    @Expect(ui.promptText.value, "78")
+    @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+    @Expect(harness.store.state.revision(), stateRev)
+}
+
+/** 提交后编辑器不再持有焦点（归还目标见下一条用例）。 */
+@Test
+func okrCommitHandsFocusBackToTheField(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("unit")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a unit field hotspot on the card canvas", "none")
+            return
+    }
+    harness.press(testHost, spot)
+    harness.build(testHost)
+    @Expect(testHost.context.focusId, OKR_PROMPT_KEY)
+    harness.build(testHost, events: [UiEvent.TextInput("x")])
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(harness.stateOrFail().promptOpen.value, false)
+    // 焦点归还要走一整帧（`FocusOnceView` 在 layout 里消费这次请求）。
+    harness.build(testHost)
+    // 编辑器已经把焦点交出去：它绝不会继续占着键盘。
+    @Expect(testHost.context.focusId == OKR_PROMPT_KEY, false)
+}
+
+/**
+ * 归还目标就是**打开编辑器的那个字段**：`okrPromptFocusTarget` 从编辑目标直接算出画布上的
+ * 焦点 id，而不是依赖「打开前谁持有焦点」——画布热点是在 layout 里登记的，那一帧的拥有者未必
+ * 还被焦点图认，靠 `release()` 会退化成「谁也不是」，真机上就只能靠 shell 兜底到侧栏行。
+ */
+@Test
+func okrFocusRestoreTargetsTheOpenedField(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let metric = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot", "none")
+            return
+    }
+    harness.press(testHost, metric)
+    harness.build(testHost)
+    @Expect(okrPromptFocusTarget(harness.stateOrFail()), metric.id)
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Escape, false)])
+    let title = match (harness.hotspot("okr-title-")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a title hotspot", "none")
+            return
+    }
+    harness.press(testHost, title)
+    harness.build(testHost)
+    @Expect(okrPromptFocusTarget(harness.stateOrFail()), title.id)
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Escape, false)])
+    let owner = match (harness.hotspot("okr-owner-")) {
+        case Some(value) => value
+        case None =>
+            @Expect("an owner hotspot", "none")
+            return
+    }
+    harness.press(testHost, owner)
+    harness.build(testHost)
+    @Expect(okrPromptFocusTarget(harness.stateOrFail()), owner.id)
+}
+
+/** 指标「当前」的数值（store 里那条 KR 的 `metric.current`）。 */
+private func okrCurrentMetric(store: AppStore, krId: String): Float64 {
+    for (item in store.state.value().items) {
+        if (item.id == krId) {
+            match (item.okr) {
+                case Some(okr) => match (okr.metric) {
+                    case Some(metric) => return metric.current
+                    case None => return -1.0
+                }
+                case None => return -1.0
+            }
+        }
+    }
+    -1.0
+}

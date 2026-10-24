@@ -56,6 +56,22 @@ private let INLINE_AREA_MIN_ANCHOR: Float32 = 40.0
 private let INLINE_AREA_MAX_RATIO: Float32 = 0.40
 /** Below this width an editor is unusable; the field rect is widened instead of collapsed. */
 private let INLINE_MIN_WIDTH: Float32 = 72.0
+/**
+ * How many consecutive frames a **lost focus with no new owner** must persist before the edit is
+ * committed.
+ *
+ * Leaving the editor really is "the user moved on" (Web parity), but *one* frame without focus is
+ * not leaving: CUI re-describes the tree whenever a `State` read during build changes, and the
+ * focused id is only re-adopted for ids registered during *that* build. A frame in which the
+ * editor is being rebuilt (or its portal is placed for the first time) therefore reports
+ * `focusId == ""` even though the user never touched anything. Committing there ends the edit
+ * silently, and when the caller refuses the value it leaves the editor open but **unfocused** —
+ * every later character goes nowhere while the dismissal backdrop keeps eating the presses, which
+ * is exactly the "typing does nothing, then nothing responds at all" report
+ * (docs/DEVICE-NOTES.md §26). A blur that persists for this many frames is a real one; a focus
+ * that moved straight to another control commits immediately (that owner is not empty).
+ */
+private let INLINE_BLUR_FRAMES: Int64 = 2
 
 /**
  * One inline edit session: the anchor, the dismissal protocol and the state the widgets below
@@ -77,6 +93,18 @@ public class InlineEditFrame {
     private var fieldRect: Rect = Rect.zero()
     /** True once the editor itself owned focus — the precondition for "blur commits". */
     private var sawFocus: Bool = false
+    /** Consecutive frames the editor has been without focus *and* without another owner. */
+    private var blurFrames: Int64 = 0
+    /**
+     * The session should select its whole text once, on the frame the control is (re)built.
+     *
+     * A short numeric field is a *slot*, not a document: the box already shows `47`, the user
+     * clicks it and types `42`. With the caret parked at the end (CUI's default) the result is
+     * `4742` — visibly wrong, and the user reads it as "my input did not take". Selecting the
+     * value on open makes the first character replace it, which is what the field's own
+     * placeholder ("例如 42") promises.
+     */
+    private var selectAllPending: Bool = false
     /** True once the field scrolled out of the window: the edit is cancelled exactly once. */
     private var cancelledOffWindow: Bool = false
 
@@ -111,6 +139,7 @@ public class InlineEditFrame {
     func bind(
         tokens: ThemeTokens,
         multiline: Bool,
+        selectAllOnOpen: Bool,
         draft: State<String>,
         onCommit: (String) -> Unit,
         onCancel: () -> Unit
@@ -123,7 +152,21 @@ public class InlineEditFrame {
         if (anchor.takeFresh()) {
             sawFocus = false
             cancelledOffWindow = false
+            blurFrames = 0
+            selectAllPending = selectAllOnOpen
         }
+    }
+
+    /**
+     * True exactly once per edit session: the frame that builds the control should select its
+     * text (`selectAllOnOpen`). Consuming the flag rather than keeping it keeps the selection
+     * from being re-applied every frame — which would wipe the user's caret moves and their
+     * drag-selection right after they made them.
+     */
+    func takeSelectAll(): Bool {
+        let pending = selectAllPending
+        selectAllPending = false
+        pending
     }
 
     /** Overlay owner of the dismissal layer (registered below the content). */
@@ -210,16 +253,31 @@ public class InlineEditFrame {
      * covers a click on a non-editable spot, which CUI routes around the overlay; the latch is
      * cleared on open, because the editor has not received focus during its first frames yet (the
      * one-shot `FocusRequest` still retries).
+     *
+     * A frame with **no owner at all** is not a blur yet — it is the rebuild window in which the
+     * editor's own focus id has not been re-adopted. The caret is re-asserted and the commit waits
+     * for [INLINE_BLUR_FRAMES] frames, so a re-description cannot end an edit under the user's
+     * fingers; a focus that moved *to another control* still commits on the very same frame
+     * (`focusId` is not empty), which is the Web behaviour.
      */
     func observeFocus(ctx: UiContext): Unit {
         if (ctx.focusId == key) {
             sawFocus = true
+            blurFrames = 0
             return
         }
-        if (sawFocus) {
-            sawFocus = false
-            onCommit(draft.value)
+        if (!sawFocus) {
+            return
         }
+        if (ctx.focusId.isEmpty() && blurFrames + 1 < INLINE_BLUR_FRAMES) {
+            blurFrames += 1
+            ctx.focus(key)
+            ctx.requestFrame()
+            return
+        }
+        sawFocus = false
+        blurFrames = 0
+        onCommit(draft.value)
     }
 
     /** `.text-danger`, one small line under the field: the caller refused the value. */
@@ -285,6 +343,13 @@ public class InlineEditorHost <: Widget {
     public init(frame: InlineEditFrame, error: String) {
         this.frame = frame
         this.error = error
+        // Per-frame hook for the focus latch. Neither hook below runs every frame on its own:
+        // the retained graph skips the layout of an unchanged subtree, and events only arrive when
+        // the user does something — so a focus lost during a *rebuild* would not be noticed until
+        // the next keystroke, and that keystroke is exactly when it costs a character. Frame ticks
+        // always run, which turns "the editor lost focus for one frame" into "the caret is back
+        // before the next key arrives" (docs/DEVICE-NOTES.md §26).
+        subscribeFrame({ctx, _ => frame.observeFocus(ctx)})
         emit(this)
     }
 

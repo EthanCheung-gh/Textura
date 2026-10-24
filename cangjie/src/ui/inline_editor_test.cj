@@ -167,19 +167,65 @@ func inlineEditorKeepsFocusOnTab(): Unit {
     @Expect(probe.commits.count, 0)
 }
 
-/** 失焦提交：焦点被别处拿走（键盘/点击页面外的控件）时写回草稿。 */
+/**
+ * 失焦提交：焦点被**另一个控件**拿走时，同一帧写回草稿（Web 的「点别处 = 完成」）。
+ *
+ * 本用例 2026-10 改写：原先断言「`clearFocus()` 之后第一个事件就写回」。加了
+ * `INLINE_BLUR_FRAMES`（§26）之后那条断言测的是**旧语义**——一帧「谁都没有焦点」现在被判定为
+ * 重建窗口（CUI 只在本次 build 里重新认领焦点 id），编辑器会把插入符要回来而不是结束编辑；
+ * 真正的失焦是「焦点交给了别人」（`focusId` 非空），或者连按外部/按 Esc。新语义拆成两个用例：
+ * 本用例守「交给别人 → 立刻提交」，`inlineEditorKeepsTheEditWhenAFrameHasNoFocusOwner` 守
+ * 「一帧空焦点不吞掉编辑」。没有放宽任何判定，只是把断言对齐到现在的行为。
+ */
 @Test
 func inlineEditorCommitsWhenFocusLeaves(): Unit {
     let probe = InlineProbe()
     probe.arm()
+    // 第二个可以持有焦点的控件（同一帧里另一个原位编辑器）。CUI 每帧会丢弃「画不出对应控件」的
+    // 焦点 id（`synchronizeFocusedTarget` → `clearFocus`），所以交接对象必须真实存在于焦点图里，
+    // 否则 `focus("x")` 下一帧就变回「谁都没有焦点」，走的还是去抖那条路。
+    let otherDraft = State<String>("另一个字段")
+    let other = ArrayListProbe()
     let testHost = WidgetTestHost()
-    let _ = testHost.frame(INLINE_TEST_VIEWPORT) {=> probe.build()}
-    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.TextInput("离开时写回")]) {=> probe.build()}
-    testHost.context.clearFocus()
-    // 焦点被别处拿走之后，第一个到达的事件就把草稿写回（布局不一定每帧都跑，见 `handleOverlay`）。
-    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.MouseMove(1.0, 1.0)]) {=> probe.build()}
+    let body: () -> Unit = {
+        =>
+            probe.build()
+            Ui.inlineEditor(texturaLight(), otherDraft, testAnchor(Rect(700.0, 620.0, 200.0, 34.0)), true,
+                key: "another-control", placeholder: "占位",
+                onCommit: {value => other.record(value)}, onCancel: {=> other.bump()})
+    }
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT) {=> body()}
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.TextInput("离开时写回")]) {=> body()}
+    // 用户按 Tab / 点了页面外的另一个控件：焦点已经有了新的主人。
+    testHost.context.focus("another-control")
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.MouseMove(1.0, 1.0)]) {=> body()}
     @Expect(probe.commits.count, 1)
     @Expect(probe.commits.last(), "初始值离开时写回")
+}
+
+/**
+ * 一帧「无人持有焦点」**不是**失焦（§26）：编辑器把插入符要回来，草稿一个字符都不丢。
+ *
+ * 这正是真机上「打字没反应、接着什么都不响应」的起点：CUI 重新描述树的那一帧 `focusId` 是空的，
+ * 旧实现当场提交；校验拒绝时编辑器留在原地但已经没焦点，后面的字符全部落到页面上。
+ */
+@Test
+func inlineEditorKeepsTheEditWhenAFrameHasNoFocusOwner(): Unit {
+    let probe = InlineProbe()
+    probe.arm()
+    let testHost = WidgetTestHost()
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT) {=> probe.build()}
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.TextInput("打了一半")]) {=> probe.build()}
+    testHost.context.clearFocus()
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.MouseMove(1.0, 1.0)]) {=> probe.build()}
+    // 没有提交，也没有取消；插入符已经被要回编辑器。
+    @Expect(probe.commits.count, 0)
+    @Expect(probe.cancels.count, 0)
+    @Expect(testHost.context.focusId, INLINE_KEY)
+    // 之后的字符照旧落在草稿上，而不是漏给页面。
+    let _ = testHost.frame(INLINE_TEST_VIEWPORT, events: [UiEvent.TextInput("！")]) {=> probe.build()}
+    @Expect(probe.draft.value, "初始值打了一半！")
+    @Expect(probe.commits.count, 0)
 }
 
 @Test

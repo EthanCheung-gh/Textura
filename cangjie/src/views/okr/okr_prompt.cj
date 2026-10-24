@@ -80,9 +80,37 @@ private func armPrompt(ui: OkrUiState, kind: String, target: String, field: Stri
 }
 
 func closeOkrPrompt(ui: OkrUiState): Unit {
+    // 焦点归还：把打开编辑器的那个画布字段重新交还回去。`FocusRequest.release()` 依赖「打开前
+    // 谁持有焦点」，而画布热点是在 layout 里登记的，那一帧的拥有者未必还被焦点图认；字段 id 由
+    // 编辑目标直接算得出来（`okr-field-<kr>-<field>` / `okr-owner-<id>` / `okr-addkr-<id>` /
+    // `okr-title-<id>`），所以直接请求它，比自己猜前一个拥有者可靠。
+    let opener = okrPromptFocusTarget(ui)
     ui.promptOpen.value = false
     ui.promptError.value = ""
-    ui.promptFocus.release()
+    if (opener.isEmpty()) {
+        ui.promptFocus.release()
+    } else {
+        ui.promptFocus.request(opener)
+    }
+}
+
+/** 正在编辑的字段在画布上的焦点 id（关闭编辑器后把焦点还给它）。 */
+func okrPromptFocusTarget(ui: OkrUiState): String {
+    let target = ui.promptTarget.value
+    if (target.isEmpty()) {
+        return ""
+    }
+    let kind = ui.promptKind.value
+    if (kind == "metric") {
+        return "okr-field-${target}-${ui.promptField.value}"
+    }
+    if (kind == "owner") {
+        return "okr-owner-${target}"
+    }
+    if (kind == "addkr") {
+        return "okr-addkr-${target}"
+    }
+    "okr-title-${target}"
 }
 
 /** Prompt 文案：标题 / 字段名 / 占位提示 / 说明。 */
@@ -141,6 +169,14 @@ private func okrMetricLabel(field: MetricField): String {
  *
  * 字段矩形由画布在 layout 时记录（标题 / 指标输入框 / 负责人 / 新增 KR），点哪个就在哪个上编辑：
  * Enter 提交、Esc 取消、点外部提交，校验失败时编辑器不关、错误行显示在字段下方。
+ *
+ * 两个与「打字打不进去」直接相关的细节：
+ *   - **编辑期间不写 store**：草稿是 `ui.promptText`（CUI `State`，`rememberState` 跨帧），
+ *     只有 `commitOkrPrompt` 在 Enter / 失焦 / 点外部时才碰 `ctx.store`。store 每写一次
+ *     `armStoreBridge` 就把整壳重建一次，若每按一键都写，编辑器会被反复重建、焦点与输入法
+ *     一起丢——这正是用户现场（docs/DEVICE-NOTES.md §26）。
+ *   - **指标是「槽位」而不是文档**：打开时全选当前值，输入 `42` 才是替换成 42，
+ *     而不是在 `47` 后面接成 `4742`。
  */
 func okrPromptDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
     if (!ui.promptOpen.value) {
@@ -159,8 +195,10 @@ func okrPromptDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
         }
     }
     let copy = promptCopy(ui, objectiveTitle)
+    // 指标（起点 / 当前 / 目标 / 单位）都是短值槽位：打开即全选，第一次输入就是替换。
+    let slot = ui.promptKind.value == "metric"
     Ui.inlineEditor(page.theme, ui.promptText, ui.promptAnchor, true, key: OKR_PROMPT_INPUT,
-        placeholder: copy.placeholder, error: ui.promptError.value, focus: ui.promptFocus,
+        placeholder: copy.placeholder, error: ui.promptError.value, selectAllOnOpen: slot, focus: ui.promptFocus,
         onCommit: {value => commitOkrPrompt(ctx, ui, page, value)}, onCancel: {=> closeOkrPrompt(ui)})
 }
 

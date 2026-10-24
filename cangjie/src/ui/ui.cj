@@ -477,6 +477,11 @@ public struct Ui {
      * triggers. Drawing from a zero rect is what put the editor in the window's top-left corner on
      * device (docs/DEVICE-NOTES.md §25.1).
      *
+     * `selectAllOnOpen` selects the whole value once per session, on the frame the control is
+     * built. Use it for slot-like fields (a metric number, a date) whose existing value the user
+     * means to **replace**: with the caret parked at the end, typing `42` into a box showing `47`
+     * produces `4742`, which reads as "my input did not take".
+     *
      * This is the replacement for `prompt` on text fields; `prompt` stays for confirmations and
      * dangerous actions, where a modal really is the right shape.
      */
@@ -489,6 +494,7 @@ public struct Ui {
         multiline!: Bool = false,
         placeholder!: String = "",
         error!: String = "",
+        selectAllOnOpen!: Bool = false,
         focus!: ?FocusRequest = None,
         onCommit!: (String) -> Unit,
         onCancel!: () -> Unit
@@ -505,7 +511,7 @@ public struct Ui {
         let frame = remember<InlineEditFrame>("inline-editor:${key}") {
             InlineEditFrame(tokens, key, key, anchor, multiline, draft, onCommit, onCancel)
         }
-        frame.bind(tokens, multiline, draft, onCommit, onCancel)
+        frame.bind(tokens, multiline, selectAllOnOpen, draft, onCommit, onCancel)
         let submit: () -> Unit = {=> onCommit(draft.value)}
         // Dismissal layer first: it is registered below the content, so the field sees its own
         // keys and presses and only what it declines (Esc, an outside press) reaches this layer.
@@ -555,6 +561,11 @@ public struct Ui {
                 editor.placeholder(placeholder)
                 // Enter commits; the field consumes the key after IME composition commits.
                 editor.onSubmit {_ => submit()}
+                // One-shot, per session: a slot-like field opens with its value selected so the
+                // first character replaces it (see `selectAllOnOpen` above).
+                if (frame.takeSelectAll()) {
+                    editor.selectAll()
+                }
                 editor.textStyle(TextStyle(fontSize: fp(13.5))).height(height)
             }
         }
