@@ -54,7 +54,16 @@ foreign {
 private let PROBE_FLAG_IN_SANDBOX: String = "debug-input"
 private let PROBE_FLAG_DEVICE: String = "/data/local/tmp/textura-debug-input"
 private let PROBE_LOG_NAME: String = "diag.log"
-private let PROBE_EVENT_LIMIT: Int64 = 200
+/*
+ * How many input events one session records verbatim.
+ *
+ * Raised 200 → 800 (2026-10) after a session in which the whole event budget was spent in the
+ * first 65 s of a start-up run: the bug being chased ("the pointer goes dead after an edit is
+ * committed") happens minutes in, and the log had already gone blind, so the report could not be
+ * turned into evidence (§26). 800 covers a full seven-route acceptance walk with room to spare;
+ * the per-event cost is one line appended to the log and one SDL_Log line.
+ */
+private let PROBE_EVENT_LIMIT: Int64 = 800
 private let PROBE_FRAME_WINDOW: Int64 = 60
 private let PROBE_FLAG_RECHECK_FRAMES: Int64 = 120
 

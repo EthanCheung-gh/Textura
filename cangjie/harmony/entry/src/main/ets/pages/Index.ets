@@ -114,6 +114,8 @@ struct Index {
   /* IME caret bridge (see syncImeAnchor): timer, cached controller and window geometry. */
   private imeTimer: number = -1;
   private imeController: inputMethod.InputMethodController | null = null;
+  /* Last value of TextInputState.attached seen by the IME tick, for the detach edge (§26.4). */
+  private imeWasAttached: boolean = false;
   private densityPixels: number = 1;
   private windowLeft: number = 0;
   private windowTop: number = 0;
@@ -321,11 +323,70 @@ struct Index {
     return this.imeController;
   }
 
+  /*
+   * IME detach edge (docs/DEVICE-NOTES.md §26.4).
+   *
+   * Field report: after an edit is committed (the IME hides), **no pointer event is delivered any
+   * more** — the theme button, the sidebar rows and the next text field all stay dead — while the
+   * keyboard keeps working (Tab still moves focus, which this very page forwards into SDL when the
+   * IME is detached). Two facts pin the shape of the loss: CUI's tree is fine (the surface still
+   * paints, frames still tick) and the key path is fine, so the input that is missing is the one
+   * ArkUI routes by *position*.
+   *
+   * The surface is the only node in this page, so the two things a pointer press needs are exactly
+   * the two things the IME can take away: the XComponent node must still be in ArkUI's focus/hit
+   * chain, and its laid-out area must still be the real one (`OPENHARMONY_SyncSurfaceSize`,
+   * docs §19). Both are re-asserted here, and nothing else is touched:
+   *
+   *   - one `requestFocus(SURFACE_ID)`, retried once ~120ms later (a transient 150003 is normal while
+   *     the panel is still going away). No retry chain: if it cannot land, the failure is logged and
+   *     the next real interaction re-runs the normal blur/appear convergence;
+   *   - one forced surface-size push, so a keyboard-avoid resize that ArkUI applied while the IME was
+   *     up cannot leave SDL — and therefore the node's buffer — on the pre-IME geometry.
+   *
+   * Both are no-ops when everything is healthy: `requestFocus` on the node that already owns focus
+   * does not move it, and the push sends the measured size, which the host applies idempotently.
+   * The log lines (`textura-ime event=detached`, `textura-focus request=ime-detached`) are the
+   * evidence the current report does not have yet; §26.4 lists what to check on the device.
+   */
+  private onImeDetached(): void {
+    hilog.info(DOMAIN, TAG, 'textura-ime event=detached surfaceFocused=%{public}s',
+      this.surfaceFocused ? 'true' : 'false');
+    this.requestSurfaceFocus('ime-detached');
+    setTimeout(() => this.requestSurfaceFocus('ime-detached#1'), 120);
+    this.repushSurfaceSize();
+  }
+
+  /*
+   * Re-sends the last measured surface size even when it is unchanged. `pushSurfaceSize` skips an
+   * identical push (it is called from every layout pass), so the "already pushed" cache is cleared
+   * first — here an identical re-push is exactly the point: it makes SDL re-apply its window size
+   * and, with it, the XComponent buffer geometry.
+   */
+  private repushSurfaceSize(): void {
+    if (this.pendingWidthPx <= 0 || this.pendingHeightPx <= 0) {
+      return;
+    }
+    this.pushedWidthPx = -1;
+    this.pushedHeightPx = -1;
+    hilog.info(DOMAIN, TAG, 'textura-size repush px=%{public}dx%{public}d',
+      this.pendingWidthPx, this.pendingHeightPx);
+    this.pushSurfaceSize();
+  }
+
   private syncImeAnchor(): void {
     if (!TextInputState.attached) {
+      // Detach edge: a text control was focused and the IME has just been hidden (the commit path).
+      // See onImeDetached() — this is where the surface can lose what the pointer path needs while
+      // the keyboard path keeps working, which is docs/DEVICE-NOTES.md §26.4.
+      if (this.imeWasAttached) {
+        this.imeWasAttached = false;
+        this.onImeDetached();
+      }
       TextInputState.cursorKey = '';
       return;
     }
+    this.imeWasAttached = true;
     const read: (() => number[] | null) | undefined = getImeAnchor;
     if (read === undefined) {
       return;
