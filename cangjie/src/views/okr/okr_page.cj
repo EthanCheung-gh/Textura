@@ -73,6 +73,8 @@ class OkrUiState {
     let promptField: State<String>
     let promptError: State<String>
     let promptFocus: FocusRequest
+    /** 被点字段的绝对矩形（卡片画布 layout 时记录），原位编辑器的摆放位置。 */
+    var promptRect: Rect
     let fields: HashMap<String, State<String>>
 
     init() {
@@ -114,6 +116,7 @@ class OkrUiState {
         this.promptField = rememberState<String>("okr-prompt-field") {""}
         this.promptError = rememberState<String>("okr-prompt-error") {""}
         this.promptFocus = FocusRequest()
+        this.promptRect = Rect.zero()
         this.fields = HashMap<String, State<String>>()
     }
 

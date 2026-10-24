@@ -19,32 +19,46 @@ import textura.views.okr.logic.{EMPTY_METRIC, METRIC_FIELDS, MetricDraft, Metric
 /** Prompt 里那个输入框的焦点 id（一次只有一个浮层，所以是常量）。 */
 let OKR_PROMPT_INPUT: String = "okr-prompt-input";
 
-/** 目标 / KR 标题。 */
-func openOkrTitlePrompt(ui: OkrUiState, id: String, title: String): Unit {
-    armPrompt(ui, "title", id, "", title)
+/** 目标 / KR 标题。`rect` 是画布记录的标题矩形。 */
+func openOkrTitlePrompt(ui: OkrUiState, id: String, title: String, rect: Rect): Unit {
+    armPrompt(ui, "title", id, "", title, rect)
 }
 
-/** 指标数值（起点 / 当前 / 目标 / 单位）。 */
-func openOkrMetricPrompt(ui: OkrUiState, krId: String, field: MetricField, value: String): Unit {
-    armPrompt(ui, "metric", krId, metricFieldText(field), value)
+/** 指标数值（起点 / 当前 / 目标 / 单位）。`rect` 是画布记录的输入框矩形。 */
+func openOkrMetricPrompt(ui: OkrUiState, krId: String, field: MetricField, value: String, rect: Rect): Unit {
+    armPrompt(ui, "metric", krId, metricFieldText(field), value, rect)
 }
 
 /** 负责人。 */
-func openOkrOwnerPrompt(ui: OkrUiState, krId: String, owner: String): Unit {
-    armPrompt(ui, "owner", krId, "", owner)
+func openOkrOwnerPrompt(ui: OkrUiState, krId: String, owner: String, rect: Rect): Unit {
+    armPrompt(ui, "owner", krId, "", owner, rect)
 }
 
-/** 新增关键结果。 */
-func openOkrAddKrPrompt(ui: OkrUiState, objectiveId: String): Unit {
-    armPrompt(ui, "addkr", objectiveId, "", "")
+/** 新增关键结果。`rect` 是「添加」框里那行输入的区域。 */
+func openOkrAddKrPrompt(ui: OkrUiState, objectiveId: String, rect: Rect): Unit {
+    armPrompt(ui, "addkr", objectiveId, "", "", rect)
 }
 
-private func armPrompt(ui: OkrUiState, kind: String, target: String, field: String, value: String): Unit {
+/**
+ * 这一帧这个字段是否正被原位编辑器接管。
+ *
+ * 卡片上的标题 / 指标 / 负责人都是画上去的，编辑器是压在同一个矩形上的真控件；两边同时画
+ * 就会看到「两层文字 + 双边框」，而控件一旦比盒子高就变成「下面又冒出一个一样的框」。
+ * 编辑态下画布只留背景，文字与边框交给控件自己画。
+ */
+func okrFieldEditing(ui: OkrUiState, kind: String, target: String, field!: String = ""): Bool {
+    ui.promptOpen.value && ui.promptKind.value == kind && ui.promptTarget.value == target &&
+        ui.promptField.value == field
+}
+
+private func armPrompt(ui: OkrUiState, kind: String, target: String, field: String, value: String,
+    rect: Rect): Unit {
     ui.promptKind.value = kind
     ui.promptTarget.value = target
     ui.promptField.value = field
     ui.promptText.value = value
     ui.promptError.value = ""
+    ui.promptRect = rect
     ui.promptOpen.value = true
     ui.promptFocus.request(OKR_PROMPT_INPUT)
 }
@@ -106,36 +120,32 @@ private func okrMetricLabel(field: MetricField): String {
     }
 }
 
-/** 页面浮层入口：把 `ui.prompt*` 映射成 `Ui.prompt`。 */
+/**
+ * 卡片画布上的原位编辑器（`okr.cj` 的 render 在卡片之后调用，仍在 build 阶段）。
+ *
+ * 字段矩形由画布在 layout 时记录（标题 / 指标输入框 / 负责人 / 新增 KR），点哪个就在哪个上编辑：
+ * Enter 提交、Esc 取消、点外部提交，校验失败时编辑器不关、错误行显示在字段下方。
+ */
 func okrPromptDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
     if (!ui.promptOpen.value) {
         return
     }
     let target = ui.promptTarget.value
     var objectiveTitle = ""
-    var found = false
     for (candidate in page.data.entries) {
         if (candidate.item.id == target) {
             objectiveTitle = candidate.item.title
-            found = true
         }
         for (kr in candidate.krs) {
             if (kr.item.id == target) {
                 objectiveTitle = candidate.item.title
-                found = true
             }
         }
     }
-    let _ = found
     let copy = promptCopy(ui, objectiveTitle)
-    let kind = ui.promptKind.value
-    Ui.prompt(page.theme, ui.promptText, ui.promptOpen, {=> closeOkrPrompt(ui)}, title: copy.title,
-        key: OKR_PROMPT_INPUT, label: copy.label, placeholder: copy.placeholder, hint: copy.hint,
-        error: ui.promptError.value, multiline: false, confirmLabel: if (kind == "addkr") {
-            "创建"
-        } else {
-            "保存"
-        }, focus: ui.promptFocus) {value => commitOkrPrompt(ctx, ui, page, value)}
+    Ui.inlineEditor(page.theme, ui.promptText, ui.promptRect, true, key: OKR_PROMPT_INPUT,
+        placeholder: copy.placeholder, error: ui.promptError.value, focus: ui.promptFocus,
+        onCommit: {value => commitOkrPrompt(ctx, ui, page, value)}, onCancel: {=> closeOkrPrompt(ui)})
 }
 
 /** 提交：写回 `ctx.store`，随后关闭浮层（Esc 取消不改数据）。 */

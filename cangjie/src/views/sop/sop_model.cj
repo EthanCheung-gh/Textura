@@ -320,6 +320,11 @@ class SopViewState {
     var promptEntry: State<String> = State<String>("")
     var promptError: State<String> = State<String>("")
     var promptFocus: FocusRequest = FocusRequest()
+    /**
+     * 被点字段的绝对矩形（上一帧 layout 记录的 `rects.*`）。编辑器按它原位摆放：
+     * 画布只知道自己画在哪，`Ui.inlineEditor` 需要这个矩形才能贴着字段出现。
+     */
+    var promptRect: Rect = Rect.zero()
     /*
      * Area 下拉（`sop_area_picker.cj`）：检查器里唯一的多选一字段，弹层由 Overlay 承载。
      * `areaIndex` 是「未指定」+ `workspace.areas` 的候选下标。

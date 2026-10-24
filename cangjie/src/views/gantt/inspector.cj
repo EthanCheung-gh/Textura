@@ -1,6 +1,7 @@
 package textura.views.gantt
 
 import std.collection.*
+import std.convert.*
 import cui.*
 import textura.core.data as data
 import textura.ui.*
@@ -75,6 +76,8 @@ func inspectorBody(ctx: data.ViewContext, theme: Theme, tokens: ThemeTokens, wor
     let titleDraft = rememberState<String>("title") {item.title}
     let startDraft = rememberState<String>("start") {ganttStart(item)}
     let endDraft = rememberState<String>("end") {ganttEnd(item)}
+    // 进度也可以直接填数字：% 步进按钮留在下面，输入框给「精确到某一步」的场景（Enter 写回）。
+    let progressDraft = rememberState<String>("progress") {"${displayProgress(toGanttRow(workspace, item, 0))}"}
     let range = itemRange(toGanttRow(workspace, item, 0))
 
     ScrollView(key: "gantt-inspector-scroll") {
@@ -133,6 +136,21 @@ func inspectorBody(ctx: data.ViewContext, theme: Theme, tokens: ThemeTokens, wor
                         .foregroundColor(tokens.color.textMuted)
                 }.hug().fillWidth()
                 Ui.progress(theme, Float32(progressOf(item)), tone: ProgressTone.Accent, showLabel: false)
+                // 数值输入（原位，不再弹窗）：Enter 写回，非法输入回退到当前值。
+                HStack(spacing: vp(tokens.space.s2)) {
+                    Label("数值").fontSize(fp(12.0)).foregroundColor(tokens.color.textMuted).width(30.0)
+                    EventHandler(onEvent: {event =>
+                        match (event) {
+                            case UiEvent.KeyDown(Key.Enter, _) =>
+                                commitProgress(ctx, item, progressDraft)
+                                true
+                            case _ => false
+                        }
+                    }) {
+                        Ui.textInput(theme, progressDraft, key: "gantt-progress", placeholder: "0-100")
+                    }
+                    Label("%").fontSize(fp(12.0)).foregroundColor(tokens.color.textMuted)
+                }.crossAxisAlignment(CrossAxisAlignment.Center).hug().fillWidth()
                 HStack(spacing: vp(tokens.space.s2)) {
                     Ui.button(theme, "−5%", {=> stepProgress(ctx, item, -5.0)}, variant: ButtonVariant.Secondary,
                         size: ControlSize.Sm, enabled: item.status != data.ItemStatus.Done)
@@ -185,6 +203,40 @@ func commitTitle(ctx: data.ViewContext, item: data.Item, value: String): Unit {
     let next = value.trimAscii()
     if (!next.isEmpty() && next != item.title) {
         ctx.store.updateItem(item.id, data.ItemPatch().withTitle(next))
+    }
+}
+
+/**
+ * 进度数值输入：只接受 0–100，取整到 1%；`35%` / ` 35 ` 也可以。
+ * 非法输入把草稿还原成当前值（不写库、不报错），与标题/日期草稿的提交方式一致。
+ */
+func commitProgress(ctx: data.ViewContext, item: data.Item, draft: State<String>): Unit {
+    var digits = ""
+    for (byte in draft.value) {
+        if (byte >= UInt8(48) && byte <= UInt8(57)) {
+            digits += String.fromUtf8([byte])
+        } else if (byte == UInt8(37) || byte == UInt8(32)) {
+            continue
+        } else {
+            digits = ""
+            break
+        }
+    }
+    var parsed: ?Float64 = None
+    if (!digits.isEmpty()) {
+        try {
+            parsed = Some(Float64.parse(digits))
+        } catch (_: Exception) {
+            parsed = None
+        }
+    }
+    let next = match (parsed) {
+        case Some(value) => max(0.0, min(100.0, value))
+        case None => progressOf(item)
+    }
+    draft.value = "${Int64(next)}"
+    if (next != progressOf(item)) {
+        ctx.store.setProgress(item.id, next)
     }
 }
 

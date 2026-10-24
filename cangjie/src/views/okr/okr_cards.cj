@@ -109,14 +109,19 @@ func layoutObjectiveCard(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Floa
     let titleCenter = titleTop + OKR_OBJ_TITLE_H / 2.0
     let titleId = "okr-title-${entry.item.id}"
     let hovered = ctx.isHovered(titleId)
-    cv.text(ctx, left, titleCenter, entry.item.title, 16.5, 650, if (hovered) {
-        c.accentInk
-    } else {
-        c.text
-    })
+    // 编辑态：原位编辑器（真 TextField）压在这个矩形上，画布不再重复画这行标题。
+    if (!okrFieldEditing(page.ui, "title", entry.item.id)) {
+        cv.text(ctx, left, titleCenter, entry.item.title, 16.5, 650, if (hovered) {
+            c.accentInk
+        } else {
+            c.text
+        })
+    }
     cv.focusRingFor(titleId, Rect(left - 3.0, titleTop, mainW + 6.0, OKR_OBJ_TITLE_H), OKR_R_MD)
     cv.addHotspot(titleId, Rect(left - 3.0, titleTop, min(mainW + 6.0, okrTextW(ctx, entry.item.title, 16.5, 650) +
-        6.0), OKR_OBJ_TITLE_H), {=> openOkrTitlePrompt(page.ui, entry.item.id, entry.item.title)})
+        6.0), OKR_OBJ_TITLE_H), {=> openOkrTitlePrompt(page.ui, entry.item.id, entry.item.title,
+        Rect(left - 3.0, titleTop, min(mainW + 6.0, okrTextW(ctx, entry.item.title, 16.5, 650) + 6.0),
+            OKR_OBJ_TITLE_H))})
     var afterTitle = titleTop + OKR_OBJ_TITLE_H
     if (detailed && !entry.item.notes.isEmpty()) {
         let notesTop = afterTitle + 6.0
@@ -190,14 +195,17 @@ func layoutKrRow(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEnt
     let titleTop = mainTop
     let hovered = ctx.isHovered(titleId)
     let title = ellipsize(ctx, kr.item.title, 13.5, 600, headingW - 6.0)
-    cv.text(ctx, headingX, titleTop + OKR_KR_TITLE_H / 2.0, title, 13.5, 600, if (hovered) {
-        c.accentInk
-    } else {
-        c.text
-    })
+    if (!okrFieldEditing(page.ui, "title", kr.item.id)) {
+        cv.text(ctx, headingX, titleTop + OKR_KR_TITLE_H / 2.0, title, 13.5, 600, if (hovered) {
+            c.accentInk
+        } else {
+            c.text
+        })
+    }
     cv.focusRingFor(titleId, Rect(headingX - 3.0, titleTop, headingW, OKR_KR_TITLE_H), OKR_R_MD)
     cv.addHotspot(titleId, Rect(headingX - 3.0, titleTop, min(headingW, okrTextW(ctx, title, 13.5, 600) + 6.0),
-        OKR_KR_TITLE_H), {=> openOkrTitlePrompt(page.ui, kr.item.id, kr.item.title)})
+        OKR_KR_TITLE_H), {=> openOkrTitlePrompt(page.ui, kr.item.id, kr.item.title,
+        Rect(headingX - 3.0, titleTop, min(headingW, okrTextW(ctx, title, 13.5, 600) + 6.0), OKR_KR_TITLE_H))})
     // 徽章行
     let badgesTop = titleTop + OKR_KR_TITLE_H + 2.0
     let badgeCenter = badgesTop + OKR_BADGE_H / 2.0
@@ -321,11 +329,13 @@ func layoutMetricEditor(page: OkrPage, ctx: UiContext, cv: PageCanvas, kr: OkrKr
         } else {
             metricToText(metricFieldValue(field, metric))
         }
+        let fieldEditing = okrFieldEditing(page.ui, "metric", krId, field: metricFieldText(field))
         paintOkrField(page, ctx, cv, fieldId, Rect(inputX, y, inputW, 28.0), initial, if (isUnit) {
             "例如 %"
         } else {
             "0"
-        }, warn) {=> openOkrMetricPrompt(page.ui, krId, field, initial)}
+        }, warn, {=> openOkrMetricPrompt(page.ui, krId, field, initial, Rect(inputX, y, inputW, 28.0))},
+            editing: fieldEditing)
         cursor = inputX + inputW + OKR_S2
         index += 1
     }
@@ -375,8 +385,9 @@ func layoutKrMeta(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEn
     let centerY = y + 14.0
     let ownerLabelW = cv.text(ctx, x, centerY, "负责人", 11.0, 400, c.textMuted)
     let ownerX = x + ownerLabelW + 5.0
-    paintOkrField(page, ctx, cv, "okr-owner-${krId}", Rect(ownerX, y, 96.0, 28.0), kr.owner, "未指派", false) {
-        => openOkrOwnerPrompt(page.ui, krId, kr.owner)}
+    paintOkrField(page, ctx, cv, "okr-owner-${krId}", Rect(ownerX, y, 96.0, 28.0), kr.owner, "未指派", false,
+        {=> openOkrOwnerPrompt(page.ui, krId, kr.owner, Rect(ownerX, y, 96.0, 28.0))},
+        editing: okrFieldEditing(page.ui, "owner", krId))
     var cursor = ownerX + 96.0 + OKR_S2
     let statusLabelW = cv.text(ctx, cursor, centerY, "状态", 11.0, 400, c.textMuted)
     let selectX = cursor + statusLabelW + 5.0
@@ -526,12 +537,14 @@ func layoutAddKeyResult(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: Ok
     let inputLeft = boxRect.x + 1.0 + 8.0 + 14.0 + 6.0
     let addKrId = "okr-addkr-${entry.item.id}"
     let inputRect = Rect(inputLeft, centerY - 13.0, max(0.0, buttonX - 6.0 - inputLeft), 26.0)
-    cv.text(ctx, inputLeft, centerY, ellipsize(ctx, "新增关键结果，回车创建（默认信心 5）…", 12.5, 400,
-        inputRect.w), 12.5, 400, c.textFaint)
+    if (!okrFieldEditing(page.ui, "addkr", entry.item.id)) {
+        cv.text(ctx, inputLeft, centerY, ellipsize(ctx, "新增关键结果，回车创建（默认信心 5）…", 12.5, 400,
+            inputRect.w), 12.5, 400, c.textFaint)
+    }
     cv.focusRingFor(addKrId, inputRect, OKR_R_MD)
-    cv.addHotspot(addKrId, inputRect, {=> openOkrAddKrPrompt(page.ui, entry.item.id)})
+    cv.addHotspot(addKrId, inputRect, {=> openOkrAddKrPrompt(page.ui, entry.item.id, inputRect)})
     page.paintButton(ctx, cv, addId, Rect(buttonX, centerY - 14.0, buttonW, 28.0), addText, OKR_BTN_GHOST, 0,
-        Option<IconGlyph>.None, true) {=> openOkrAddKrPrompt(page.ui, entry.item.id)}
+        Option<IconGlyph>.None, true) {=> openOkrAddKrPrompt(page.ui, entry.item.id, inputRect)}
 }
 
 /**
@@ -539,7 +552,7 @@ func layoutAddKeyResult(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: Ok
  * 7×2 内边距 / 12.5 字号），但没有可编辑控件 —— 点击由调用方打开 `Ui.prompt`。
  */
 func paintOkrField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, rect: Rect, value: String,
-    placeholder: String, warn: Bool, action: () -> Unit): Unit {
+    placeholder: String, warn: Bool, action: () -> Unit, editing!: Bool = false): Unit {
     let c = page.tokens.color
     if (cv.measureOnly) {
         return
@@ -555,6 +568,11 @@ func paintOkrField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, re
         c.border
     }
     cv.fill(rect, OKR_R_MD, bg)
+    if (editing) {
+        // 原位编辑器接管这个盒子：边框与文字归它画，画布只留背景（避免双边框 + 两层文字）。
+        cv.addHotspot(id, rect, action)
+        return
+    }
     cv.stroke(rect, OKR_R_MD, border)
     let text = if (value.isEmpty()) {
         placeholder

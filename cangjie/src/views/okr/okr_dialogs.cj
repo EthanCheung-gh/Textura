@@ -317,9 +317,10 @@ func linkSearchField(tokens: ThemeTokens, ui: OkrUiState): Unit {
             borderWidth: tokens.metrics.borderWidth)
     ))
     field.placeholder("搜索项目或行动（标题、标签、负责人）…")
-    field.textStyle(TextStyle(fontSize: fp(13.5)))
-    field.height(34.0)
-    let _ = field.flex()
+    // `textStyle`/`height`/`flex` 是 widget 修饰器：每次调用都会用一个包装节点替换父列表里的原节点。
+    // 分成多条语句写在同一个 `field` 上时，第一条替换、后面每条都变成「再追加一个同样的输入框」，
+    // 界面上就是搜索框下面又冒出一个一样的框。必须链在上一次调用的返回值上。
+    let _ = field.textStyle(TextStyle(fontSize: fp(13.5))).height(34.0).flex()
 }
 
 func closeLinkDialog(ui: OkrUiState): Unit {

@@ -55,8 +55,7 @@ public struct Ui {
         tooltip!: ?String = None,
         enabled!: Bool = true
     ): Unit {
-        IconButtonView(tokensOf(theme), glyph, onClick, variant: variant, size: size, tooltip: tooltip,
-            enabled: enabled)
+        IconButtonView(tokensOf(theme), glyph, onClick, variant: variant, size: size, tooltip: tooltip, enabled: enabled)
     }
 
     // ---------------------------------------------------------------------------- display
@@ -126,12 +125,19 @@ public struct Ui {
                 case None => ()
             }
             // .empty-state-title { font-size: 14px; font-weight: 600; color: text }
-            Label(title).fontSize(Length(TextSize.body, LengthUnit.Fp)).fontWeight(FontWeight(600))
-                .foregroundColor(c.text).textAlign(TextAlign.Center)
+            Label(title)
+                .fontSize(Length(TextSize.body, LengthUnit.Fp))
+                .fontWeight(FontWeight(600))
+                .foregroundColor(c.text)
+                .textAlign(TextAlign.Center)
             if (!description.isEmpty()) {
                 // .empty-state-description { 12.5px; max-width: 42ch; line-height: 1.6 }
-                Label(description).fontSize(Length(TextSize.controlSmall, LengthUnit.Fp)).foregroundColor(c.textMuted)
-                    .textAlign(TextAlign.Center).wrap().maxWidth(420.0)
+                Label(description)
+                    .fontSize(Length(TextSize.controlSmall, LengthUnit.Fp))
+                    .foregroundColor(c.textMuted)
+                    .textAlign(TextAlign.Center)
+                    .wrap()
+                    .maxWidth(420.0)
             }
             match (action) {
                 case Some(actionBody) => emptyStateAction(tokens, actionBody)
@@ -139,10 +145,7 @@ public struct Ui {
             }
         }
             // `.empty-state { align-items: center; text-align: center }` (ui.css:361-370)
-            .crossAxisAlignment(CrossAxisAlignment.Center)
-            .hug()
-            .padding(padding)
-            .fillWidth()
+            .crossAxisAlignment(CrossAxisAlignment.Center).hug().padding(padding).fillWidth()
     }
 
     /** `.empty-state-icon`: 44x44 tile, radius-lg, `surface-2`, 1px border, `text-faint`. */
@@ -208,7 +211,9 @@ public struct Ui {
             if (!label.isEmpty()) {
                 // .field-label { 12px; 600; text-muted; gap: 2px } + .field-required { accent-ink }
                 HStack(spacing: vp(2.0)) {
-                    Label(label).fontSize(Length(TextSize.label, LengthUnit.Fp)).fontWeight(FontWeight(600))
+                    Label(label)
+                        .fontSize(Length(TextSize.label, LengthUnit.Fp))
+                        .fontWeight(FontWeight(600))
                         .foregroundColor(c.textMuted)
                     if (required) {
                         Label("*").fontSize(Length(TextSize.label, LengthUnit.Fp)).foregroundColor(c.accentInk)
@@ -299,8 +304,7 @@ public struct Ui {
         // Chrome layer: scrim + panel surface + Esc/backdrop/Tab, registered *below* the content.
         ModalHost(frame)
         // Content layer: built here, in the build phase, then laid out at the panel rect.
-        Portal(frame.contentOwner(), true, {ctx => frame.resolve(ctx)},
-            blocksInput: false) {
+        Portal(frame.contentOwner(), true, {ctx => frame.resolve(ctx)}, blocksInput: false) {
             let column = VStack(spacing: vp(0.0)) {
                 // .modal-header: padding 16px 24px, space-between, align-items flex-start
                 frame.attachHeader(
@@ -325,21 +329,18 @@ public struct Ui {
                     }
                         .crossAxisAlignment(CrossAxisAlignment.Start)
                         .hug()
-                        .padding(tokens.space.s5, MODAL_HEADER_VPAD, tokens.space.s5, MODAL_HEADER_VPAD)
-                )
+                        .padding(tokens.space.s5, MODAL_HEADER_VPAD, tokens.space.s5, MODAL_HEADER_VPAD))
                 Divider().foregroundColor(c.border)
                 // The body absorbs the leftover height the frame assigned (flex), and scrolls
                 // once its content is taller than the 80vh budget.
                 ScrollView(key: "${frame.owner()}-body") {
-                    frame.attachBody(
-                        VStack(spacing: vp(tokens.space.s3)) {
-                            body()
-                            match (focus) {
-                                case Some(request) => FocusOnceView(request)
-                                case None => ()
-                            }
-                        }.hug().fillWidth().padding(MODAL_BODY_PAD)
-                    )
+                    frame.attachBody(VStack(spacing: vp(tokens.space.s3)) {
+                        body()
+                        match (focus) {
+                            case Some(request) => FocusOnceView(request)
+                            case None => ()
+                        }
+                    }.hug().fillWidth().padding(MODAL_BODY_PAD))
                 }.flex()
                 match (footer) {
                     case Some(footerBody) =>
@@ -353,8 +354,7 @@ public struct Ui {
                                 .crossAxisAlignment(CrossAxisAlignment.Center)
                                 .hug()
                                 .padding(tokens.space.s5, MODAL_FOOTER_VPAD, tokens.space.s5, MODAL_FOOTER_VPAD)
-                                .background(c.surface2, corners: Corners.bottom(tokens.radius.lg))
-                        )
+                                .background(c.surface2, corners: Corners.bottom(tokens.radius.lg)))
                     case None => ()
                 }
             }
@@ -394,22 +394,32 @@ public struct Ui {
         }
         let tokens = tokensOf(theme)
         let submit: () -> Unit = {=> onSave(text.value)}
-        modal(theme, presented, onDismiss, title: title, width: PROMPT_WIDTH, focus: focus, initialFocus: key,
-            footer: {=>
-                button(theme, cancelLabel, onDismiss, variant: ButtonVariant.Ghost, size: ControlSize.Sm)
-                button(theme, confirmLabel, submit, variant: ButtonVariant.Primary, size: ControlSize.Sm)
-            }, body: {=>
-                VStack(spacing: vp(tokens.space.s3)) {
+        modal(
+            theme,
+            presented,
+            onDismiss,
+            title: title,
+            width: PROMPT_WIDTH,
+            focus: focus,
+            initialFocus: key,
+            footer: {
+                =>
+                    button(theme, cancelLabel, onDismiss, variant: ButtonVariant.Ghost, size: ControlSize.Sm)
+                    button(theme, confirmLabel, submit, variant: ButtonVariant.Primary, size: ControlSize.Sm)
+            },
+            body: {
+                => VStack(spacing: vp(tokens.space.s3)) {
                     field(theme, label: label, hint: hint, error: error) {
                         if (multiline) {
                             // `TextArea` owns Enter (it inserts a newline, like the Web
                             // `<textarea>` it ports), so the save chord is Ctrl/Cmd+Enter.
                             // `EventHandler` runs before its child, which is what lets the
                             // chord be claimed without patching CUI's TextArea.
-                            EventHandler(onEvent: {ctx, event =>
-                                match (event) {
-                                    case UiEvent.KeyDown(Key.Enter, isRepeat) where
-                                        !isRepeat && ctx.eventModifiers().command =>
+                            EventHandler(onEvent: {
+                                ctx, event => match (event) {
+                                    case UiEvent.KeyDown(Key.Enter, isRepeat) where !isRepeat && ctx
+                                        .eventModifiers()
+                                        .command =>
                                         submit()
                                         true
                                     case _ => false
@@ -426,17 +436,120 @@ public struct Ui {
                             let editor = TextField(text, key: optionalKey(key))
                             editor.style(inputStyle(tokens, false))
                             editor.placeholder(placeholder)
-                            editor.textStyle(TextStyle(fontSize: fp(13.5)))
-                            editor.height(34.0)
                             // Enter saves; the field consumes the key after IME composition commits.
                             editor.onSubmit {_ => submit()}
+                            // `textStyle`/`height` are *widget modifiers*: each one emits a wrapper
+                            // around the widget it is called on and replaces that widget in the
+                            // parent's child list. Two separate statements on the same `editor`
+                            // therefore build two wrappers around the same field, the second one
+                            // lands as a **second child** (a visible duplicate under the first), so
+                            // they must be chained on the value the previous call returned.
+                            editor.textStyle(TextStyle(fontSize: fp(13.5))).height(34.0)
                         }
                     }
                 }.hug().fillWidth()
-            })
+            }
+        )
     }
 
     // Prompt geometry lives at file scope (Cangjie has no private struct statics).
+
+    /**
+     * Edits one field **in place**: a real `TextField`/`TextArea` built during build, positioned at
+     * `rect` by a `Portal`, so focus, caret and the IME anchor behave like any other control while
+     * the page keeps its exact painted layout underneath (docs/DEVICE-NOTES.md §20).
+     *
+     * `rect` is the field rectangle the view recorded while laying its canvas out; `draft` is the
+     * caller's `State<String>` (the editor writes into it, and a commit submits `draft.value`).
+     * Enter commits, Ctrl/Cmd+Enter commits a multi-line field, Esc cancels, a press outside
+     * commits, and focus leaving the editor commits. A commit the caller refuses (validation: it
+     * keeps the editor open and passes `error`) is shown as one small danger-coloured line under
+     * the field — no panel, no scrim, no shadow, same size as the field itself.
+     *
+     * This is the replacement for `prompt` on text fields; `prompt` stays for confirmations and
+     * dangerous actions, where a modal really is the right shape.
+     */
+    public static func inlineEditor(
+        theme: Theme,
+        draft: State<String>,
+        rect: Rect,
+        open: Bool,
+        key!: String,
+        multiline!: Bool = false,
+        placeholder!: String = "",
+        error!: String = "",
+        focus!: ?FocusRequest = None,
+        onCommit!: (String) -> Unit,
+        onCancel!: () -> Unit
+    ): Unit {
+        if (!open) {
+            return
+        }
+        let tokens = tokensOf(theme)
+        let frame = InlineEditFrame(tokens, key, key, rect, multiline, draft, onCommit, onCancel)
+        let submit: () -> Unit = {=> onCommit(draft.value)}
+        // Dismissal layer first: it is registered below the content, so the field sees its own
+        // keys and presses and only what it declines (Esc, an outside press) reaches this layer.
+        InlineEditorHost(frame, error)
+        // Content layer: declared during build through `Portal`, which is what registers the
+        // field's focus stop (a control built from layout cannot take focus at all).
+        //
+        // The portal body is the control itself. Two things must not come back here:
+        //   - a `VStack` wrapper — it reported a content height ~76 larger than the field and
+        //     centred the field inside it, so the editor was painted 38px below the rectangle;
+        //   - two modifier statements on the same `editor` — `textStyle`/`height` are widget
+        //     modifiers that each emit a wrapper *replacing* the widget in the parent's child list,
+        //     so `editor.textStyle(...); editor.height(...)` emitted the field twice and the second
+        //     copy was laid out right under the first: the "second identical box below the field"
+        //     the user reported. Chained on the returned value they stay one child.
+        // `inline_editor_test.cj` pins the geometry of every field (`bounds == rect`).
+        Portal(frame.contentOwner(), true, {ctx => frame.resolve(ctx)}, blocksInput: false) {
+            let height = frame.fieldHeight()
+            if (multiline) {
+                // `TextArea` owns Enter (it inserts a newline, like the Web `<textarea>`), so the
+                // commit chord is Ctrl/Cmd+Enter; `EventHandler` runs before its child, which is
+                // what lets the chord be claimed without patching CUI's TextArea.
+                EventHandler(onEvent: {
+                    ctx, event => match (event) {
+                        case UiEvent.KeyDown(Key.Enter, isRepeat) where !isRepeat && ctx.eventModifiers().command =>
+                            submit()
+                            true
+                        case _ => false
+                    }
+                }) {
+                    // `style`/`placeholder` are `TextArea` setters (they return the same widget and
+                    // emit nothing), `height` is the only modifier here — one wrapper, one child.
+                    let area = TextArea(draft, key: optionalKey(key))
+                    area.style(inputStyle(tokens, !error.isEmpty()))
+                    area.height(height)
+                    if (!placeholder.isEmpty()) {
+                        area.placeholder(placeholder)
+                    }
+                }
+            } else {
+                let editor = TextField(draft, key: optionalKey(key))
+                editor.style(inputStyle(tokens, !error.isEmpty()))
+                editor.placeholder(placeholder)
+                // Enter commits; the field consumes the key after IME composition commits.
+                editor.onSubmit {_ => submit()}
+                editor.textStyle(TextStyle(fontSize: fp(13.5))).height(height)
+            }
+        }
+        // The focus carrier is a *sibling* of the `Portal`, not a child of it: a carrier declared
+        // inside the portal body is only laid out when the portal places its subtree, and `Portal`
+        // swallows the space, so keeping it out here is what makes "the editor takes focus on the
+        // frame it opens" independent of the portal's detached layout. Same placement as
+        // `prompt_test.cj` and `src/views/sop/sop.cj` (view root).
+        //
+        // The request itself is the caller's: whoever opens the editor arms it with the field key
+        // (`state.promptFocus.request(SOP_PROMPT_INPUT)`), exactly like `Ui.prompt`. Nothing here
+        // re-arms it, because a request that re-armed every frame would pull the caret back after
+        // the user Tabs away (`promptTabDoesNotSnapBackToTheEditor`).
+        match (focus) {
+            case Some(request) => FocusOnceView(request)
+            case None => ()
+        }
+    }
 
     // --------------------------------------------------------------------------- internal
 

@@ -122,7 +122,7 @@ func itemTitleOf(scene: GtdScene, id: String): ?String {
 func gtdKeyHandler(scene: GtdScene, event: UiEvent): Bool {
     // 弹窗打开时把按键全部让给浮层（Esc 关闭由 ModalHost 处理）。
     if (!scene.state.clarifyId.value.isEmpty() || !scene.state.picker.value.isEmpty() ||
-        !scene.state.dateTarget.value.isEmpty()) {
+        !scene.state.dateTarget.value.isEmpty() || !scene.state.sceneTarget.value.isEmpty()) {
         return false
     }
     match (event) {

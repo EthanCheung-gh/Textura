@@ -20,7 +20,7 @@ import textura.views.sop.logic as lg
 /** `.sop-inspector-head` height: `12px 16px` padding + eyebrow + title (sop.css:693). */
 // 12 + 15.75 + 18.9 + 12 = 58.65 in CSS; the browser paints the bottom border on row 58, so the
 // border box snaps to 58 (verified against tools/parity/ref/sop-light.png).
-let SOP_INSP_HEAD_H: Float32 = 59.0  // 58 content + 1px bottom border (border-box rows 154..213)
+let SOP_INSP_HEAD_H: Float32 = 59.0 // 58 content + 1px bottom border (border-box rows 154..213)
 
 /** Which inspector variant is on screen (`SopInspector.tsx`: node / edge / SOP). */
 enum SopInspVariant {
@@ -197,12 +197,10 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
         let buttons = ArrayList<(String, Rect)>()
         buttons.add(("duplicate", Rect(bodyX, cursor + 1.0, rowWidth, SOP_BTN_SM_H)))
         buttons.add(("delete-node", Rect(bodyX + rowWidth + 8.0, cursor + 1.0, rowWidth, SOP_BTN_SM_H)))
-        return SopInspRects(SopInspVariant.Node, card, head, Rect(bodyX, head.bottom(), innerWidth,
-            card.h - head.h - 1.0), cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, ownerInput, emptyRect,
-            emptyRect, 0.0, 0.0,
-            chips.toArray(),
-            titleInput, notesArea, durationInput, addChecklist, rows.toArray(), buttons.toArray(), emptyRect,
-            Array<(String, Rect)>())
+        return SopInspRects(SopInspVariant.Node, card, head, Rect(bodyX, head.bottom(), innerWidth, card.h - head.h - 1.0),
+            cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, ownerInput, emptyRect, emptyRect, 0.0, 0.0,
+            chips.toArray(), titleInput, notesArea, durationInput, addChecklist, rows.toArray(), buttons.toArray(),
+            emptyRect, Array<(String, Rect)>())
     }
 
     if (edge.isSome()) {
@@ -218,12 +216,10 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
         cursor += SOP_BTN_SM_H + SOP_INSP_GAP + 1.0
         let buttons = ArrayList<(String, Rect)>()
         buttons.add(("delete-edge", Rect(bodyX, cursor + 1.0, innerWidth, SOP_BTN_SM_H)))
-        return SopInspRects(SopInspVariant.Edge, card, head, Rect(bodyX, head.bottom(), innerWidth,
-            card.h - head.h - 1.0), cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, emptyRect, emptyRect,
-            emptyRect, 0.0, 0.0,
-            Array<(String, Rect)>(),
-            emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), buttons.toArray(), labelInput,
-            presets.toArray())
+        return SopInspRects(SopInspVariant.Edge, card, head, Rect(bodyX, head.bottom(), innerWidth, card.h - head.h - 1.0),
+            cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, emptyRect, emptyRect, emptyRect, 0.0, 0.0,
+            Array<(String, Rect)>(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), buttons.toArray(),
+            labelInput, presets.toArray())
     }
 
     // SOP settings (the variant shown by the reference screenshot).
@@ -240,8 +236,8 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
     let statsTop = cursor
     cursor = snapPx(cursor + 1.0 + SOP_BLOCK_PAD_TOP)
     cursor = snapPx(cursor + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP)
-    let progressTrack = Rect(bodyX, snapPx(cursor + (SOP_SECTION_LABEL_LINE - SOP_PROGRESS_H) / 2.0),
-        innerWidth - 38.0, SOP_PROGRESS_H)
+    let progressTrack = Rect(bodyX, snapPx(cursor + (SOP_SECTION_LABEL_LINE - SOP_PROGRESS_H) / 2.0), innerWidth - 38.0,
+        SOP_PROGRESS_H)
     cursor = snapPx(cursor + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP)
     let chips = ArrayList<(String, Rect)>()
     var chipX = bodyX
@@ -263,9 +259,9 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
     cursor += SOP_BADGE_H
     let contentBottom = cursor + scroll
     return SopInspRects(SopInspVariant.SopSettings, card, head, Rect(bodyX, head.bottom(), innerWidth,
-        card.h - head.h - 1.0), contentBottom, nameInput, notesArea, ownerInput, areaInput, progressTrack, statsTop, recentTop,
-        chips.toArray(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), Array<(String, Rect)>(),
-        emptyRect, Array<(String, Rect)>())
+        card.h - head.h - 1.0), contentBottom, nameInput, notesArea, ownerInput, areaInput, progressTrack, statsTop,
+        recentTop, chips.toArray(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(),
+        Array<(String, Rect)>(), emptyRect, Array<(String, Rect)>())
 }
 
 /** `.sop-stats-types`: node type -> count, in `NODE_TYPE_LABELS` order (SopInspector.tsx:386-390). */
@@ -400,14 +396,16 @@ func paintSectionLabel(ctx: UiContext, view: SopFrame, text: String, x: Float32,
 /** SOP settings variant (name, notes, owner/area, stats, latest run). */
 func paintSopInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Unit {
     let tk = view.tk
+    let state = view.state
     let sop = match (view.sop) {
         case Some(value) => value
         case None => return
     }
     paintFieldLabel(ctx, view, "名称", rects.nameInput.x, rects.nameInput.y)
-    paintInputBox(ctx, tk, rects.nameInput, sop.title, "")
+    paintInputBox(ctx, tk, rects.nameInput, sop.title, "", editing: sopFieldEditing(state, SopPromptKind.SopTitle))
     paintFieldLabel(ctx, view, "描述", rects.notesArea.x, rects.notesArea.y)
-    paintTextAreaBox(ctx, tk, rects.notesArea, sop.notes, "这个流程解决什么问题、适用范围…")
+    paintTextAreaBox(ctx, tk, rects.notesArea, sop.notes, "这个流程解决什么问题、适用范围…",
+        editing: sopFieldEditing(state, SopPromptKind.SopNotes))
     paintFieldLabel(ctx, view, "默认负责人", rects.ownerInput.x, rects.ownerInput.y)
     let owner = match (sop.sop) {
         case Some(data) => match (data.owner) {
@@ -416,7 +414,7 @@ func paintSopInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Uni
         }
         case None => ""
     }
-    paintInputBox(ctx, tk, rects.ownerInput, owner, "未指定")
+    paintInputBox(ctx, tk, rects.ownerInput, owner, "未指定", editing: sopFieldEditing(state, SopPromptKind.SopOwner))
     paintFieldLabel(ctx, view, "Area", rects.areaInput.x, rects.areaInput.y)
     paintSelectBox(ctx, tk, rects.areaInput, areaNameOrEmpty(view, sop))
 
@@ -431,8 +429,7 @@ func paintSopInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Uni
         tk.color.textMuted)
     let percent = Float32(rollupProgress(view.workspace, sop.id))
     paintProgress(ctx, tk, rects.progressTrack, percent, tk.color.accent)
-    paintTextRight(ctx, "${Int64(percent)}%", headRight, rects.progressTrack.centerY(), 11.0, 400,
-        tk.color.textMuted)
+    paintTextRight(ctx, "${Int64(percent)}%", headRight, rects.progressTrack.centerY(), 11.0, 400, tk.color.textMuted)
     for ((text, rect) in rects.typeChips) {
         let _ = paintBadge(ctx, tk, text, rect.x, rect.centerY(), SopTone.Neutral)
     }
@@ -461,14 +458,13 @@ func paintSopInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Uni
                 case None => "已删除步骤"
             }
             let badgeW = badgeWidth(ctx, runBadgeLabel(run.result), SOP_BADGE_FONT, SOP_BADGE_PAD_X, 550)
-            paintTextClipped(ctx, stepTitle, rects.body.x, rowCenter, rects.body.w - badgeW - 8.0, SOP_VALUE_SIZE,
-                620, tk.color.text)
+            paintTextClipped(ctx, stepTitle, rects.body.x, rowCenter, rects.body.w - badgeW - 8.0, SOP_VALUE_SIZE, 620,
+                tk.color.text)
             let _ = paintBadge(ctx, tk, runBadgeLabel(run.result), rects.body.x + rects.body.w - badgeW, rowCenter,
                 resultTone(run.result))
-        case None =>
-            paintTextClipped(ctx, "还没有运行记录。点画布工具栏的「运行」开始逐步执行。", rects.body.x,
-                recentHeadTop + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP + SOP_HINT_LINE / 2.0, rects.body.w,
-                SOP_HINT_SIZE, 400, tk.color.textFaint)
+        case None => paintTextClipped(ctx, "还没有运行记录。点画布工具栏的「运行」开始逐步执行。", rects.body.x,
+            recentHeadTop + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP + SOP_HINT_LINE / 2.0, rects.body.w, SOP_HINT_SIZE,
+            400, tk.color.textFaint)
     }
 }
 
@@ -506,14 +502,16 @@ func paintSelectBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String):
 /** Node inspector: title / notes / owner / duration / type chips / checklist / actions. */
 func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Unit {
     let tk = view.tk
+    let state = view.state
     let item = match (view.selectedNode()) {
         case Some(value) => value
         case None => return
     }
     paintFieldLabel(ctx, view, "标题", rects.titleInput.x, rects.titleInput.y)
-    paintInputBox(ctx, tk, rects.titleInput, item.title, "")
+    paintInputBox(ctx, tk, rects.titleInput, item.title, "", editing: sopFieldEditing(state, SopPromptKind.NodeTitle))
     paintFieldLabel(ctx, view, "描述", rects.nodeNotesArea.x, rects.nodeNotesArea.y)
-    paintTextAreaBox(ctx, tk, rects.nodeNotesArea, item.notes, "这一步要做什么、注意什么…")
+    paintTextAreaBox(ctx, tk, rects.nodeNotesArea, item.notes, "这一步要做什么、注意什么…",
+        editing: sopFieldEditing(state, SopPromptKind.NodeNotes))
     paintFieldLabel(ctx, view, "负责人", rects.ownerInput.x, rects.ownerInput.y)
     let owner = match (item.sop) {
         case Some(data) => match (data.owner) {
@@ -522,7 +520,7 @@ func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
         }
         case None => ""
     }
-    paintInputBox(ctx, tk, rects.ownerInput, owner, "谁来做")
+    paintInputBox(ctx, tk, rects.ownerInput, owner, "谁来做", editing: sopFieldEditing(state, SopPromptKind.NodeOwner))
     paintFieldLabel(ctx, view, "预计耗时（分钟）", rects.durationInput.x, rects.durationInput.y)
     let duration = match (item.sop) {
         case Some(data) => match (data.durationMin) {
@@ -531,7 +529,8 @@ func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
         }
         case None => ""
     }
-    paintInputBox(ctx, tk, rects.durationInput, duration, "5")
+    paintInputBox(ctx, tk, rects.durationInput, duration, "5",
+        editing: sopFieldEditing(state, SopPromptKind.NodeDuration))
 
     // 类型 chips.
     var chipsTop = rects.durationInput.bottom() + SOP_INSP_GAP
@@ -588,8 +587,11 @@ func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
                 } else {
                     tk.color.text
                 }
-                paintTextClipped(ctx, value.text, row.label.x, row.checkbox.centerY(), row.label.w, SOP_INPUT_FONT,
-                    400, color)
+                // 检查项文本是画上去的，编辑时由原位编辑器接管（否则会看到两层文字）。
+                if (!sopFieldEditing(state, SopPromptKind.CheckText)) {
+                    paintTextClipped(ctx, value.text, row.label.x, row.checkbox.centerY(), row.label.w, SOP_INPUT_FONT,
+                        400, color)
+                }
                 paintIconButton(ctx, tk, IconGlyph.Close, row.remove, tone: SopTone.Danger)
             case None => ()
         }
@@ -635,7 +637,8 @@ func paintEdgeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
     paintTextClipped(ctx, "${fromTitle} → ${toTitle}", rects.body.x, hintTop + SOP_HINT_LINE / 2.0, rects.body.w,
         SOP_HINT_SIZE, 400, tk.color.textMuted)
     paintFieldLabel(ctx, view, "标签", rects.labelInput.x, rects.labelInput.y)
-    paintInputBox(ctx, tk, rects.labelInput, edge.label, "例如：是 / 否 / 补充")
+    paintInputBox(ctx, tk, rects.labelInput, edge.label, "例如：是 / 否 / 补充",
+        editing: sopFieldEditing(view.state, SopPromptKind.EdgeLabel))
     for ((preset, rect) in rects.presetChips) {
         if (preset == edge.label) {
             paintPrimaryButton(ctx, tk, preset, rect)
@@ -747,15 +750,15 @@ func handleSopSettings(view: SopFrame, rects: SopInspRects, x: Float32, y: Float
         case None => return false
     }
     if (rects.nameInput.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.SopTitle, sop.id, sop.title)
+        openSopPrompt(view.state, SopPromptKind.SopTitle, sop.id, sop.title, rects.nameInput)
         return true
     }
     if (rects.notesArea.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.SopNotes, sop.id, sop.notes)
+        openSopPrompt(view.state, SopPromptKind.SopNotes, sop.id, sop.notes, rects.notesArea)
         return true
     }
     if (rects.ownerInput.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.SopOwner, sop.id, sopOwnerOf(sop))
+        openSopPrompt(view.state, SopPromptKind.SopOwner, sop.id, sopOwnerOf(sop), rects.ownerInput)
         return true
     }
     if (rects.areaInput.contains(x, y)) {
@@ -779,15 +782,15 @@ func sopOwnerOf(item: Item): String {
 /** 节点检查器：标题 / 描述 / 负责人 / 预计耗时 / 检查项文本都走编辑浮层。 */
 func handleNodeFields(view: SopFrame, rects: SopInspRects, item: Item, x: Float32, y: Float32): Bool {
     if (rects.titleInput.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.NodeTitle, item.id, item.title)
+        openSopPrompt(view.state, SopPromptKind.NodeTitle, item.id, item.title, rects.titleInput)
         return true
     }
     if (rects.nodeNotesArea.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.NodeNotes, item.id, item.notes)
+        openSopPrompt(view.state, SopPromptKind.NodeNotes, item.id, item.notes, rects.nodeNotesArea)
         return true
     }
     if (rects.ownerInput.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.NodeOwner, item.id, sopOwnerOf(item))
+        openSopPrompt(view.state, SopPromptKind.NodeOwner, item.id, sopOwnerOf(item), rects.ownerInput)
         return true
     }
     if (rects.durationInput.contains(x, y)) {
@@ -798,14 +801,14 @@ func handleNodeFields(view: SopFrame, rects: SopInspRects, item: Item, x: Float3
             }
             case None => ""
         }
-        openSopPrompt(view.state, SopPromptKind.NodeDuration, item.id, minutes)
+        openSopPrompt(view.state, SopPromptKind.NodeDuration, item.id, minutes, rects.durationInput)
         return true
     }
     for (row in rects.checkRows) {
         if (row.label.contains(x, y)) {
             for (entry in checklistOf(item)) {
                 if (entry.id == row.entryId) {
-                    openSopPrompt(view.state, SopPromptKind.CheckText, item.id, entry.text, entry: entry.id)
+                    openSopPrompt(view.state, SopPromptKind.CheckText, item.id, entry.text, row.label, entry: entry.id)
                 }
             }
             return true
@@ -893,7 +896,7 @@ func handleEdgeInspector(view: SopFrame, rects: SopInspRects, x: Float32, y: Flo
         case None => return false
     }
     if (rects.labelInput.contains(x, y)) {
-        openSopPrompt(view.state, SopPromptKind.EdgeLabel, edge.id, edge.label)
+        openSopPrompt(view.state, SopPromptKind.EdgeLabel, edge.id, edge.label, rects.labelInput)
         return true
     }
     for ((preset, chip) in rects.presetChips) {

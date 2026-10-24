@@ -75,7 +75,7 @@ func gtdFilterBar(scene: GtdScene): Unit {
     VStack(spacing: vp(0.0)) {
         HStack(spacing: vp(FILTER_GAP)) {
             GtdSelectBox(tokens, contextLabel, FILTER_SELECT_MIN, "gtd-filter-context",
-                {=> scene.state.picker.value = "filter-context"}, fontSize: FILTER_SELECT_FONT,
+                {_ => scene.state.picker.value = "filter-context"}, fontSize: FILTER_SELECT_FONT,
                 padRight: FILTER_SELECT_PAD_R)
             HStack(spacing: vp(TOGGLE_GAP)) {
                 GtdCheckBox(tokens, scene.state.dueSoonOnly.value, "gtd-filter-due",
@@ -88,7 +88,7 @@ func gtdFilterBar(scene: GtdScene): Unit {
                 .hug()
                 .padding(vp(TOGGLE_PAD_H), vp(TOGGLE_PAD_V), vp(TOGGLE_PAD_H), vp(TOGGLE_PAD_V))
             GtdSelectBox(tokens, areaLabel, FILTER_SELECT_MIN, "gtd-filter-area",
-                {=> scene.state.picker.value = "filter-area"}, fontSize: FILTER_SELECT_FONT,
+                {_ => scene.state.picker.value = "filter-area"}, fontSize: FILTER_SELECT_FONT,
                 padRight: FILTER_SELECT_PAD_R)
             Spacer()
             GtdText("${filtered.size} / ${scene.next.size}", FILTER_COUNT_SIZE, 400, tokens.color.textFaint,
@@ -252,10 +252,15 @@ func nextRow(scene: GtdScene, item: gl.GtdItem, pathIndex: gl.PathTitleIndex, ac
                         .fillWidth()
                 }.hug().flex()
                 HStack(spacing: vp(INLINE_GAP)) {
+                    // 场景与日期都在原位编辑：点哪个盒子，编辑器就出现在那个盒子上
+                    // （`gtd_clarify.cj` 的 `openSceneEditor` / `openDateEditor`）。
+                    // 编辑中的那个盒子只留背景（`editing`），文字与边框归真控件，避免叠字/双框。
                     GtdSelectBox(tokens, "@${context}", INLINE_SELECT_W, "gtd-row-context:${item.id}",
-                        {=> scene.state.picker.value = "row-context:${item.id}"})
+                        {rect => openSceneEditor(scene, item, rect)},
+                        editing: scene.state.sceneTarget.value == item.id)
                     GtdDateBox(tokens, dateBoxText(item), "gtd-row-date:${item.id}",
-                        {=> openDateEditor(scene, item)})
+                        {rect => openDateEditor(scene, item, rect)},
+                        editing: scene.state.dateTarget.value == item.id)
                     Ui.iconButton(scene.theme, IconGlyph.Edit, {=>
                         scene.state.activeNext.value = item.id
                         scene.openClarify(item.id)

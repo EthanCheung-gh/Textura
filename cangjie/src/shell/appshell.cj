@@ -35,6 +35,19 @@ public class ShellHost {
     public var viewportWidth: Int64
     public var viewportHeight: Int64
     /**
+     * Bumped by [syncViewport] whenever the window size really changed. `buildShell` reads it, so the
+     * shell — and with it every `ViewContext` handed to a view — is re-described for the new window.
+     * Without this, a resize only re-laid out the already-built tree and pages kept their old page
+     * height (docs/DEVICE-NOTES.md §19).
+     */
+    public let viewportEpoch: State<Int64>
+    /**
+     * The height the last **build** handed to the views, i.e. `ViewContext.height` of the newest
+     * tree. Diagnostics for the resize path: `viewportHeight` may already have moved while this
+     * still reports the height the painted tree was built for.
+     */
+    public var builtViewportHeight: Int64
+    /**
      * The one CUI `State` the shell root reads, so that a store write can invalidate the tree.
      *
      * `AppStore.state` / `AppStore.ui` are `core.data` cells, not CUI states: writing them marks
@@ -82,6 +95,8 @@ public class ShellHost {
         this.loadError = loadError
         this.viewportWidth = viewportWidth
         this.viewportHeight = viewportHeight
+        this.viewportEpoch = State<Int64>(0)
+        this.builtViewportHeight = viewportHeight
         this.revision = State<Int64>(0)
     }
 
@@ -115,6 +130,14 @@ public class ShellHost {
         revision.value
     }
 
+    /**
+     * Reads the viewport epoch, another dependency `buildShell` declares at its root so a window
+     * resize re-describes the tree (see [viewportEpoch] and [syncViewport]).
+     */
+    public func viewportToken(): Int64 {
+        viewportEpoch.value
+    }
+
     private func pumpRevision(): Unit {
         let bump: () -> Unit = {=> revision.value = revision.value + 1}
         match (revisionDelivery) {
@@ -132,10 +155,16 @@ public class ShellHost {
 
     /**
      * Copies the live window size into [viewportWidth]/[viewportHeight] and reports whether it
-     * changed. `ViewContext` is built before layout, so the frame that adopts a new size still
-     * paints one pass at the previous size; the caller requests another frame, and every page
-     * (`ViewContext.width/height` → calendar/SOP/gantt page heights, GTD column budget) is then
-     * laid out for the new window. A page never reads a size captured at construction.
+     * changed.
+     *
+     * A changed size **must also invalidate the build scope**, which is why this bumps
+     * [viewportEpoch]: `ViewContext` is constructed during build, and CUI re-runs a build scope only
+     * when a `State` it read changes. Before the epoch existed, the viewport alone changed (the
+     * fields below were updated and a frame was requested), but the next frame reused the committed
+     * tree and simply laid it out again — every page kept the `height`/`width` it was built with, so
+     * maximising the window on device still painted launch-size pages (docs/DEVICE-NOTES.md §19).
+     * Writing the epoch from `layout` is what CUI's own stabilization pass expects: the change
+     * re-describes the tree once, and the second pass finds nothing left to write.
      *
      * The source is `UiContext.viewportWidth/Height`, which the driver refreshes from the real
      * window every frame; on HarmonyOS that window is sized from the XComponent surface
@@ -150,6 +179,7 @@ public class ShellHost {
         }
         viewportWidth = nextWidth
         viewportHeight = nextHeight
+        viewportEpoch.value = viewportEpoch.value + 1
         true
     }
 
@@ -566,6 +596,9 @@ public func buildShell(host: ShellHost): Unit {
     // else in this function may run ahead of it, or a store write could arrive before the tree
     // declared that it depends on the write.
     let _ = host.revisionToken()
+    // Same reason as the revision above, for the window size: a resize must re-describe the tree, or
+    // every `ViewContext` keeps the size the previous build captured (docs/DEVICE-NOTES.md §19).
+    let _ = host.viewportToken()
     let store = host.store
     let ui = store.ui.value()
     let theme = themeByName(ui.theme)
@@ -627,6 +660,7 @@ public func buildShell(host: ShellHost): Unit {
                         // which draws no scrollbar gutter (parity ref uses overlay scrollbars).
                         ScrollView(key: "shell-content") {
                             VStack(spacing: vp(0.0)) {
+                                host.builtViewportHeight = host.viewportHeight
                                 renderRoute(route,
                                     ViewContext(store, ui.theme, host.today, host.viewportWidth, host.viewportHeight,
                                         {id => host.navigate(id)}))

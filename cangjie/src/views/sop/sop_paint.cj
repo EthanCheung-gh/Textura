@@ -375,9 +375,17 @@ func iconSmRect(x: Float32, centerY: Float32): Rect {
 
 /**
  * `.input` box (ui.css:181): 1px border, radius 8, surface fill, 13.5px text,
- * `padding: 7px 10px`. Editing itself is out of scope for this port (see report).
+ * `padding: 7px 10px`.
+ *
+ * `editing` 为真时只留背景：这个字段正被原位编辑器（真 `TextField`）压着，控件会自己画
+ * 文字与焦点边框；画布再画一遍就是「两层文字 + 双边框」。
  */
-func paintInputBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String, placeholder: String): Unit {
+func paintInputBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String, placeholder: String,
+    editing!: Bool = false): Unit {
+    if (editing) {
+        fillRound(ctx, rect, SOP_RADIUS_CTRL, tk.color.surface)
+        return
+    }
     paintBox(ctx, rect, SOP_RADIUS_CTRL, tk.color.surface, tk.color.border)
     let text = if (value.isEmpty()) {
         placeholder
@@ -394,7 +402,13 @@ func paintInputBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String, p
 }
 
 /** `.textarea` box: same surface, `min-height: 76px`, wrapped text at line-height 1.55. */
-func paintTextAreaBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String, placeholder: String): Unit {
+func paintTextAreaBox(ctx: UiContext, tk: ThemeTokens, rect: Rect, value: String, placeholder: String,
+    editing!: Bool = false): Unit {
+    if (editing) {
+        // 原位编辑器接管：只留背景（见 `paintInputBox`），拖拽把手也归控件自己。
+        fillRound(ctx, rect, SOP_RADIUS_CTRL, tk.color.surface)
+        return
+    }
     paintBox(ctx, rect, SOP_RADIUS_CTRL, tk.color.surface, tk.color.border)
     let text = if (value.isEmpty()) {
         placeholder

@@ -185,7 +185,12 @@ func gtdOverlays(scene: GtdScene): Unit {
     gtdClarifyDialog(scene)
     gtdPickerDialog(scene)
     gtdDateDialog(scene)
+    gtdSceneDialog(scene)
 }
+
+/** 行内日期 / 场景编辑器里那个输入框的焦点 id（一次只有一个编辑器）。 */
+let GTD_DATE_INPUT: String = "gtd-date-input";
+let GTD_SCENE_INPUT: String = "gtd-scene-input";
 
 func modalFlag(): State<Bool> {
     State<Bool>(true)
@@ -600,14 +605,25 @@ func applyPicker(scene: GtdScene, target: String, value: String): Unit {
     scene.ctx.store.notify("场景已更新", tone: NoticeTone.Success)
 }
 
-/* ---------------------------------------------------------------- 日期编辑 */
+/* ---------------------------------------------------------------- 日期 / 场景原位编辑 */
 
-func openDateEditor(scene: GtdScene, item: gl.GtdItem): Unit {
+/**
+ * 行内日期盒被点击：记下条目、当前值与那个盒子的矩形，然后**就地**打开编辑器
+ * （`Ui.inlineEditor`，见 `gtdDateDialog`）。
+ */
+func openDateEditor(scene: GtdScene, item: gl.GtdItem, rect: Rect): Unit {
     scene.state.dateTarget.value = item.id
     scene.state.dateDraft.value = match (dateKey(item.dueDate)) {
         case Some(value) => value
         case None => ""
     }
+    scene.state.dateRect = rect
+    scene.state.dateFocus.request(GTD_DATE_INPUT)
+}
+
+func closeDateEditor(scene: GtdScene): Unit {
+    scene.state.dateTarget.value = ""
+    scene.state.dateFocus.release()
 }
 
 func gtdDateDialog(scene: GtdScene): Unit {
@@ -615,30 +631,43 @@ func gtdDateDialog(scene: GtdScene): Unit {
     if (target.isEmpty()) {
         return
     }
-    let theme = scene.theme
-    Ui.modal(
-        theme,
-        modalFlag(),
-        {=> scene.state.dateTarget.value = ""},
-        title: "修改截止日期",
-        description: "留空表示清除截止日期。",
-        width: 360.0,
-        footer: {=>
-            Ui.button(theme, "清除", {=>
-                setDue(scene, target, "")
-                scene.state.dateTarget.value = ""
-            }, variant: ButtonVariant.Ghost, size: ControlSize.Sm)
-            Ui.button(theme, "保存", {=>
-                setDue(scene, target, scene.state.dateDraft.value)
-                scene.state.dateTarget.value = ""
-            }, variant: ButtonVariant.Primary, size: ControlSize.Sm)
-        },
-        body: {=>
-            Ui.field(theme, label: "截止日期", hint: "YYYY-MM-DD") {
-                Ui.textInput(theme, scene.state.dateDraft, key: "gtd-date-input", placeholder: "2026-03-20")
-            }
-        }
-    )
+    let state = scene.state
+    Ui.inlineEditor(scene.theme, state.dateDraft, state.dateRect, true, key: GTD_DATE_INPUT,
+        placeholder: "YYYY-MM-DD", focus: state.dateFocus,
+        onCommit: {value =>
+            setDue(scene, target, value)
+            closeDateEditor(scene)
+        }, onCancel: {=> closeDateEditor(scene)})
+}
+
+/** 行内场景（`@context`）盒被点击：同样原位编辑；留空表示未设置场景。 */
+func openSceneEditor(scene: GtdScene, item: gl.GtdItem, rect: Rect): Unit {
+    scene.state.sceneTarget.value = item.id
+    scene.state.sceneDraft.value = match (item.context) {
+        case Some(value) => value
+        case None => ""
+    }
+    scene.state.sceneRect = rect
+    scene.state.sceneFocus.request(GTD_SCENE_INPUT)
+}
+
+func closeSceneEditor(scene: GtdScene): Unit {
+    scene.state.sceneTarget.value = ""
+    scene.state.sceneFocus.release()
+}
+
+func gtdSceneDialog(scene: GtdScene): Unit {
+    let target = scene.state.sceneTarget.value
+    if (target.isEmpty()) {
+        return
+    }
+    let state = scene.state
+    Ui.inlineEditor(scene.theme, state.sceneDraft, state.sceneRect, true, key: GTD_SCENE_INPUT,
+        placeholder: "@场景（留空表示未设置）", focus: state.sceneFocus,
+        onCommit: {value =>
+            applyPicker(scene, "row-context:${target}", value.trim())
+            closeSceneEditor(scene)
+        }, onCancel: {=> closeSceneEditor(scene)})
 }
 
 func setDue(scene: GtdScene, id: String, value: String): Unit {

@@ -54,6 +54,30 @@ func windowResizeUpdatesTheShellViewport(): Unit {
     @Expect(host.viewportHeight, Int64(640))
 }
 
+/*
+ * The regression that made the previous round's fix look ineffective on device: `viewportWidth/
+ * Height` followed the window, but nothing invalidated the *build* scope, so the committed tree kept
+ * the `ViewContext` it was described with and every page stayed at its launch height.
+ *
+ * `builtViewportHeight` is written only while the shell is being described, so it is proof that a
+ * build really ran for the new size. Retained, incremental frames are what the device does; a
+ * full-rebuild-every-frame harness would hide the bug.
+ */
+@Test
+func windowResizeRebuildsTheViewsForTheNewHeight(): Unit {
+    let host = viewportHost()
+    let testHost = WidgetTestHost()
+    let body = {=> buildShell(host)}
+    let _ = testHost.frame(Rect(0.0, 0.0, 1440.0, 900.0), body: body)
+    @Expect(host.builtViewportHeight, Int64(900))
+    let _ = testHost.frame(Rect(0.0, 0.0, 1920.0, 1200.0), body: body)
+    @Expect(host.builtViewportHeight, Int64(1200))
+    let _ = testHost.frame(Rect(0.0, 0.0, 1920.0, 1200.0), body: body)
+    @Expect(host.builtViewportHeight, Int64(1200))
+    let _ = testHost.frame(Rect(0.0, 0.0, 1024.0, 640.0), body: body)
+    @Expect(host.builtViewportHeight, Int64(640))
+}
+
 @Test
 func syncViewportReportsOnlyRealChanges(): Unit {
     let host = viewportHost()

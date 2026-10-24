@@ -475,7 +475,13 @@ class GtdSelectBox <: Widget {
     private let fontSize: Float32
     private let padRight: Float32
     private let hoverId: String
-    private let onClick: () -> Unit
+    /** 回调带自己的矩形：行内编辑器按它原位摆放（`gtd_clarify.cj`）。 */
+    private let onClick: (Rect) -> Unit
+    /**
+     * 正被原位编辑器接管：只留背景，边框/文字/下拉三角交给真控件画。
+     * 两边同时画就是「两层文字 + 双边框」（见 `ui/inline_editor.cj`）。
+     */
+    private let editing: Bool
     private var frame = Rect.zero()
 
     init(
@@ -483,9 +489,10 @@ class GtdSelectBox <: Widget {
         text: String,
         width: Float32,
         hoverId: String,
-        onClick: () -> Unit,
+        onClick: (Rect) -> Unit,
         fontSize!: Float32 = INLINE_FONT,
-        padRight!: Float32 = 24.0
+        padRight!: Float32 = 24.0,
+        editing!: Bool = false
     ) {
         this.tokens = tokens
         this.text = text
@@ -494,6 +501,7 @@ class GtdSelectBox <: Widget {
         this.padRight = padRight
         this.hoverId = hoverId
         this.onClick = onClick
+        this.editing = editing
         emit(this)
     }
 
@@ -509,6 +517,9 @@ class GtdSelectBox <: Widget {
         let c = tokens.color
         let hovered = ctx.isHovered(hoverId)
         fillRound(ctx, frame, tokens.radius.md, c.surface)
+        if (editing) {
+            return
+        }
         strokeRound(ctx, frame, tokens.radius.md, tokens.metrics.borderWidth, if (hovered) {
             c.borderStrong
         } else {
@@ -542,7 +553,7 @@ class GtdSelectBox <: Widget {
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
-                        onClick()
+                        onClick(frame)
                         return true
                     }
                 }
@@ -561,10 +572,13 @@ class GtdDateBox <: Widget {
     private let text: String
     private let empty: Bool
     private let hoverId: String
-    private let onClick: () -> Unit
+    /** 回调带自己的矩形：行内编辑器按它原位摆放（`gtd_clarify.cj`）。 */
+    private let onClick: (Rect) -> Unit
+    /** 正被原位编辑器接管（见 `GtdSelectBox.editing`）。 */
+    private let editing: Bool
     private var frame = Rect.zero()
 
-    init(tokens: ThemeTokens, text: String, hoverId: String, onClick: () -> Unit) {
+    init(tokens: ThemeTokens, text: String, hoverId: String, onClick: (Rect) -> Unit, editing!: Bool = false) {
         this.tokens = tokens
         this.text = if (text.isEmpty()) {
             "mm/dd/yyyy"
@@ -574,6 +588,7 @@ class GtdDateBox <: Widget {
         this.empty = text.isEmpty()
         this.hoverId = hoverId
         this.onClick = onClick
+        this.editing = editing
         emit(this)
     }
 
@@ -589,6 +604,9 @@ class GtdDateBox <: Widget {
         let c = tokens.color
         let hovered = ctx.isHovered(hoverId)
         fillRound(ctx, frame, tokens.radius.md, c.surface)
+        if (editing) {
+            return
+        }
         strokeRound(ctx, frame, tokens.radius.md, tokens.metrics.borderWidth, if (hovered) {
             c.borderStrong
         } else {
@@ -617,7 +635,7 @@ class GtdDateBox <: Widget {
                 if (ctx.isPressed(hoverId)) {
                     ctx.clearPress()
                     if (frame.contains(x, y)) {
-                        onClick()
+                        onClick(frame)
                         return true
                     }
                 }

@@ -2,6 +2,7 @@ package textura.views.gtd
 
 import std.collection.*
 import cui.*
+import textura.ui.FocusRequest
 import textura.views.gtd.logic as gl
 
 /*
@@ -56,6 +57,14 @@ class GtdState {
     /** 日期编辑目标条目 id；空串表示关闭。 */
     var dateTarget: State<String>
     var dateDraft: State<String>
+    /** 日期编辑器的绝对矩形（行内日期盒 layout 时记录），原位摆放用。 */
+    var dateRect: Rect
+    var dateFocus: FocusRequest
+    /** 场景（context）原位编辑目标条目 id；空串表示关闭。 */
+    var sceneTarget: State<String>
+    var sceneDraft: State<String>
+    var sceneRect: Rect
+    var sceneFocus: FocusRequest
 
     // ---------------- 澄清表单 ----------------
     var clarifyType: State<Int64>
@@ -96,6 +105,12 @@ class GtdState {
         picker = rememberState<String>("gtd-picker") {""}
         dateTarget = rememberState<String>("gtd-date-target") {""}
         dateDraft = rememberState<String>("gtd-date-draft") {""}
+        dateRect = Rect.zero()
+        dateFocus = FocusRequest()
+        sceneTarget = rememberState<String>("gtd-scene-target") {""}
+        sceneDraft = rememberState<String>("gtd-scene-draft") {""}
+        sceneRect = Rect.zero()
+        sceneFocus = FocusRequest()
         clarifyType = rememberState<Int64>("gtd-clarify-type") {0}
         clarifyEnergy = rememberState<Int64>("gtd-clarify-energy") {1}
         clarifyContext = rememberState<Int64>("gtd-clarify-context") {0}

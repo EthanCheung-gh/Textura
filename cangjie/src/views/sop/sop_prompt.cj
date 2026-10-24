@@ -61,14 +61,29 @@ func parseSopPromptKind(id: String): SopPromptKind {
     }
 }
 
-/** 打开编辑浮层：`target` 是条目 / 连线 id，`entry` 只给检查项用。 */
-func openSopPrompt(state: SopViewState, kind: SopPromptKind, target: String, value: String,
+/**
+ * 这一帧这个字段是否正被原位编辑器接管。
+ *
+ * 画布上那些「输入框」是画出来的，编辑器是压在上面的真控件；两边同时画同一个字段就会看到
+ * 「两层文字 + 双边框」，叠加的控件还会比盒子高出一截——用户说的「下方又弹出一个一样的框」。
+ * 所以编辑态下画布不再画该字段的文本与边框（背景留着，位置不变），由控件自己画。
+ */
+func sopFieldEditing(state: SopViewState, kind: SopPromptKind): Bool {
+    state.promptOpen.value && state.promptKind.value == sopPromptKindId(kind)
+}
+
+/**
+ * 打开原位编辑器：`target` 是条目 / 连线 id，`rect` 是被点字段的绝对矩形（检查器 layout 记录，
+ * 见 `inspectorRects`），`entry` 只给检查项用。
+ */
+func openSopPrompt(state: SopViewState, kind: SopPromptKind, target: String, value: String, rect: Rect,
     entry!: String = ""): Unit {
     state.promptKind.value = sopPromptKindId(kind)
     state.promptTarget.value = target
     state.promptEntry.value = entry
     state.promptText.value = value
     state.promptError.value = ""
+    state.promptRect = rect
     state.promptOpen.value = true
     state.promptFocus.request(SOP_PROMPT_INPUT)
 }
@@ -101,11 +116,13 @@ private class SopPromptCopy {
  */
 private func sopPromptCopy(kind: SopPromptKind): SopPromptCopy {
     match (kind) {
-        case SopPromptKind.SopTitle => SopPromptCopy("编辑流程名称", "名称", "例如：客户投诉处理", "名称会显示在左侧流程列表。")
+        case SopPromptKind.SopTitle => SopPromptCopy("编辑流程名称", "名称", "例如：客户投诉处理",
+            "名称会显示在左侧流程列表。")
         case SopPromptKind.SopNotes => SopPromptCopy("编辑描述", "描述", "这个流程解决什么问题、适用范围…",
             "支持多行；Ctrl+Enter 保存，Esc 取消。可以留空。", multiline: true)
         case SopPromptKind.SopOwner => SopPromptCopy("编辑默认负责人", "默认负责人", "未指定", "留空表示未指定。")
-        case SopPromptKind.NodeTitle => SopPromptCopy("编辑步骤标题", "标题", "用一个动词开头", "标题会显示在画布节点上。")
+        case SopPromptKind.NodeTitle => SopPromptCopy("编辑步骤标题", "标题", "用一个动词开头",
+            "标题会显示在画布节点上。")
         case SopPromptKind.NodeNotes => SopPromptCopy("编辑描述", "描述", "这一步要做什么、注意什么…",
             "支持多行；Ctrl+Enter 保存，Esc 取消。可以留空。", multiline: true)
         case SopPromptKind.NodeOwner => SopPromptCopy("编辑负责人", "负责人", "谁来做", "留空表示未指派。")
@@ -118,18 +135,22 @@ private func sopPromptCopy(kind: SopPromptKind): SopPromptCopy {
     }
 }
 
-/** 页面浮层入口（`sop.cj` 的 `render` 在页面之后调用）。 */
+/**
+ * 原位编辑器（`sop.cj` 的 `render` 在页面之后调用，仍在 build 阶段）。
+ *
+ * 检查器画上去的那些「输入框」现在就在原地编辑：编辑器按点击时的字段矩形定位，宽高等于字段本身，
+ * Enter 提交、Esc 取消、点外部提交（与 Web 一致），不再出现第二个窗口。
+ * 校验失败时 `commitSopPrompt` 只写 `promptError` 而不关闭，错误行显示在字段下方。
+ */
 func sopPromptDialog(theme: Theme, store: AppStore, state: SopViewState): Unit {
     if (!state.promptOpen.value) {
         return
     }
     let kind = parseSopPromptKind(state.promptKind.value)
     let copy = sopPromptCopy(kind)
-    Ui.prompt(theme, state.promptText, state.promptOpen, {=> closeSopPrompt(state)}, title: copy.title,
-        key: SOP_PROMPT_INPUT, label: copy.label, placeholder: copy.placeholder, hint: copy.hint,
-        multiline: copy.multiline, error: state.promptError.value, focus: state.promptFocus) {value =>
-        commitSopPrompt(store, state, value)
-    }
+    Ui.inlineEditor(theme, state.promptText, state.promptRect, true, key: SOP_PROMPT_INPUT, multiline: copy.multiline,
+        placeholder: copy.placeholder, error: state.promptError.value, focus: state.promptFocus,
+        onCommit: {value => commitSopPrompt(store, state, value)}, onCancel: {=> closeSopPrompt(state)})
 }
 
 /** 写回 store（Esc 不会走到这里，因此取消不改数据）。 */
@@ -175,8 +196,7 @@ func commitSopPrompt(store: AppStore, state: SopViewState, raw: String): Unit {
                 patch.durationMin = SetValue<?Int64>.Value(Option<Int64>.None)
             } else {
                 match (parseMinutes(value)) {
-                    case Some(minutes) =>
-                        patch.durationMin = SetValue<?Int64>.Value(Some(minutes))
+                    case Some(minutes) => patch.durationMin = SetValue<?Int64>.Value(Some(minutes))
                     case None =>
                         state.promptError.value = "请填写整数分钟，例如 15。"
                         return
@@ -189,8 +209,7 @@ func commitSopPrompt(store: AppStore, state: SopViewState, raw: String): Unit {
                 return
             }
             commitChecklistText(store, target, state.promptEntry.value, value)
-        case SopPromptKind.EdgeLabel =>
-            store.updateEdge(target, label: value)
+        case SopPromptKind.EdgeLabel => store.updateEdge(target, label: value)
     }
     state.touch()
     closeSopPrompt(state)

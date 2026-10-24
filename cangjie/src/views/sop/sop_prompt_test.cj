@@ -15,6 +15,12 @@ import textura.ui.*
  */
 
 private let SOP_PROMPT_RECT: Rect = Rect(0.0, 0.0, 1440.0, 900.0)
+/*
+ * The rectangle the inspector recorded for the field under test (`rects.titleInput` and friends in
+ * production). Everything below edits at this position: the inline editor is placed here, exactly
+ * like a real field, which is the point of the change.
+ */
+private let SOP_FIELD_RECT: Rect = Rect(320.0, 200.0, 260.0, 34.0)
 
 private func sopPromptStore(): AppStore {
     let clock = FixedClock(1773626400000)
@@ -43,7 +49,7 @@ func sopPromptFocusesItsEditorAndSavesTheTitle(): Unit {
             return
     }
     let state = SopViewState(State<Int64>(0))
-    openSopPrompt(state, SopPromptKind.NodeTitle, step.id, step.title)
+    openSopPrompt(state, SopPromptKind.NodeTitle, step.id, step.title, SOP_FIELD_RECT)
     let testHost = WidgetTestHost()
     let body = {=> sopPromptDialog(texturaLight(), store, state)}
     let _ = testHost.frame(SOP_PROMPT_RECT, body: body)
@@ -69,7 +75,7 @@ func sopPromptRejectsAnEmptyTitleAndStaysOpen(): Unit {
             return
     }
     let state = SopViewState(State<Int64>(0))
-    openSopPrompt(state, SopPromptKind.NodeTitle, step.id, "")
+    openSopPrompt(state, SopPromptKind.NodeTitle, step.id, "", SOP_FIELD_RECT)
     let testHost = WidgetTestHost()
     let body = {=> sopPromptDialog(texturaLight(), store, state)}
     let _ = testHost.frame(SOP_PROMPT_RECT, body: body)
@@ -94,7 +100,7 @@ func sopDurationPromptWritesWholeMinutes(): Unit {
             return
     }
     let state = SopViewState(State<Int64>(0))
-    openSopPrompt(state, SopPromptKind.NodeDuration, step.id, "")
+    openSopPrompt(state, SopPromptKind.NodeDuration, step.id, "", SOP_FIELD_RECT)
     let testHost = WidgetTestHost()
     let body = {=> sopPromptDialog(texturaLight(), store, state)}
     let _ = testHost.frame(SOP_PROMPT_RECT, body: body)
@@ -138,7 +144,7 @@ func stepDescriptionEditsMultilineNotes(): Unit {
             return
     }
     let state = SopViewState(State<Int64>(0))
-    openSopPrompt(state, SopPromptKind.NodeNotes, step.id, step.notes)
+    openSopPrompt(state, SopPromptKind.NodeNotes, step.id, step.notes, SOP_FIELD_RECT)
     let testHost = WidgetTestHost()
     let body = {=> sopPromptDialog(texturaLight(), store, state)}
     let _ = testHost.frame(SOP_PROMPT_RECT, body: body)
@@ -171,7 +177,7 @@ func sopDescriptionAcceptsAnEmptyValue(): Unit {
     }
     store.updateItem(target.id, ItemPatch().withNotes("原有描述"))
     let state = SopViewState(State<Int64>(0))
-    openSopPrompt(state, SopPromptKind.SopNotes, target.id, "原有描述")
+    openSopPrompt(state, SopPromptKind.SopNotes, target.id, "原有描述", SOP_FIELD_RECT)
     let testHost = WidgetTestHost()
     let body = {=> sopPromptDialog(texturaLight(), store, state)}
     let _ = testHost.frame(SOP_PROMPT_RECT, body: body)
