@@ -105,6 +105,11 @@ public class InlineEditFrame {
      * placeholder ("例如 42") promises.
      */
     private var selectAllPending: Bool = false
+    /**
+     * The draft the session opened with. `selectAll` is only ever applied while the field still
+     * shows that value; see [takeSelectAll].
+     */
+    private var openedDraft: String = ""
     /** True once the field scrolled out of the window: the edit is cancelled exactly once. */
     private var cancelledOffWindow: Bool = false
 
@@ -154,6 +159,7 @@ public class InlineEditFrame {
             cancelledOffWindow = false
             blurFrames = 0
             selectAllPending = selectAllOnOpen
+            openedDraft = draft.value
         }
     }
 
@@ -162,11 +168,19 @@ public class InlineEditFrame {
      * text (`selectAllOnOpen`). Consuming the flag rather than keeping it keeps the selection
      * from being re-applied every frame — which would wipe the user's caret moves and their
      * drag-selection right after they made them.
+     *
+     * A second selective guard: the whole value is only selected while the field still holds the
+     * value the session opened with. `selectAll` on a field that already carries the user's input
+     * is destructive — the next character would **replace** everything they typed, which reads as
+     * "only the last keystroke counts" and makes Backspace clear the box in one press. There is
+     * exactly one arm per open on the OKR/GTD/SOP paths (`InlineAnchor.request` is called from the
+     * click handler only), so this never fires in practice; it keeps a re-armed session (a press
+     * delivered twice, a reopened field whose draft already moved) from undoing typed text.
      */
     func takeSelectAll(): Bool {
         let pending = selectAllPending
         selectAllPending = false
-        pending
+        pending && draft.value == openedDraft
     }
 
     /** Overlay owner of the dismissal layer (registered below the content). */

@@ -5,7 +5,7 @@ import cui.*
 import textura.core.data.{ItemPatch, OkrPatch, SetValue, ViewContext}
 import textura.ui.*
 import textura.views.okr.logic.{EMPTY_METRIC, METRIC_FIELDS, MetricDraft, MetricField, metricFieldText, metricToDraft,
-    pendingMetricPatch}
+    parseMetricNumber, pendingMetricPatch}
 
 /*
  * 卡片画布上的文本编辑：统一走 `textura.ui.Ui.prompt`。
@@ -254,6 +254,25 @@ func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: Strin
     }
     var draft = metricToDraft(base)
     let field = ui.promptField.value
+    /*
+     * 数字槽位在这里**先自己解析一次**，原因不是重复校验，而是 `pendingMetricPatch` 的 `None`
+     * 有两个完全不同的含义：
+     *   - 这个字段的值解析不了（跳过该字段）；
+     *   - 解析得了，但和库里的值一致，没有字段需要写。
+     * 两者混在一起报「这个值无法解析成数字」，于是「点开数字框直接回车」和「把原值重打一遍」
+     * ——两个完全合法的操作——都会显示一句关于解析的错误、编辑器还不关。真机上用户先删后打、
+     * 打进去没生效时草稿仍是原值，回车就撞上这一条：**报告里的「有一定概率出现这个值无法解析
+     * 成数字」其实就是「没有任何字段发生变化」**，与解析无关。
+     * 现在只有真正解析不了的值才走错误分支；「没有变化」按成功提交处理（关闭、不写库）。
+     */
+    if (field != metricFieldText(MetricField.UnitField)) {
+        match (parseMetricNumber(value)) {
+            case None =>
+                ui.promptError.value = "这个值无法解析成数字。"
+                return
+            case Some(_) => ()
+        }
+    }
     if (field == metricFieldText(MetricField.Start)) {
         draft = MetricDraft(start: value, current: draft.current, target: draft.target, unit: draft.unit)
     } else if (field == metricFieldText(MetricField.Current)) {
@@ -269,6 +288,8 @@ func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: Strin
                 decision.metric.unit)
             closeOkrPrompt(ui)
         case None =>
-            ui.promptError.value = "这个值无法解析成数字。"
+            // 值与库里一致（用户没改，或输入了同一个数）：没有字段要写，回车就是确认。
+            // 不写库（写一个相同的值只会多一条历史），也不算错误。
+            closeOkrPrompt(ui)
     }
 }
