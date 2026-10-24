@@ -122,12 +122,8 @@ public func layoutIds(
     edges: Array<SopEdge>,
     options!: LayoutOptions = LayoutOptions()
 ): HashMap<String, SopPosition> {
-    let outcome = runLayoutEngine(ids, edges, options)
-    let positions = HashMap<String, SopPosition>()
-    for (id in outcome.ids) {
-        positions[id] = outcome.positions[id]
-    }
-    return positions
+    // 命中缓存时直接返回同一张表（调用方只读；见 `LayoutCacheEntry` 的说明）。
+    return cachedLayout(ids, edges, options).positions
 }
 
 /** 分层/排序结果，按 (rank, order) 升序；用于连线绘制与对照测试。 */
@@ -140,7 +136,7 @@ public func layoutRanks(
     for (node in nodes) {
         ids.add(node.id)
     }
-    let outcome = runLayoutEngine(ids.toArray(), edges, options)
+    let outcome = cachedLayout(ids.toArray(), edges, options).outcome
     let result = ArrayList<RankedNode>()
     for (id in outcome.ids) {
         result.add(RankedNode(id, outcome.ranks[id], outcome.orders[id]))
@@ -201,6 +197,80 @@ func buildLayoutGraph(ids: ArrayList<String>, edges: Array<SopEdge>, options: La
         created.height = 0.0
     }
     return (graph, index)
+}
+
+/*
+ * 布局结果缓存（稳定化修复，见 `docs/STABILITY.md`）。
+ *
+ * 为什么需要：`SopPageWidget.layout` 每次布局都会调用 `layoutIds`，而 CUI 一帧里的布局 pass 不止
+ * 一次（测量 + 布局），于是完整 dagre 流水线会在同一份输入上被反复执行。实测这是整棵 UI 里最重的
+ * 分配点：它让 GC 的 safepoint 频繁落在「CUI 布局栈 + dagre 栈」这段深栈里，而 sts-1.2.0 运行时
+ * 在扫描深栈根时会读到坏槽位（`CheckAndPush` 解引用 null / `toRegion2Idx != INVALID_VALUE`），
+ * 表现为随机的 SIGSEGV/SIGABRT（主机）与进程直接消失（真机）。缓存把「同一输入的重复布局」从
+ * 每帧多次压到每份输入一次，既省掉真实的无谓计算，也把 GC 从这个深栈上挪开。
+ *
+ * 语义：`runLayoutEngine` 是纯函数（只读输入、不读时钟/随机数），键覆盖**全部**输入
+ * （ids 顺序、edges 顺序与端点、六个布局参数），因此命中缓存与重新计算逐点一致。
+ *
+ * 缓存的**条目**里连 `layoutIds` 要导出的那张坐标表一起存：命中时调用方拿到的是同一张表，
+ * 不再每次重新构造 —— 这样命中路径上几乎不分配，GC safepoint 也就不会落进这段深栈
+ * （修前 `layoutIds` 里那行 `positions[id] = outcome.positions[id]` 正是最后一处会崩的点）。
+ * 代价是调用方必须把返回的 map 当**只读**用；当前两个调用点（`sop.cj` 的预览、`sop_canvas.cj`
+ * 的自动布局）都只做 `contains` / 下标读取。
+ */
+private let LAYOUT_CACHE_CAPACITY: Int64 = 8
+private var layoutCacheKeys: ArrayList<String> = ArrayList<String>()
+private var layoutCacheEntries: ArrayList<LayoutCacheEntry> = ArrayList<LayoutCacheEntry>()
+
+/** 一份布局输入的计算结果：引擎输出 + 可直接交给调用方的坐标表。 */
+class LayoutCacheEntry {
+    let outcome: LayoutOutcome
+    let positions: HashMap<String, SopPosition>
+
+    init(outcome: LayoutOutcome) {
+        this.outcome = outcome
+        let exported = HashMap<String, SopPosition>()
+        for (id in outcome.ids) {
+            exported[id] = outcome.positions[id]
+        }
+        this.positions = exported
+    }
+}
+
+func layoutCacheKey(ids: Array<String>, edges: Array<SopEdge>, options: LayoutOptions): String {
+    let builder = StringBuilder()
+    builder.append("n${ids.size}")
+    for (id in ids) {
+        // 长度前缀：`["ab",""]` 与 `["a","b"]` 必须得到不同的键。
+        builder.append("|${id.size}:${id}")
+    }
+    builder.append(";e${edges.size}")
+    for (edge in edges) {
+        builder.append("|${edge.from.size}:${edge.from}>${edge.to.size}:${edge.to}")
+    }
+    builder.append(";o${options.rankdir == RankDir.TopDown}")
+    builder.append("|${options.nodeWidth},${options.nodeHeight},${options.nodesep}," +
+        "${options.ranksep},${options.margin}")
+    return builder.toString()
+}
+
+func cachedLayout(inputIds: Array<String>, inputEdges: Array<SopEdge>, options: LayoutOptions): LayoutCacheEntry {
+    let key = layoutCacheKey(inputIds, inputEdges, options)
+    for (index in 0..layoutCacheKeys.size) {
+        if (layoutCacheKeys[index] == key) {
+            return layoutCacheEntries[index]
+        }
+    }
+    let entry = LayoutCacheEntry(runLayoutEngine(inputIds, inputEdges, options))
+    if (layoutCacheKeys.size >= LAYOUT_CACHE_CAPACITY) {
+        // 会话里的布局输入不超过一手之数（预览 + TB/LR 自动布局）；满了整表重来，
+        // 这比维护 LRU 简单，且最坏情况只是多算一次。
+        layoutCacheKeys.clear()
+        layoutCacheEntries.clear()
+    }
+    layoutCacheKeys.add(key)
+    layoutCacheEntries.add(entry)
+    return entry
 }
 
 func runLayoutEngine(inputIds: Array<String>, inputEdges: Array<SopEdge>, options: LayoutOptions): LayoutOutcome {
