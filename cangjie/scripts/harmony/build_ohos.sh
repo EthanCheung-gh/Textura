@@ -25,6 +25,19 @@ require_tmp_space
 
 [ "$SYNC" = 1 ] && sync_snapshot
 require_file "$SNAP_HARMONY/host/cjpm.toml" "run from the Textura worktree"
+
+# Diagnostic build (`TEXTURA_PROBE=1`): compile the on-device probe in. The worktree default stays
+# `PROBE_COMPILED_ON = false` — the flip happens in the snapshot only, so a shipping build is
+# never at risk and a diagnostic build stays reproducible with one command (docs/STABILITY.md).
+if [ "${TEXTURA_PROBE:-0}" = "1" ]; then
+  PROBE_SRC="$SNAP_HARMONY/host/src/probe.cj"
+  require_file "$PROBE_SRC" "probe source missing from snapshot"
+  sed -i 's/^private let PROBE_COMPILED_ON: Bool = false$/private let PROBE_COMPILED_ON: Bool = true/' \
+    "$PROBE_SRC"
+  grep -q '^private let PROBE_COMPILED_ON: Bool = true$' "$PROBE_SRC" ||
+    die "could not enable PROBE_COMPILED_ON in $PROBE_SRC"
+  log "probe: PROBE_COMPILED_ON = true (diagnostic build; worktree default stays false)"
+fi
 stage_ohos_sdl_bindings
 provide_crt_objects
 stamp_host_sysroot
