@@ -1712,3 +1712,89 @@ for i in $(seq 1 36); do $HDC shell "pidof com.ethancheung.textura" || echo "GON
 
 失败要抓：`fail n=<k> route='…' error='…'` 原文（有 `n` 就用它定位是第几次失败）、崩溃时间点附近的
 `hilog` 全文（`$HDC shell "hilog" > /tmp/hilog.txt`）与 `/data/log/faultlog/`。
+
+## 27. 硬件键盘的数字进不了文本框（CUI-P10，已修复并真机验收）
+
+### 27.1 现场与根因
+
+真机（探针包 `diag.log`，2481 行）：OKR 指标「当前」框点开后 `focus='okr-prompt-input'` 正确，
+按 `4`/`2` 只得到 `KeyDown key=Digit(52)` / `Digit(50)`，**没有任何 `TextInput text='4'`**，草稿不变；
+按字母 `a` 系统输入法接管（出候选条），空格提交后草稿变成 `啊`。即「输入法提交路径」能进文本，
+「裸键路径」被丢掉。
+
+根因在框架：`TextField`/`TextArea` 只在 `UiEvent.TextInput` 里插入文本；两个 `handleKey()` 里
+`Key.Digit` / `Key.Space` 没有分支，`Key.Letter` 只走快捷键表。输入法不解释的键（数字、空格、
+未挂输入法时的字母）既无 `TextInput` 也无键分支，字符被静默丢弃。补丁见
+`third_party/README.md` 的 `CUI-P10-printable-key-fallback`（按序为第 10 个，`CUI-P09` 已被
+host-window-push 占用）。
+
+### 27.2 两次踩坑，值得记住
+
+1. **不能立即插入**：SDL 对同一次按键先发 `KEY_DOWN` 再发 `TEXT_INPUT`，输入法介入时可以跨帧。
+   立即插入会在这些平台双插入，而桌面主机（两者同批到达）永远测不出来 → 改为「暂存一拍」：
+   按下只记 `pendingPrintable`，同帧 `TextInput`/`TextEditing` 清空它，下一帧才写草稿。
+2. **帧 tick 不能靠 `handle(UiEvent.Frame)`**：`DesktopApp.stepFrame()` 只把合成帧 tick 交给
+   `frameSubscriber` 回调（`dispatchFrameSubscribers`），**从不把 `UiEvent.Frame` 派发进控件树**；
+   `Portal.handle` 也不向子树转发。第一版补丁把这个 flush 挂在 `handle(UiEvent.Frame)` 上，
+   主机 959 项全绿、真机上完全无效（顶栏搜索框与 OKR 原位编辑器都不动）。
+   现在 `PrintableKeyFallback.arm()` 每次 build 读一次暂存槽（保留图依赖），**仅当槽非空**时为那
+   一两帧 `registerFrameSubscriber` 注册一次；注册进的是本次 build 的注册表（每 build 清空），
+   静止时 `frameSubscriberCount == 0`，retained 局部重绘策略不受影响。
+   回归用例：`printableKeyFlushesOnTheFrameTickSubscription` /
+   `printableKeyFrameTickKeepsSuccessiveDigitsInOrder`（换回第一版实现即 FAIL）。
+
+### 27.3 主机门禁（本轮实测）
+
+| 项 | 结果 |
+|---|---|
+| `third_party/CUI` `cjpm test` | `TOTAL: 962`，`PASSED: 961`，`ERROR: 1`——`unicode17OfficialGraphemeBreakConformance` 报 `FSException: The input path 'parent' .dev/unicode does not exist`（缺夹具，修前同样 ERROR，与本补丁无关） |
+| 根包 `cjpm test` | `TOTAL: 687`，`PASSED: 687`，`FAILED: 0` |
+| `scripts/parity.sh --theme both` + `scripts/diff.sh --theme both` | **14/14 PASS**（structure/visual/raw 三档全过） |
+| 出货包 | `entry-default-signed.hap` 30 096 698 字节，sha256 `190337e834f9c6d2486eecd1c50fedb38e32b7ec827052394c8c726cff129a47` |
+
+主机私有副本：`~/.cache/wk-keys/`（`TMPDIR=~/.cache/tmp`），`cjpm build -i -o textura` 后跑
+parity/diff。`WidgetTestHost` 属于 `cui.testing` 且反向依赖 `cui.text`（`cyclic dependency`），
+所以帧 tick 用例直接用 `buildRoot` + `dispatchFrameSubscribers`，与 `DesktopApp` 同一对入口。
+
+### 27.4 真机验收（本轮，出货包装机）
+
+设备 `192.168.0.3:36773`，装机后 `aa start`，窗口 `[475,261] 1930×1085`，
+屏幕坐标 = `(475 + 1.75·x, 326 + 1.75·y)`；截图在 `~/.cache/ship-shots/`。
+
+| 组 | 步 | 操作 | 结果 | 证据 |
+|---|---|---|---|---|
+| A | 1 | OKR → 点 KR「当前」框 | PASS 橙色描边 + 值 `47` 全选 | `a2-current-focus.jpeg` / `a2-zoom.png` |
+| A | 2 | `uinput -K -d 2004 -u 2004` → `2002` | **PASS 框内变 `42`**（修复前为空） | `a3-typed.jpeg` / `a3-zoom.png` |
+| A | 3 | `uinput -K -d 2054 -u 2054`（Enter） | PASS 卡片「当前 42」，换算 0%，状态转「落后」 | `a4-enter.jpeg` / `a4-full.png` |
+| A | 4 | 立刻点侧栏「日历」、再回 OKR | PASS 立即切换（提交后指针未失效） | `a5-calendar.jpeg` / `a6-back-okr.jpeg` |
+| A | 5 | 立刻点另一个输入框（KR03「当前」） | PASS 秒开橙色编辑器、`2.35` 全选；输入 `9` 直接替换 | `a11-kr03-current.jpeg` / `a12-zoom.png` |
+| B | 1 | SOP → 点节点「发送欢迎邮件」 | PASS 右栏变「步骤」变体（节点名 + 行动 chip + 标题/描述/负责人/类型/检查项） | `b2-node.jpeg` / `b2-inspector.png` |
+| B | 2 | 点「标题」→ 裸键打 `7` → Enter | PASS 标题更新为 `发送欢迎邮件7`，**仍停在该步骤**（头部是节点名，不是「SOP 设置」） | `b3-title-focus.jpeg` `b4-title-typed.jpeg` `b6-enter2.jpeg` |
+| B | 3 | 紧接点「描述」 | PASS 就地编辑器开在字段上；多行 `TextArea` 同样吃裸键 `5`；Ctrl+Enter 提交后仍在节点 | `b8-desc2.jpeg` `b9-desc-typed.jpeg` `b10-desc-commit.jpeg` |
+| B | 4 | 勾一次「检查项」（节点「核对权限配置」，0/2） | **BLOCKED** 注入点击（`uitest uiInput swipe` 与 `uiInput click` 都试过，坐标 2228/2241/2256 × y 1082/1123/1214）后状态始终 `0/2` | `b12`–`b20` 系列截图 |
+| B | 5 | 点画布空白 | PASS 右栏回到「SOP 设置」 | `b23-blank3.jpeg` |
+| C | — | 顶栏搜索框（普通 `TextField`，上一轮同样打不进数字） | **PASS `42` 进框**；再按 `a` 走输入法（候选条正常，无重复字符），空格提交后变 `42啊` | `c3-search.jpeg` `c4-ime.jpeg` `c5-ime-commit.jpeg` |
+
+补充说明：
+
+- B-2 的第一次 Enter 被「输入法组合中」保护吃掉（`Key.Enter` 在 `imeComposition` 非空时只消费不提交），
+  第二次 Enter 正常提交——这是 §26 那条规则在起作用，不是回归。
+- B-4 的点击在**同一列的文本字段上有效**（标题/描述都开了），只有检查项 checkbox 的行没有反应；
+  该节点在改标题前后选中项一直没跳，说明这不是本补丁引入的失焦/toggle 问题，另行排查。
+- 验收中途窗口被最大化（`uitest dumpLayout` 显示 `[0,14][2880,1610]`），此后侧栏宽 420 设备像素、
+  顶栏搜索框中心约 `(2415, 119)`；后续轮次若沿用旧的 475,261 原点需先重新读 geometry。
+
+### 27.5 复跑命令
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+T=192.168.0.3:36773
+$HDC -t $T shell "power-shell wakeup"                       # 息屏后先唤醒，否则 script 只有壁纸
+$HDC -t $T shell "aa start -a EntryAbility -b com.ethancheung.textura"
+$HDC -t $T shell "uitest uiInput swipe X Y X+3 Y+1 60"      # 点击（零长度不产生事件；首次偶发丢失，重发一次）
+$HDC -t $T shell "uinput -K -d 2004 -u 2004"                # 数字键（2004='4'，2002='2'，2054=Enter，2050=Space，2070=Esc）
+$HDC -t $T shell "snapshot_display -f /data/local/tmp/s.jpeg" && $HDC -t $T file recv /data/local/tmp/s.jpeg ./shot.jpeg
+```
+
+失败复核：`hilog -r` → 动作 → 立刻 dump，看 `KeyDown/TextInput` 与 `textura-ime` 行；
+出货包没有探针（`PROBE_COMPILED_ON=false`），要 `ev#` 逐事件得用 `TEXTURA_PROBE=1` 的诊断包。
