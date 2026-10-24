@@ -1376,3 +1376,114 @@ $HDC install -r cangjie/harmony/out/entry-default-signed.hap
 待用户：解锁（开发模式不允许自动解锁）→ `aa start` → 读 §24.5 的 `push` / `size` 行 → 若 `adopted=` 仍是旧值，
 按 24.5 的表格切到兜底路径；随手最大化一次确认 `size` 行与截图（本轮设备全程锁屏，
 `snapshot_display` 只有锁屏时钟，**没有**本应用的截图，不做任何「已目视确认」的声明）。
+
+---
+
+## 25. 原位编辑器：坐标契约、跨帧锚点与关闭路径（本轮）
+
+### 25.1 现场与三个根因
+
+用户现场：**OKR 点输入框后，真控件出现在应用左上角（不是原字段位置），原位置字段消失，而且消不掉。**
+
+真机复现（出货前的旧包，`192.168.0.3:36773`，全屏 2880×1620 / 密度 1.75）：
+
+| 视图 | 注入 | 观察 |
+|---|---|---|
+| OKR | 点 KR 的「指标」框 | 编辑器（占位「例如 42」+ 红字「不能为空。」）出现在**窗口左上角**，压在侧栏「织理 Textura」标题上；原字段被画成编辑态 |
+| GTD | 点「下一步」行的日期盒 | 编辑器（占位 `YYYY-M…`）同样出现在左上角；日期盒变空白 |
+| SOP | 点检查器「描述」 | 编辑器**正好贴在字段上**，有插入符，输入法工具条出现 |
+
+三条互相独立的成因（SOP 只踩不到前两条，所以它是好的）：
+
+1. **矩形没有跨帧**（坐标问题）。`OkrUiState()` / `GtdState()` 每帧重建（只有 CUI `State` 被
+   `rememberState` 复用），而 `promptRect` / `dateRect` / `sceneRect` 是普通字段：点击写进去的值
+   在下一帧 build 时就是 `Rect.zero()`，`resolve()` 又用 6px 人造边距把它夹到 `(6,6)` —— 正好压在侧栏上。
+   SOP 的 `SopViewState` 由 `remember<SopViewState>` 持有，所以同一份代码在 SOP 上是好的。
+2. **焦点请求同样没有跨帧**。`promptFocus` / `dateFocus` / `sceneFocus` 也是每帧新建的 `FocusRequest()`：
+   编辑器打开了却 `ctx.focusId == ""`，没有插入符、没有输入法、字符键回到页面。用户看到的是
+   「点进去打不进字」，提交时草稿还是空值 → 校验拒绝 → 看起来「关不掉」。
+3. **关闭路径不完整**。只有「Esc / 点外部提交」两条，且提交被拒时编辑器留在原地（没有错误提示以外的出口）；
+   没有 backdrop 拦截、Tab 会跑到页面控件上、失焦不提交、字段滚出窗口后编辑器仍停在原处。
+
+### 25.2 坐标契约（窗口绝对坐标）
+
+`Ui.inlineEditor(theme, draft, anchor, open, key!, …)` 的锚点是**窗口绝对坐标**，与 `Ui.modal`
+的面板矩形同一空间：
+
+```text
+x 已含：侧栏 240 + 内容区内边距 24 = 264（1fr 内容区从 264 开始）
+y 已含：顶栏 56 + 内容区内边距 24 = 80
+滚动：ScrollView 在 layout 子节点前已减去 scrollOffset，所以画布拿到的矩形本身就是滚动后的绝对位置
+```
+
+视图不需要做任何换算：它们从 CUI 的 `layout(ctx, rect)` 里拿到的 `rect` 已经是绝对坐标，
+`inspectorRects` / `PageCanvas` / GTD 行内盒的公式原样保留即可。
+
+规则（写进代码注释，违反即真机左上角）：
+
+- **每帧重建的状态壳（`OkrUiState`、`GtdState`）不得持有锚点与焦点请求**。它们必须来自
+  `inlineAnchor("…")`（`remember<InlineAnchor>`）与 `remember<FocusRequest>("…")`；
+  由 `remember<状态壳>` 持有的视图（SOP）可以直接 `InlineAnchor(State<Int64>(0))`。
+- **矩形未就绪时绝不按 (0,0) 打开**：`InlineAnchor.ready()` 为假时 `Ui.inlineEditor` 只注册关闭层、
+  不建控件；视图在 `layout` 里写回矩形后 `InlineAnchor.revision`（CUI `State`）变化 →
+  构建作用域重新描述 → 编辑器在字段就绪的那一帧出现。
+- **每帧写回**：字段画出来的地方（`paintOkrField` / 标题热点 / `GtdDateBox.layout` /
+  `SopPageWidget.layout` 的 `trackSopPrompt`）在编辑态下 `anchor.update(rect)`，
+  于是滚动、resize、同页其它编辑改变行高时编辑器跟着字段走（写入幂等，矩形不变不递增修订号）。
+
+### 25.3 关闭路径（全部可独立生效）
+
+| 入口 | 行为 | 实现 |
+|---|---|---|
+| `Esc` | **无条件取消**（不写回）。值非法、矩形异常都有效 | `InlineEditFrame.handleOverlay`，第一条分支 |
+| 点 backdrop（任意页面空白处） | 提交；校验拒绝则留在原地并显示错误行（与 Web 一致） | 全窗口**透明** backdrop（`InlineEditorHost` 注册的 overlay，在编辑器下层）；主键按下总是被消费，页面热点收不到 |
+| 点字段自己 | 只把插入符放回去，不结束编辑 | 同上，`fieldRect.contains` 分支 |
+| `Enter` | 提交（多行字段是 `Ctrl/Cmd+Enter`，单 `Enter` 换行） | `TextField.onSubmit` / `TextArea` 前的 `EventHandler` |
+| 失焦 | 提交 | `observeFocus`：**同时挂在 layout 与事件上**——CUI 保留图会跳过未变化子树的 layout，只挂 layout 会漏 |
+| `Tab` / `Shift+Tab` | 吞掉并保焦，**不逃出编辑器**（出口是 Esc / Enter / 点外部） | `handleOverlay` |
+| 字段滚出窗口 | **取消**（不提交）：滚动不是确认动作，取消不改数据，也不会让控件浮在无关内容上 | `observeViewport`（与窗口求交，一次只触发一次） |
+| 关闭后焦点 | `FocusRequest.release()` 交还打开前的控件；若原本没有任何控件持有焦点（GTD 行内盒不 `focus`），shell 兜底把焦点放到 `shell-nav-<当前路由>` | `src/ui/focus.cj`、`ShellHost.applyFocusRequest` |
+
+「无法消除」的两种现场都已覆盖：矩形异常（`ready()` 为假）时 Esc 仍有效；值非法的提交被拒后
+Esc / 点 backdrop 仍可关闭（backdrop 会把同一次拒绝再报一遍错误，属预期）。
+
+### 25.4 主机门禁（`cjpm test` 652 例全绿）
+
+| 用例 | 断言 |
+|---|---|
+| `src/ui/inline_editor_test.cj`（15 例，含新增 6） | 零矩形不打开；矩形晚一帧写入则在字段就绪那帧出现；锚点移动后编辑器跟随；字段离开窗口→取消；Tab 保焦；失焦提交；`bounds == 字段矩形`（含内容区偏移 264/80、滚动后的 y、34/92/30px 三种高度分档） |
+| `src/views/okr/okr_inline_editor_test.cj`（6 例） | 画布真实 hotspot 点击 → 编辑器 bounds == 字段矩形（指标 78×28、标题按 28/72 下限），x ≥ 264 / y ≥ 80；换字段跟随；单位字段 Enter 写回 store；非法值 + backdrop 留下错误、Esc 关闭 |
+| `src/views/sop/sop_inline_editor_test.cj`（3 例） | 检查器「名称」→ bounds == `inspectorRects().nameInput`；检查器滚 40px → 编辑器同期上移 40px；Esc 不写回 |
+| `src/views/gtd/gtd_inline_editor_test.cj`（4 例） | 日期盒在 layout 写回绝对矩形（含 300/200 容器偏移，124×30）、非编辑态不写；`openDateEditor` → bounds == 该矩形且拿到焦点；Enter 写回 `gantt.end`；Esc 不写 |
+| `src/shell/inline_editor_audit_test.cj`（1 例，七路由） | 每条路由至少一个文本控件，且全部 `x ≥ 240`、不越窗（「跑到左上角/压侧栏」的静态判据） |
+
+对拍：`./scripts/parity.sh --theme both` + `./scripts/diff.sh --theme both` → **14/14 PASS**
+（`ruleΔ ≤ 1.5px`、`shift (0,0)`、`edge ≥ 90%`）；编辑态不参与对拍，静态像素无变化。
+
+### 25.5 本轮真机状态
+
+- 交叉编译：`scripts/harmony/build_ohos.sh` 成功；`set_signing_material.sh`（绝对路径 + store/key
+  两份密码）→ `assemble_hap.sh`（带 sync）→ `entry-default-signed.hap` **30 051 755 B**，
+  sha256 `f8b153df918f6a4e…`，`STATUS: installable`。
+- `hdc uninstall` → `install -r` → 两者都成功；**`aa start` 被锁屏阻塞**
+  （`10106102 The device screen is locked … unlock screen failed`，开发模式不允许自动解锁），
+  且本轮设备的锁屏带密码/指纹，注入无法通过，因此**没有**做逐字段点击审计，不做任何「已目视确认」的声明。
+- 探针：源码默认 `PROBE_COMPILED_ON = false`（§1），本轮出货包沿用该默认；卸载重装后沙箱尚未被创建
+  （应用没起来过），所以 `diag.log` 不存在——「探针关闭」由源码默认值 + 上一轮同口径实测共同约束。
+
+待用户解锁后按顺序复测（每项三点：**贴在字段上 / Esc 或点外部可关 / 提交后值写回界面**）：
+
+1. **OKR**：侧栏 OKR → 点 KR「当前」输入框（编辑器应压在框上）→ 输入 `42` 回车 → 该数字变 42；
+   再点「单位」→ Esc（不应写回）；再点负责人 / 新增 KR / 目标标题各一次。
+2. **SOP**：侧栏 SOP → 点检查器「描述」（应压住 92px 描述区，光标在里面）→ 输入后 Ctrl+Enter 保存；
+   点步骤节点 → 标题 / 描述 / 负责人 / 预计耗时 / 检查项 / 连线「分支文案」各点一次；Esc 应能关。
+3. **GTD + 日历**：侧栏 GTD → 「下一步」首行的日期盒与 `@场景` 盒各点一次（编辑器应压在盒上，
+   日期写 `2026-11-05` 回车后行内显示日期）→ 侧栏日历 → 顶部快速添加输入框（原生 `TextField`，
+   确认无叠加、可直接输入回车添加）。
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+$HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg   # 后缀必须是 .jpeg
+$HDC file recv /data/local/tmp/shot.jpeg ~/.cache/textura-device/
+```
