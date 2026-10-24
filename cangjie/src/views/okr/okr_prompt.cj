@@ -202,6 +202,47 @@ func okrPromptDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
         onCommit: {value => commitOkrPrompt(ctx, ui, page, value)}, onCancel: {=> closeOkrPrompt(ui)})
 }
 
+/** 全角数字对应的半角写法（按下标 0-9 取）。 */
+private let OKR_ASCII_DIGITS: Array<String> = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+/**
+ * 把输入法送来的全角数字折成半角（`４２` → `42`、`４．５` → `4.5`、`－` → `-`）。
+ *
+ * 为什么只在指标提交这一层做：`parseMetricNumber` 与 Web 版逐字对齐（`Float64.tryParse`，
+ * 只认 ASCII），全角数字在显示上完全正常、提交时却被判成「无法解析」——这正是用户现场
+ * 「只能删、加不进数字」+「有一定概率报无法解析」的组合。视图层是唯一知道「这一串是用户刚
+ * 从输入法打进来的」的地方，所以折半角放在这里，共享的解析规则不动。
+ * 只折叠确定等价的字符：数字、全角句点、全角减号。全角逗号 `，` 不映射成小数点——半角的
+ * `1,5` 本来就非法，映射会凭空多出一种「合法」写法。
+ */
+private func okrFoldNumericInput(raw: String): String {
+    if (raw.isEmpty()) {
+        return raw
+    }
+    var folded = ""
+    var changed = false
+    for (rune in raw.toRuneArray()) {
+        let code = Int64(UInt32(rune))
+        if (code >= 0xFF10 && code <= 0xFF19) {
+            folded += OKR_ASCII_DIGITS[code - 0xFF10]
+            changed = true
+        } else if (code == 0xFF0E) {
+            folded += "."
+            changed = true
+        } else if (code == 0xFF0D) {
+            folded += "-"
+            changed = true
+        } else {
+            folded += rune.toString()
+        }
+    }
+    if (changed) {
+        folded
+    } else {
+        raw
+    }
+}
+
 /** 提交：写回 `ctx.store`，随后关闭浮层（Esc 取消不改数据）。 */
 func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: String): Unit {
     let kind = ui.promptKind.value
@@ -255,6 +296,14 @@ func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: Strin
     var draft = metricToDraft(base)
     let field = ui.promptField.value
     /*
+     * 输入法（中文 / 全角状态）送进来的是**全角数字**：`４２` 而不是 `42`。`parseMetricNumber`
+     * 走 `Float64.tryParse`，只认 ASCII，于是这两个数字在字段里**看得见**、提交时却被判成
+     * 「这个值无法解析成数字」——用户读作「只能删、加不进数字」，而且只在输入法处于全角/中文态
+     * 时出现（所以是「有一定概率」）。数字槽位在提交这一层把全角数字折成半角，其余字符原样
+     * 交给解析器（`1,5` 依然非法，见 `okrSlotUnparseableValueKeepsTheEditorAndATypedFixCommits`）。
+     */
+    let typed = okrFoldNumericInput(value)
+    /*
      * 数字槽位在这里**先自己解析一次**，原因不是重复校验，而是 `pendingMetricPatch` 的 `None`
      * 有两个完全不同的含义：
      *   - 这个字段的值解析不了（跳过该字段）；
@@ -266,7 +315,7 @@ func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: Strin
      * 现在只有真正解析不了的值才走错误分支；「没有变化」按成功提交处理（关闭、不写库）。
      */
     if (field != metricFieldText(MetricField.UnitField)) {
-        match (parseMetricNumber(value)) {
+        match (parseMetricNumber(typed)) {
             case None =>
                 ui.promptError.value = "这个值无法解析成数字。"
                 return
@@ -274,11 +323,11 @@ func commitOkrPrompt(ctx: ViewContext, ui: OkrUiState, page: OkrPage, raw: Strin
         }
     }
     if (field == metricFieldText(MetricField.Start)) {
-        draft = MetricDraft(start: value, current: draft.current, target: draft.target, unit: draft.unit)
+        draft = MetricDraft(start: typed, current: draft.current, target: draft.target, unit: draft.unit)
     } else if (field == metricFieldText(MetricField.Current)) {
-        draft = MetricDraft(start: draft.start, current: value, target: draft.target, unit: draft.unit)
+        draft = MetricDraft(start: draft.start, current: typed, target: draft.target, unit: draft.unit)
     } else if (field == metricFieldText(MetricField.Target)) {
-        draft = MetricDraft(start: draft.start, current: draft.current, target: value, unit: draft.unit)
+        draft = MetricDraft(start: draft.start, current: draft.current, target: typed, unit: draft.unit)
     } else {
         draft = MetricDraft(start: draft.start, current: draft.current, target: draft.target, unit: value)
     }

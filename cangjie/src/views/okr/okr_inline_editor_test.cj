@@ -484,6 +484,77 @@ func okrFocusRestoreTargetsTheOpenedField(): Unit {
     @Expect(okrPromptFocusTarget(harness.stateOrFail()), owner.id)
 }
 
+/**
+ * 输入法送全角数字（`４２`）时，槽位读作 42 并正常写回。
+ *
+ * 中文/全角态的输入法提交的是 U+FF10-FF19，而 `parseMetricNumber` 与 Web 版一致只认 ASCII：
+ * 数字在框里看得见，回车却显示「这个值无法解析成数字」，用户读作「只能删、加不进数字」。
+ * 视图层在提交时折成半角，所以这条与下一条（`４．５`）都必须通过；半角的 `1,5` 仍然非法。
+ */
+@Test
+func okrSlotAcceptsFullWidthDigitsFromTheIme(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    okrSlowTap(harness, testHost, spot)
+    let ui = harness.stateOrFail()
+    let krId = harness.promptTarget()
+    okrTypeChars(harness, testHost, ["４", "２"])
+    // 草稿照输入法给的原样显示（编辑器不谎报用户输入）。
+    @Expect(ui.promptText.value, "４２")
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(ui.promptError.value, "")
+    @Expect(ui.promptOpen.value, false)
+    @Expect(okrCurrentMetric(harness.store, krId), Float64(42.0))
+}
+
+/** 全角小数点（`４．５`）同样折成 `4.5`。 */
+@Test
+func okrSlotAcceptsFullWidthDecimalPoint(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    okrSlowTap(harness, testHost, spot)
+    let ui = harness.stateOrFail()
+    let krId = harness.promptTarget()
+    okrTypeChars(harness, testHost, ["４", "．", "５"])
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(ui.promptError.value, "")
+    @Expect(okrCurrentMetric(harness.store, krId), Float64(4.5))
+}
+
+/** 全角折半角只覆盖确定等价的字符：`１，５`（全角逗号）仍然非法，不许凭空变合法。 */
+@Test
+func okrSlotDoesNotTurnAFullWidthCommaIntoADecimalPoint(): Unit {
+    let harness = OkrEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let spot = match (harness.metricHotspot("current")) {
+        case Some(value) => value
+        case None =>
+            @Expect("a current-metric hotspot on the card canvas", "none")
+            return
+    }
+    okrSlowTap(harness, testHost, spot)
+    let ui = harness.stateOrFail()
+    okrTypeChars(harness, testHost, ["１", "，", "５"])
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(ui.promptOpen.value, true)
+    @Expect(ui.promptError.value.isEmpty(), false)
+}
+
 /** 指标「当前」的数值（store 里那条 KR 的 `metric.current`）。 */
 private func okrCurrentMetric(store: AppStore, krId: String): Float64 {
     for (item in store.state.value().items) {
