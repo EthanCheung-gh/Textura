@@ -66,6 +66,13 @@ class SopInspRects {
     let nodeNotesArea: Rect
     let durationInput: Rect
     let addChecklist: Rect
+    /**
+     * 类型 chips 与检查项区块之间的 1px 分隔线（`y`）。与 [checklistLabelY] 一起由
+     * `inspectorRects` 算出，绘制不再反推——反推曾把线画到 chips 底下 5.5px，视觉上「压线」。
+     */
+    let checklistRuleY: Float32
+    /** 「检查项」小标题的行顶（分隔线下方 `padding-top: 8px`）。 */
+    let checklistLabelY: Float32
     let checkRows: Array<SopCheckRow>
     let actionButtons: Array<(String, Rect)>
     // Edge variant.
@@ -90,6 +97,8 @@ class SopInspRects {
         nodeNotesArea: Rect,
         durationInput: Rect,
         addChecklist: Rect,
+        checklistRuleY: Float32,
+        checklistLabelY: Float32,
         checkRows: Array<SopCheckRow>,
         actionButtons: Array<(String, Rect)>,
         labelInput: Rect,
@@ -112,6 +121,8 @@ class SopInspRects {
         this.nodeNotesArea = nodeNotesArea
         this.durationInput = durationInput
         this.addChecklist = addChecklist
+        this.checklistRuleY = checklistRuleY
+        this.checklistLabelY = checklistLabelY
         this.checkRows = checkRows
         this.actionButtons = actionButtons
         this.labelInput = labelInput
@@ -175,11 +186,13 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
             chipX += width + 4.0
         }
         cursor = snapPx(chipY + chipHeight + SOP_INSP_GAP)
-        // 检查项 section: `border-top` + 8px padding.
-        cursor = snapPx(cursor + 1.0 + SOP_BLOCK_PAD_TOP)
-        let headRowY = cursor
-        let addChecklist = Rect(bodyX + innerWidth - SOP_ICON_SM, headRowY - 3.0, SOP_ICON_SM, SOP_ICON_SM)
-        cursor = snapPx(headRowY + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP)
+        // 检查项 section: 1px `border-top`，再 `padding-top: 8px` 到小标题行顶。
+        // 三条边（chips 底、分隔线、标题行顶）都在这里算，绘制端不再反推。
+        let checklistRuleY = snapPx(cursor)
+        let checklistLabelY = snapPx(checklistRuleY + 1.0 + SOP_BLOCK_PAD_TOP)
+        cursor = snapPx(checklistLabelY)
+        let addChecklist = Rect(bodyX + innerWidth - SOP_ICON_SM, cursor - 3.0, SOP_ICON_SM, SOP_ICON_SM)
+        cursor = snapPx(cursor + SOP_SECTION_LABEL_LINE + SOP_BLOCK_GAP)
         let rows = ArrayList<SopCheckRow>()
         let checklist = checklistOf(item)
         for (entry in checklist) {
@@ -199,8 +212,8 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
         buttons.add(("delete-node", Rect(bodyX + rowWidth + 8.0, cursor + 1.0, rowWidth, SOP_BTN_SM_H)))
         return SopInspRects(SopInspVariant.Node, card, head, Rect(bodyX, head.bottom(), innerWidth, card.h - head.h - 1.0),
             cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, ownerInput, emptyRect, emptyRect, 0.0, 0.0,
-            chips.toArray(), titleInput, notesArea, durationInput, addChecklist, rows.toArray(), buttons.toArray(),
-            emptyRect, Array<(String, Rect)>())
+            chips.toArray(), titleInput, notesArea, durationInput, addChecklist, checklistRuleY, checklistLabelY,
+            rows.toArray(), buttons.toArray(), emptyRect, Array<(String, Rect)>())
     }
 
     if (edge.isSome()) {
@@ -218,8 +231,8 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
         buttons.add(("delete-edge", Rect(bodyX, cursor + 1.0, innerWidth, SOP_BTN_SM_H)))
         return SopInspRects(SopInspVariant.Edge, card, head, Rect(bodyX, head.bottom(), innerWidth, card.h - head.h - 1.0),
             cursor + 1.0 + SOP_BTN_SM_H + scroll, emptyRect, emptyRect, emptyRect, emptyRect, emptyRect, 0.0, 0.0,
-            Array<(String, Rect)>(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(), buttons.toArray(),
-            labelInput, presets.toArray())
+            Array<(String, Rect)>(), emptyRect, emptyRect, emptyRect, emptyRect, 0.0, 0.0, Array<SopCheckRow>(),
+            buttons.toArray(), labelInput, presets.toArray())
     }
 
     // SOP settings (the variant shown by the reference screenshot).
@@ -260,7 +273,7 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
     let contentBottom = cursor + scroll
     return SopInspRects(SopInspVariant.SopSettings, card, head, Rect(bodyX, head.bottom(), innerWidth,
         card.h - head.h - 1.0), contentBottom, nameInput, notesArea, ownerInput, areaInput, progressTrack, statsTop,
-        recentTop, chips.toArray(), emptyRect, emptyRect, emptyRect, emptyRect, Array<SopCheckRow>(),
+        recentTop, chips.toArray(), emptyRect, emptyRect, emptyRect, emptyRect, 0.0, 0.0, Array<SopCheckRow>(),
         Array<(String, Rect)>(), emptyRect, Array<(String, Rect)>())
 }
 
@@ -558,14 +571,13 @@ func paintNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects): Un
         }
     }
 
-    // 检查项.
+    // 检查项：分隔线与小标题的 y 来自 `inspectorRects`（与布局同一套数字）。
     let checklist = checklistOf(item)
-    let sectionTop = rects.addChecklist.y + 3.0 - SOP_BLOCK_PAD_TOP - 1.0 - SOP_SECTION_LABEL_LINE
-    paintHLine(ctx, rects.body.x, rects.body.x + rects.body.w, sectionTop - 1.0, tk.color.border)
-    paintSectionLabel(ctx, view, "检查项", rects.body.x, sectionTop)
+    paintHLine(ctx, rects.body.x, rects.body.x + rects.body.w, rects.checklistRuleY, tk.color.border)
+    paintSectionLabel(ctx, view, "检查项", rects.body.x, rects.checklistLabelY)
     let doneCount = countDone(checklist)
     paintText(ctx, "${doneCount}/${checklist.size}", rects.body.x + measureText(ctx, "检查项", 11.0, 650) + 8.0,
-        sectionTop + SOP_SECTION_LABEL_LINE / 2.0, 11.0, 400, tk.color.textFaint)
+        rects.checklistLabelY + SOP_SECTION_LABEL_LINE / 2.0, 11.0, 400, tk.color.textFaint)
     paintIconButton(ctx, tk, IconGlyph.Plus, rects.addChecklist)
     if (checklist.isEmpty()) {
         paintTextClipped(ctx, "还没有检查项。检查项会显示在节点进度条与运行条里。", rects.body.x,
@@ -762,7 +774,8 @@ func handleSopSettings(view: SopFrame, rects: SopInspRects, x: Float32, y: Float
         return true
     }
     if (rects.areaInput.contains(x, y)) {
-        openSopAreaPicker(view.state, sopAreaChoices(view.workspace), sop.areaId)
+        // 锚点 = 本帧这个字段的窗口绝对矩形；弹层按它排版（不是页面局部坐标）。
+        openSopAreaPicker(view.state, rects.areaInput, sopAreaChoices(view.workspace), sop.areaId)
         view.state.touch()
         return true
     }

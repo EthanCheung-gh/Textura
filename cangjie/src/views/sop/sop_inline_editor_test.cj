@@ -196,3 +196,85 @@ func sopInspectorEditorEscapeKeepsTheStoredValue(): Unit {
     }
     @Expect(stored, active.title)
 }
+
+/** 保存后立刻点下一个字段：这一下必须当场打开（真机现场：提交后第一下点击被吞掉）。 */
+@Test
+func sopInspectorNextFieldOpensRightAfterCommit(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let rects = inspectorRects(testHost.context, view)
+    harness.build(testHost, events: [
+        UiEvent.MouseDown(MouseButton.Left, rects.nameInput.centerX(), rects.nameInput.centerY())
+    ])
+    @Expect(state.promptOpen.value, true)
+    @Expect(state.promptKind.value, "sop-title")
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(state.promptOpen.value, false)
+    harness.build(testHost, events: [
+        UiEvent.MouseDown(MouseButton.Left, rects.notesArea.centerX(), rects.notesArea.centerY())
+    ])
+    @Expect(state.promptOpen.value, true)
+    @Expect(state.promptKind.value, "sop-notes")
+}
+
+/**
+ * 类型 chips 与检查项之间的分隔线：线在 chips 下方 `--space-3`（12px），小标题再往下
+ * `1px border + 8px padding`。旧实现从加号按钮反推，把线画到 chips 底下 5.5px（压线）。
+ */
+@Test
+func nodeInspectorChecklistRuleSitsBelowTheTypeChips(): Unit {
+    let harness = SopEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    // 选中第一个节点 → 检查器切到节点变体（类型 chips + 检查项都在这里）。
+    state.selectedNodeId = Some(view.nodes[0].id)
+    state.selectedEdgeId = None
+    state.touch()
+    harness.build(testHost)
+    let rects = inspectorRects(testHost.context, view)
+    let nodeVariant = match (rects.variant) {
+        case SopInspVariant.Node => true
+        case _ => false
+    }
+    @Expect(nodeVariant, true)
+    @Expect(rects.typeChips.isEmpty(), false)
+    var chipsBottom: Float32 = 0.0
+    for ((_, chip) in rects.typeChips) {
+        if (chip.bottom() > chipsBottom) {
+            chipsBottom = chip.bottom()
+        }
+    }
+    // 线严格在 chips 下方，且正好隔 12px（像素对齐允许 1px 抖动）。
+    @Expect(rects.checklistRuleY >= chipsBottom + 11.0, true)
+    @Expect(rects.checklistRuleY <= chipsBottom + 13.0, true)
+    // 小标题 = 线 + 1px 边框 + 8px padding。
+    @Expect(rects.checklistLabelY, rects.checklistRuleY + 1.0 + SOP_BLOCK_PAD_TOP)
+    // 「+」按钮与标题同一行（命中区仍覆盖标题行）。
+    @Expect(rects.addChecklist.centerY() >= rects.checklistLabelY, true)
+    @Expect(rects.addChecklist.centerY() <= rects.checklistLabelY + SOP_SECTION_LABEL_LINE, true)
+}

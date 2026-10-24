@@ -124,7 +124,11 @@ class SopPageWidget <: Widget {
         view = buildFrame(ctx, workspace, store, theme, tk, state, rect, today)
         // 原位编辑器的锚点：本帧检查器里那个字段的绝对矩形（滚动/换选中项/resize 都会变）。
         match (view) {
-            case Some(active) => trackSopPrompt(ctx, active)
+            case Some(active) =>
+                trackSopPrompt(ctx, active)
+                // Area 弹层：锚点每帧刷新，浮层在 **layout** 登记（draw 里登记收不到事件）。
+                syncSopAreaAnchor(ctx, active)
+                layoutSopAreaPicker(ctx, active)
             case None => ()
         }
     }
@@ -137,12 +141,11 @@ class SopPageWidget <: Widget {
                 paintList(ctx, active)
                 paintCanvas(ctx, active)
                 paintInspector(ctx, active)
-                // Area 下拉：注册在页面之上的 Overlay（列表本体在 overlay render 里画）。
-                paintSopAreaPicker(ctx, active)
                 paintHistory(ctx, active)
                 if (active.running()) {
                     paintRunBar(ctx, active)
                 }
+                // Area 下拉由 `layoutSopAreaPicker` 登记的 Overlay 绘制（在整棵树之后）。
                 if (active.state.branchOpen) {
                     paintBranchPanel(ctx, active)
                 }
@@ -153,6 +156,12 @@ class SopPageWidget <: Widget {
     public func handle(ctx: UiContext, event: UiEvent): Bool {
         match (view) {
             case Some(active) =>
+                // 兜底：Area 弹层打开期间本页不处理任何指针事件。浮层（在 layout 登记）本应先
+                // 吃掉它们；这一道保证即使登记晚了一帧，按下也绝不会落到底下的画布上
+                // （真机现场：弹层没收到事件，点击直接选中了别的节点/连线）。
+                if (active.state.areaOpen && isPointerEvent(event)) {
+                    return true
+                }
                 if (!frame.contains(mouseX(event), mouseY(event)) && !isDragPhase(active, event)) {
                     return false
                 }
@@ -186,6 +195,17 @@ class SopPageWidget <: Widget {
             }
         }
         return false
+    }
+}
+
+/** 指针类事件（按下 / 抬起 / 移动 / 滚轮）：弹层打开期间页面一律不处理。 */
+func isPointerEvent(event: UiEvent): Bool {
+    match (event) {
+        case UiEvent.MouseDown(_, _, _) => true
+        case UiEvent.MouseUp(_, _, _) => true
+        case UiEvent.MouseMove(_, _) => true
+        case UiEvent.MouseWheel(_, _, _, _) => true
+        case _ => false
     }
 }
 

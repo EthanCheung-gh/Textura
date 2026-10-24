@@ -335,6 +335,15 @@ class SopViewState {
      */
     var areaOpen: Bool = false
     var areaIndex: Int64 = 0
+    /**
+     * Area 字段的**窗口绝对矩形**（打开弹层时快照，之后每帧由 `syncSopAreaAnchor` 刷新）。
+     * 弹层按它排版；字段消失时先关闭弹层，绝不拿 `Rect.zero()` 排版（那会把列表画到左侧边栏）。
+     */
+    var areaAnchor: Rect = Rect.zero()
+    /** 本帧弹层几何（`layout` 算好，overlay 的 render/handle 共用，保证两边永远一致）。 */
+    var areaPopup: ?SopAreaPopup = None
+    /** 指针悬停的候选下标（-1 = 无）。 */
+    var areaHover: Int64 = -1
     /** `.sop-inspector-body` 的滚动偏移（内容高于卡片时窗口内滚动，而非压到卡片外）。 */
     var inspectorScroll: Float32 = 0.0
 
