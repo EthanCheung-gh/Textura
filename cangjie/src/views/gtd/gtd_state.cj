@@ -57,6 +57,8 @@ class GtdState {
     /** 日期编辑目标条目 id；空串表示关闭。 */
     var dateTarget: State<String>
     var dateDraft: State<String>
+    /** 日期校验失败时的提示行（`gtd_clarify.cj` 的 `commitDate` 写，重新打开时清空）。 */
+    var dateError: State<String>
     /**
      * 日期编辑器的**窗口绝对矩形**（行内日期盒 layout 时记录），原位摆放用。
      *
@@ -110,6 +112,7 @@ class GtdState {
         picker = rememberState<String>("gtd-picker") {""}
         dateTarget = rememberState<String>("gtd-date-target") {""}
         dateDraft = rememberState<String>("gtd-date-draft") {""}
+        dateError = rememberState<String>("gtd-date-error") {""}
         dateAnchor = inlineAnchor("gtd-date-anchor")
         dateFocus = remember<FocusRequest>("gtd-date-focus") {FocusRequest()}
         sceneTarget = rememberState<String>("gtd-scene-target") {""}

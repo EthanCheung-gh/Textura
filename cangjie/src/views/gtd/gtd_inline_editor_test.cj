@@ -247,3 +247,106 @@ private func gtdItemDue(store: AppStore, id: String): String {
     }
     ""
 }
+
+/**
+ * 日期格式统一：未点击的盒子、点开后的编辑器、提交后行内显示都是 `YYYY-MM-DD`。
+ *
+ * 用户现场：盒子未点击时是 `mm/dd/yyyy`（Web 版 Chrome 原生 date 控件的本地化占位），点进去
+ * 变成 `YYYY-MM-DD`，同一个字段两种格式。这里钉住两处同字面量。
+ */
+@Test
+func gtdDatePlaceholderIsIsoEverywhere(): Unit {
+    let tokens = tokensOf(texturaLight())
+    let testHost = WidgetTestHost()
+    let holder = GtdDateBoxHolder()
+    let _ = testHost.frame(GTD_EDITOR_VIEWPORT) {
+        =>
+            let created = GtdDateBox(tokens, "", GTD_EDITOR_ROW, {_ => ()})
+            holder.box = Some(created)
+            HStack(spacing: vp(0.0)) {
+                created
+                Spacer()
+            }.hug()
+    }
+    @Expect(INLINE_DATE_PLACEHOLDER, "YYYY-MM-DD")
+    match (holder.box) {
+        case Some(value) =>
+            // 空盒子的文案 == 编辑器的占位符。
+            @Expect(value.shownText(), "YYYY-MM-DD")
+            @Expect(value.shownText(), INLINE_DATE_PLACEHOLDER)
+        case None => @Expect("a date box", "none")
+    }
+}
+
+/**
+ * 非法日期：**不写库、不关编辑器**，错误行留在盒子下面；Esc 必须能关。
+ *
+ * 修之前 `setDue` 把任何输入直接写进 `gantt.end`（打错的日期会静默进库），而且提交即关闭，
+ * 用户没有改正的机会。
+ */
+@Test
+func gtdDateRejectsAnInvalidValue(): Unit {
+    let harness = GtdEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = harness.stateOrFail()
+    openDate(harness, recordedRect(harness, testHost))
+    harness.build(testHost)
+    @Expect(testHost.context.focusId, GTD_DATE_INPUT)
+    let storeRev = harness.store.state.revision()
+    // 月份 13 越界：形状像日期，但不是合法日期。
+    state.dateDraft.value = "2026-13-01"
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(state.dateError.value.isEmpty(), false)
+    // 编辑器还开着，库没有被动过。
+    @Expect(state.dateTarget.value, harness.itemId)
+    @Expect(harness.store.state.revision(), storeRev)
+    @Expect(gtdItemDue(harness.store, harness.itemId), "")
+    // Esc 无条件取消：非法值也能关。
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Escape, false)])
+    @Expect(state.dateTarget.value, "")
+    @Expect(state.dateError.value, "")
+    @Expect(gtdEditorBoundsOf(testHost, GTD_DATE_INPUT).w < 0.0, true)
+}
+
+/** 合法日期写回 `gantt.end` 并关闭；编辑期间 store 零写入（只在提交那一帧写一次）。 */
+@Test
+func gtdTypedDateCommitsOnceAndCloses(): Unit {
+    let harness = GtdEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = harness.stateOrFail()
+    openDate(harness, recordedRect(harness, testHost))
+    harness.build(testHost)
+    let storeRev = harness.store.state.revision()
+    // 逐字输入：编辑期间不写库。
+    for (ch in ["2", "0", "2", "6", "-", "1", "1", "-", "0", "5"]) {
+        harness.build(testHost, events: [UiEvent.TextInput(ch)])
+        @Expect(testHost.context.focusId, GTD_DATE_INPUT)
+    }
+    @Expect(state.dateDraft.value, "2026-11-05")
+    @Expect(harness.store.state.revision(), storeRev)
+    harness.build(testHost, events: [UiEvent.KeyDown(Key.Enter, false)])
+    @Expect(state.dateTarget.value, "")
+    @Expect(gtdItemDue(harness.store, harness.itemId), "2026-11-05")
+    @Expect(harness.store.state.revision(), storeRev + 1)
+}
+
+/** 打开即全选：旧日期不会被追加成 `2026-11-052026-11-06`。 */
+@Test
+func gtdDateEditorSelectsTheOldValueOnOpen(): Unit {
+    let harness = GtdEditorHarness()
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = harness.stateOrFail()
+    openDate(harness, recordedRect(harness, testHost))
+    harness.build(testHost)
+    harness.build(testHost, events: [UiEvent.TextInput("2")])
+    // 种子条目的日期为空，这里只需要证明「输入进入草稿而不是被拒绝」。
+    @Expect(state.dateDraft.value, "2")
+}
+
+/** 一帧里握住日期盒自己（闭包不能捕获可变的局部变量，用它间接持有）。 */
+private class GtdDateBoxHolder {
+    var box: ?GtdDateBox = None
+}

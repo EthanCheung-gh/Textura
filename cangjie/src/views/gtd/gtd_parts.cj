@@ -577,8 +577,20 @@ class GtdSelectBox <: Widget {
 }
 
 /**
- * 行内日期盒（gtd.css:440-442）：124×30，占位文案 `mm/dd/yyyy`（Chrome 原生 date 输入），
- * 右侧 14px 日历图标。
+ * 日期盒与日期编辑器**共用的**占位文案。
+ *
+ * 两处必须同字面量：未点击的盒子、点开后的编辑器、提交后行内的值都是 `YYYY-MM-DD`，
+ * 用户在三种状态之间看到的是同一个格式（`gtdDateBoxPlaceholderMatchesTheEditor` 钉住它）。
+ */
+let INLINE_DATE_PLACEHOLDER: String = "YYYY-MM-DD"
+
+/**
+ * 行内日期盒（gtd.css:440-442）：124×30，右侧 14px 日历图标。
+ *
+ * 占位文案统一为 `YYYY-MM-DD`：Web 版用 Chrome 原生 `<input type="date">`，未点击时显示的是
+ * 浏览器的本地化占位 `mm/dd/yyyy`，点进去又变成 `YYYY-MM-DD`（同一控件两种格式），用户当场按
+ * 「统一成 YYYY-MM-DD」提了要求。本实现是自绘盒子，没有原生控件的本地化占位，所以从第一帧起
+ * 就是这个格式，与提交后行内显示、与编辑器里的占位完全一致。
  */
 class GtdDateBox <: Widget {
     private let tokens: ThemeTokens
@@ -597,7 +609,7 @@ class GtdDateBox <: Widget {
         anchor!: ?InlineAnchor = None) {
         this.tokens = tokens
         this.text = if (text.isEmpty()) {
-            "mm/dd/yyyy"
+            INLINE_DATE_PLACEHOLDER
         } else {
             text
         }
@@ -607,6 +619,11 @@ class GtdDateBox <: Widget {
         this.editing = editing
         this.anchor = anchor
         emit(this)
+    }
+
+    /** 盒子这一帧要画的文案（测试用它钉住「未点击与编辑中同一格式」）。 */
+    func shownText(): String {
+        text
     }
 
     public func measure(_: UiContext, available: Size): Size {

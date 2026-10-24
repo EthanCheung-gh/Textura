@@ -617,15 +617,27 @@ func openDateEditor(scene: GtdScene, item: gl.GtdItem, rect: Rect): Unit {
         case Some(value) => value
         case None => ""
     }
+    scene.state.dateError.value = ""
     scene.state.dateAnchor.request(rect)
     scene.state.dateFocus.request(GTD_DATE_INPUT)
 }
 
 func closeDateEditor(scene: GtdScene): Unit {
     scene.state.dateTarget.value = ""
+    scene.state.dateError.value = ""
     scene.state.dateFocus.release()
 }
 
+/**
+ * 日期原位编辑器。
+ *
+ * 草稿在本地（`state.dateDraft`，CUI `State`），**编辑期间不写 store**：每按一个键就写一次
+ * store 会经 `armStoreBridge` 把整壳重建一次，编辑器随之重建、焦点与输入法一起丢
+ * （docs/DEVICE-NOTES.md §26）。只有 Enter / 失焦 / 点外部才走 [commitDate]。
+ *
+ * 占位文案与盒子一致（`INLINE_DATE_PLACEHOLDER`），并且打开即全选：日期是槽位，
+ * 输入 `2026-11-05` 是替换整个值，不是在旧值后面接。
+ */
 func gtdDateDialog(scene: GtdScene): Unit {
     let target = scene.state.dateTarget.value
     if (target.isEmpty()) {
@@ -633,11 +645,30 @@ func gtdDateDialog(scene: GtdScene): Unit {
     }
     let state = scene.state
     Ui.inlineEditor(scene.theme, state.dateDraft, state.dateAnchor, true, key: GTD_DATE_INPUT,
-        placeholder: "YYYY-MM-DD", focus: state.dateFocus,
-        onCommit: {value =>
-            setDue(scene, target, value)
-            closeDateEditor(scene)
-        }, onCancel: {=> closeDateEditor(scene)})
+        placeholder: INLINE_DATE_PLACEHOLDER, error: state.dateError.value, selectAllOnOpen: true,
+        focus: state.dateFocus,
+        onCommit: {value => commitDate(scene, target, value)}, onCancel: {=> closeDateEditor(scene)})
+}
+
+/**
+ * 日期的提交校验：`YYYY-MM-DD` 且月/日在范围内才写回 `gantt.end`；空串表示清除日期。
+ *
+ * 非法值**不写、不关**：错误行显示在盒子下面，用户改对再按 Enter，或者按 Esc 放弃——
+ * 「打错了就被吞掉、还关不掉」是上一轮用户现场里最不能接受的两种失败。
+ */
+func commitDate(scene: GtdScene, id: String, raw: String): Unit {
+    let value = raw.trim()
+    if (value.isEmpty()) {
+        setDue(scene, id, "")
+        closeDateEditor(scene)
+        return
+    }
+    if (!gl.isValidDayKey(value)) {
+        scene.state.dateError.value = "日期格式应为 YYYY-MM-DD，例如 2026-11-05。"
+        return
+    }
+    setDue(scene, id, value)
+    closeDateEditor(scene)
 }
 
 /** 行内场景（`@context`）盒被点击：同样原位编辑；留空表示未设置场景。 */
