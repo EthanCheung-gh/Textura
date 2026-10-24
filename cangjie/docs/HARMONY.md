@@ -446,6 +446,43 @@ cd /tmp/texohos/libs/arm64-v8a/ohos && sha256sum * \
 它们由设备 `/system/lib64/platformsdk` 提供——参考项目的 HAP 用同样的 8 个库在真机上跑通过，
 但本机没有设备、也没有设备文件清单，**这一条只有真机能证实**（§7.4 的验证命令）。
 
+### 5.6 应用图标（layered image，与 Linux 版同一枚标记）
+
+HarmonyOS 的应用图标是**两层**：`background` 满幅铺底 + `foreground` 透明浮层，系统再套自己的
+遮罩（圆角/圆形）。仓库里的图标因此不是「一张 PNG」，而是三张 + 一个索引：
+
+| 文件 | 用途 | 要求 |
+|---|---|---|
+| `AppScope/resources/base/media/background.png` | 分层图标底层 | 1024×1024，**满幅纯色 `#201D1A`**，不要自己加圆角 |
+| `AppScope/resources/base/media/foreground.png` | 分层图标浮层 | 1024×1024，透明底；标记缩到画布 **≈66%** 并居中（safe area），**不含深色底** |
+| `entry/src/main/resources/base/media/startIcon.png` | 启动图（splash） | 1024×1024，深墨圆角方块（radius 216）+ 标记合成 |
+| `AppScope/resources/base/media/layered_image.json` | `"icon": "$media:layered_image"` 引用的索引 | 指向上面两个 `$media:` |
+
+生成器（**唯一来源**，不要手改 PNG）：
+
+```bash
+cd cangjie
+python3 scripts/harmony/make_icons.py            # 覆盖三件套（AppScope + entry 两份）
+python3 scripts/harmony/make_icons.py --preview  # 额外写 32/64/128 预览到 /tmp/textura-icon-preview
+```
+
+构图直接取自 Linux 版 `scripts/make_icon.py`（Pillow，1024×1024）：深墨圆角方块 + 5×5 淡网格
+（`#EBE2D6`，≈30% 不透明）+ 四角纸白节点 + 中心陶土橙（`#C0663A`）节点与两条斜向连线。区别只有
+两处，都是平台要求：浮层不画深色底（叠两层会发黑）、标记收进 safe area（系统遮罩会切边）。
+
+图标**在安装期生效**：换图后必须重新安装，`install -r` 覆盖装有时不会刷新桌面缓存，先卸载：
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+$HDC uninstall com.ethancheung.textura
+$HDC install -r cangjie/harmony/out/entry-default-signed.hap
+$HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg   # 桌面上看图标
+```
+
+打包侧注意：`assemble_hap.sh` 产出的 HAP 里 `background/foreground` 会被资源编译器降到
+**512×512**（`startIcon.png` 原样 1024），像素内容一致，属正常优化；核对方法见
+`docs/DEVICE-NOTES.md` §22。
+
 ---
 
 ## 6. 接上设备后的验收序列（5 步，按顺序做，第 3 步不过后面全是噪音）
@@ -1361,6 +1398,7 @@ cd /home/ethan/CodeRepo/sandbox/Textura/cangjie
 ./scripts/harmony/assemble_hap.sh [--no-sync]  # HAP -> harmony/out/ + 载荷校验 + 可安装性判定
 ./scripts/harmony/set_signing_material.sh --help   # 换签名材料（§7.1）
 ./scripts/harmony/make_csr.sh [--force] [--openssl]  # 私钥 p12 + CSR（§7.1a）
+./scripts/harmony/make_icons.py [--preview]        # 三件套图标（§5.6）
 ./scripts/harmony/device_udid.sh                   # 取设备 UDID（hdc 绝对路径）
 
 # 直接看快照里的中间产物（readelf 用 SDK 自带的 llvm-readelf，PATH 里没有）
