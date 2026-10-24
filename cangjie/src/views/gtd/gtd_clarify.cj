@@ -617,7 +617,7 @@ func openDateEditor(scene: GtdScene, item: gl.GtdItem, rect: Rect): Unit {
         case Some(value) => value
         case None => ""
     }
-    scene.state.dateRect = rect
+    scene.state.dateAnchor.request(rect)
     scene.state.dateFocus.request(GTD_DATE_INPUT)
 }
 
@@ -632,7 +632,7 @@ func gtdDateDialog(scene: GtdScene): Unit {
         return
     }
     let state = scene.state
-    Ui.inlineEditor(scene.theme, state.dateDraft, state.dateRect, true, key: GTD_DATE_INPUT,
+    Ui.inlineEditor(scene.theme, state.dateDraft, state.dateAnchor, true, key: GTD_DATE_INPUT,
         placeholder: "YYYY-MM-DD", focus: state.dateFocus,
         onCommit: {value =>
             setDue(scene, target, value)
@@ -647,7 +647,7 @@ func openSceneEditor(scene: GtdScene, item: gl.GtdItem, rect: Rect): Unit {
         case Some(value) => value
         case None => ""
     }
-    scene.state.sceneRect = rect
+    scene.state.sceneAnchor.request(rect)
     scene.state.sceneFocus.request(GTD_SCENE_INPUT)
 }
 
@@ -662,7 +662,7 @@ func gtdSceneDialog(scene: GtdScene): Unit {
         return
     }
     let state = scene.state
-    Ui.inlineEditor(scene.theme, state.sceneDraft, state.sceneRect, true, key: GTD_SCENE_INPUT,
+    Ui.inlineEditor(scene.theme, state.sceneDraft, state.sceneAnchor, true, key: GTD_SCENE_INPUT,
         placeholder: "@场景（留空表示未设置）", focus: state.sceneFocus,
         onCommit: {value =>
             applyPicker(scene, "row-context:${target}", value.trim())

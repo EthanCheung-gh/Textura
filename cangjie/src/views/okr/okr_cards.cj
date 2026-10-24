@@ -109,8 +109,11 @@ func layoutObjectiveCard(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Floa
     let titleCenter = titleTop + OKR_OBJ_TITLE_H / 2.0
     let titleId = "okr-title-${entry.item.id}"
     let hovered = ctx.isHovered(titleId)
-    // 编辑态：原位编辑器（真 TextField）压在这个矩形上，画布不再重复画这行标题。
-    if (!okrFieldEditing(page.ui, "title", entry.item.id)) {
+    let titleRect = Rect(left - 3.0, titleTop, min(mainW + 6.0, okrTextW(ctx, entry.item.title, 16.5, 650) + 6.0),
+        OKR_OBJ_TITLE_H)
+    // 编辑态：原位编辑器（真 TextField）压在这个矩形上，画布不再重复画这行标题；
+    // 同时每帧把矩形写回锚点，滚动/resize 后编辑器跟着字段走（`okr_prompt.cj` 的 `trackOkrPrompt`）。
+    if (!trackOkrPrompt(page.ui, "title", entry.item.id, "", titleRect)) {
         cv.text(ctx, left, titleCenter, entry.item.title, 16.5, 650, if (hovered) {
             c.accentInk
         } else {
@@ -118,10 +121,7 @@ func layoutObjectiveCard(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Floa
         })
     }
     cv.focusRingFor(titleId, Rect(left - 3.0, titleTop, mainW + 6.0, OKR_OBJ_TITLE_H), OKR_R_MD)
-    cv.addHotspot(titleId, Rect(left - 3.0, titleTop, min(mainW + 6.0, okrTextW(ctx, entry.item.title, 16.5, 650) +
-        6.0), OKR_OBJ_TITLE_H), {=> openOkrTitlePrompt(page.ui, entry.item.id, entry.item.title,
-        Rect(left - 3.0, titleTop, min(mainW + 6.0, okrTextW(ctx, entry.item.title, 16.5, 650) + 6.0),
-            OKR_OBJ_TITLE_H))})
+    cv.addHotspot(titleId, titleRect, {=> openOkrTitlePrompt(page.ui, entry.item.id, entry.item.title, titleRect)})
     var afterTitle = titleTop + OKR_OBJ_TITLE_H
     if (detailed && !entry.item.notes.isEmpty()) {
         let notesTop = afterTitle + 6.0
@@ -195,7 +195,9 @@ func layoutKrRow(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEnt
     let titleTop = mainTop
     let hovered = ctx.isHovered(titleId)
     let title = ellipsize(ctx, kr.item.title, 13.5, 600, headingW - 6.0)
-    if (!okrFieldEditing(page.ui, "title", kr.item.id)) {
+    let titleRect = Rect(headingX - 3.0, titleTop, min(headingW, okrTextW(ctx, title, 13.5, 600) + 6.0),
+        OKR_KR_TITLE_H)
+    if (!trackOkrPrompt(page.ui, "title", kr.item.id, "", titleRect)) {
         cv.text(ctx, headingX, titleTop + OKR_KR_TITLE_H / 2.0, title, 13.5, 600, if (hovered) {
             c.accentInk
         } else {
@@ -203,9 +205,7 @@ func layoutKrRow(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEnt
         })
     }
     cv.focusRingFor(titleId, Rect(headingX - 3.0, titleTop, headingW, OKR_KR_TITLE_H), OKR_R_MD)
-    cv.addHotspot(titleId, Rect(headingX - 3.0, titleTop, min(headingW, okrTextW(ctx, title, 13.5, 600) + 6.0),
-        OKR_KR_TITLE_H), {=> openOkrTitlePrompt(page.ui, kr.item.id, kr.item.title,
-        Rect(headingX - 3.0, titleTop, min(headingW, okrTextW(ctx, title, 13.5, 600) + 6.0), OKR_KR_TITLE_H))})
+    cv.addHotspot(titleId, titleRect, {=> openOkrTitlePrompt(page.ui, kr.item.id, kr.item.title, titleRect)})
     // 徽章行
     let badgesTop = titleTop + OKR_KR_TITLE_H + 2.0
     let badgeCenter = badgesTop + OKR_BADGE_H / 2.0
@@ -537,7 +537,7 @@ func layoutAddKeyResult(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: Ok
     let inputLeft = boxRect.x + 1.0 + 8.0 + 14.0 + 6.0
     let addKrId = "okr-addkr-${entry.item.id}"
     let inputRect = Rect(inputLeft, centerY - 13.0, max(0.0, buttonX - 6.0 - inputLeft), 26.0)
-    if (!okrFieldEditing(page.ui, "addkr", entry.item.id)) {
+    if (!trackOkrPrompt(page.ui, "addkr", entry.item.id, "", inputRect)) {
         cv.text(ctx, inputLeft, centerY, ellipsize(ctx, "新增关键结果，回车创建（默认信心 5）…", 12.5, 400,
             inputRect.w), 12.5, 400, c.textFaint)
     }
@@ -570,6 +570,8 @@ func paintOkrField(page: OkrPage, ctx: UiContext, cv: PageCanvas, id: String, re
     cv.fill(rect, OKR_R_MD, bg)
     if (editing) {
         // 原位编辑器接管这个盒子：边框与文字归它画，画布只留背景（避免双边框 + 两层文字）。
+        // 每帧写回锚点：滚动/resize/行高变化时编辑器都停在这个盒子上。
+        page.ui.promptAnchor.update(rect)
         cv.addHotspot(id, rect, action)
         return
     }

@@ -321,10 +321,14 @@ class SopViewState {
     var promptError: State<String> = State<String>("")
     var promptFocus: FocusRequest = FocusRequest()
     /**
-     * 被点字段的绝对矩形（上一帧 layout 记录的 `rects.*`）。编辑器按它原位摆放：
+     * 被点字段的**窗口绝对矩形**（检查器 layout 时记录的 `rects.*`）。编辑器按它原位摆放：
      * 画布只知道自己画在哪，`Ui.inlineEditor` 需要这个矩形才能贴着字段出现。
+     *
+     * 用跨帧锚点而不是普通字段：普通字段一旦被「每帧重建的状态壳」持有就会回到 `Rect.zero()`，
+     * 编辑器便画到窗口左上角（OKR/GTD 真机现场，docs/DEVICE-NOTES.md §25.1）。锚点还负责
+     * 「滚动检查器 / resize 时编辑器跟着字段走」。
      */
-    var promptRect: Rect = Rect.zero()
+    let promptAnchor: InlineAnchor
     /*
      * Area 下拉（`sop_area_picker.cj`）：检查器里唯一的多选一字段，弹层由 Overlay 承载。
      * `areaIndex` 是「未指定」+ `workspace.areas` 的候选下标。
@@ -336,6 +340,9 @@ class SopViewState {
 
     init(generation: State<Int64>) {
         this.generation = generation
+        // 本状态壳由 `remember<SopViewState>` 持有，所以锚点直接构造即可（不需要再 remember）；
+        // `State` 可以随时构造，读它时才建立构建期依赖。
+        this.promptAnchor = InlineAnchor(State<Int64>(0))
     }
 
     /** Marks the frame dirty: the declarative body reads `generation`, so it rebuilds. */

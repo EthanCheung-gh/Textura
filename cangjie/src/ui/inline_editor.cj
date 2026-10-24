@@ -14,17 +14,30 @@ import cui.*
  * and the IME anchor all work), and it is *positioned* like the field, through a `Portal` at the
  * rectangle the view recorded while it laid the canvas out.
  *
- * Contract with a view:
- *   1. while laying the canvas out, remember the field rect (`inspectorRects`, `okrCardRects`, …);
- *   2. when the field is clicked, store that rect + the current text in the view state and open
- *      the editor;
- *   3. call `Ui.inlineEditor(...)` from `build` with the stored rect — the editor appears on top
- *      of the page, at the field, and takes focus on the first frame.
+ * Contract with a view (docs/DEVICE-NOTES.md §25):
+ *   1. own an [InlineAnchor] across frames (`inlineAnchor("…")`);
+ *   2. while laying the canvas out, `update(rect)` the anchor whenever that field is the one
+ *      being edited — this is what keeps the editor on the field through scroll and resize;
+ *   3. when the field is clicked, `request(rect)` + open the editor;
+ *   4. call `Ui.inlineEditor(...)` from `build` with the anchor.
+ *
+ * `anchor.request/update` take **window-absolute** coordinates, the same space as `Ui.modal`'s
+ * panel rect (sidebar + topbar + content padding + scroll offset are already in them). An anchor
+ * that was never written (or was written with a zero extent) does **not** open an editor: the
+ * editor waits for the field's layout and opens on the frame that stores a usable rect. Painting
+ * a control from a zero rectangle is what put the editor in the window's top-left corner on
+ * device (docs/DEVICE-NOTES.md §25.1).
  *
  * Editing semantics match the Web build: Enter commits (Ctrl/Cmd+Enter for a multi-line field),
- * Esc cancels, a click outside commits, and a commit that the caller refuses (validation) keeps
- * the editor open with its error line under the field. Geometry: same width and height as the
- * field, accent border (CUI's focused `TextInputStyle`), no panel, no scrim, no shadow.
+ * Esc cancels, a press outside commits, focus leaving the editor commits, and a commit that the
+ * caller refuses (validation) keeps the editor open with its error line under the field.
+ * The dismissal layer is a **transparent full-window backdrop** registered below the editor: it
+ * consumes primary presses (commit / keep focus) and Tab (focus stays in the editor), and it lets
+ * wheel and pointer-move through so the page still scrolls under the editor. Esc and a backdrop
+ * press close the editor even when the recorded rectangle is unusable — "cannot be dismissed" is
+ * not an acceptable failure mode.
+ * Geometry: same width and height as the field, accent border (CUI's focused `TextInputStyle`),
+ * no panel, no scrim, no shadow.
  */
 
 /**
@@ -41,35 +54,37 @@ private let INLINE_LINE_FLOOR: Float32 = 28.0
 private let INLINE_AREA_MIN_ANCHOR: Float32 = 40.0
 /** Multi-line ceiling as a share of the window (`40vh`). */
 private let INLINE_AREA_MAX_RATIO: Float32 = 0.40
-/** Keep the editor inside the window even when the field sits against an edge. */
-private let INLINE_MARGIN: Float32 = 6.0
 /** Below this width an editor is unusable; the field rect is widened instead of collapsed. */
 private let INLINE_MIN_WIDTH: Float32 = 72.0
 
 /**
- * One open inline edit: the field rectangle, the dismissal protocol and the state the widgets
- * below share. Created per frame (the declaration site rebuilds whenever the view state changes),
- * so nothing here can go stale across frames.
+ * One inline edit session: the anchor, the dismissal protocol and the state the widgets below
+ * share. **Remembered across frames** (`Ui.inlineEditor` keeps one per editor key) so the
+ * blur-commit latch and the "field left the window" latch are real edges rather than per-frame
+ * flags; `bind` refreshes the tokens/draft/callbacks from the newest declaration.
  */
 public class InlineEditFrame {
-    let tokens: ThemeTokens
+    private var tokens: ThemeTokens
     private let ownerId: String
     private let key: String
-    private let anchor: Rect
-    private let multiline: Bool
+    private let anchor: InlineAnchor
+    private var multiline: Bool
     /** The draft the control is bound to; a commit submits exactly what the field shows. */
-    private let draft: State<String>
-    private let onCommit: (String) -> Unit
-    private let onCancel: () -> Unit
+    private var draft: State<String>
+    private var onCommit: (String) -> Unit
+    private var onCancel: () -> Unit
+    /** Where the control ended up this frame (`resolve`); used by the backdrop hit test. */
     private var fieldRect: Rect = Rect.zero()
     /** True once the editor itself owned focus — the precondition for "blur commits". */
     private var sawFocus: Bool = false
+    /** True once the field scrolled out of the window: the edit is cancelled exactly once. */
+    private var cancelledOffWindow: Bool = false
 
     init(
         tokens: ThemeTokens,
         ownerId: String,
         key: String,
-        anchor: Rect,
+        anchor: InlineAnchor,
         multiline: Bool,
         draft: State<String>,
         onCommit: (String) -> Unit,
@@ -85,6 +100,32 @@ public class InlineEditFrame {
         this.onCancel = onCancel
     }
 
+    /**
+     * Rebinds the session to this frame's declaration. The control identity (`key`) and the anchor
+     * stay; everything the caller owns (tokens, draft, callbacks) is taken from the newest build,
+     * so a remembered frame can never call into a stale closure.
+     *
+     * A fresh `anchor.request(...)` is the "the user just opened a field" edge: it clears the
+     * blur-commit latch so the previous session's focus cannot commit an untouched draft.
+     */
+    func bind(
+        tokens: ThemeTokens,
+        multiline: Bool,
+        draft: State<String>,
+        onCommit: (String) -> Unit,
+        onCancel: () -> Unit
+    ): Unit {
+        this.tokens = tokens
+        this.multiline = multiline
+        this.draft = draft
+        this.onCommit = onCommit
+        this.onCancel = onCancel
+        if (anchor.takeFresh()) {
+            sawFocus = false
+            cancelledOffWindow = false
+        }
+    }
+
     /** Overlay owner of the dismissal layer (registered below the content). */
     public func owner(): String {
         "UiInlineEditor:${ownerId}"
@@ -95,6 +136,11 @@ public class InlineEditFrame {
         "${owner()}-content"
     }
 
+    /** The field rectangle this frame, window-absolute and unclamped (the anchor's value). */
+    func target(): Rect {
+        anchor.current()
+    }
+
     /**
      * Height the control is built with. The editor covers the field box and nothing more:
      *   - a single-line field (or any field shorter than 40px) keeps its own height, floored at
@@ -103,10 +149,11 @@ public class InlineEditFrame {
      *     it at 40vh — so a description box is not silently inflated past the painted rectangle.
      */
     func fieldHeight(): Float32 {
-        if (multiline && anchor.h >= INLINE_AREA_MIN_ANCHOR) {
-            anchor.h
-        } else if (anchor.h >= INLINE_LINE_FLOOR) {
-            anchor.h
+        let anchorRect = target()
+        if (multiline && anchorRect.h >= INLINE_AREA_MIN_ANCHOR) {
+            anchorRect.h
+        } else if (anchorRect.h >= INLINE_LINE_FLOOR) {
+            anchorRect.h
         } else {
             INLINE_LINE_FLOOR
         }
@@ -118,27 +165,51 @@ public class InlineEditFrame {
      * cannot cover the page.
      *
      * For every field that fits the window and is at least [INLINE_MIN_WIDTH] wide this returns
-     * `anchor` unchanged, which is the invariant the host tests pin: the real control must land
-     * exactly on the rectangle the view painted.
+     * the anchor unchanged, which is the invariant the host tests pin: the real control must land
+     * exactly on the rectangle the view painted. The rect is clamped to the window **without an
+     * artificial margin**, so a field at the content edge keeps its own coordinates; only a field
+     * that the window edge cuts off is pulled back inside.
      */
     public func resolve(ctx: UiContext): Rect {
         let viewportWidth = max(0.0, ctx.viewportWidth)
         let viewportHeight = max(0.0, ctx.viewportHeight)
-        let width = min(max(anchor.w, INLINE_MIN_WIDTH), max(INLINE_MIN_WIDTH, viewportWidth - INLINE_MARGIN * 2.0))
+        let anchorRect = target()
+        let width = min(max(anchorRect.w, INLINE_MIN_WIDTH), max(0.0, viewportWidth))
         var height = fieldHeight()
-        if (multiline && anchor.h >= INLINE_AREA_MIN_ANCHOR) {
+        if (multiline && anchorRect.h >= INLINE_AREA_MIN_ANCHOR) {
             height = min(height, max(INLINE_LINE_FLOOR, viewportHeight * INLINE_AREA_MAX_RATIO))
         }
-        let maxX = max(INLINE_MARGIN, viewportWidth - width - INLINE_MARGIN)
-        let maxY = max(INLINE_MARGIN, viewportHeight - height - INLINE_MARGIN)
-        fieldRect = Rect(clampF32(anchor.x, INLINE_MARGIN, maxX), clampF32(anchor.y, INLINE_MARGIN, maxY), width, height)
+        height = min(height, max(INLINE_LINE_FLOOR, viewportHeight))
+        let x = clampF32(anchorRect.x, 0.0, max(0.0, viewportWidth - width))
+        let y = clampF32(anchorRect.y, 0.0, max(0.0, viewportHeight - height))
+        fieldRect = Rect(x, y, width, height)
         fieldRect
     }
 
     /**
+     * Cancels the edit when the field is no longer on screen at all (the page scrolled it away or
+     * the window shrank). Choice: **cancel**, not commit — a scroll is not a confirmation, and
+     * cancelling leaves the stored value untouched, so nothing is silently written by scrolling.
+     * The editor cannot be left floating over unrelated content, and Esc/backdrop keep working
+     * while the cancellation is in flight.
+     */
+    func observeViewport(ctx: UiContext): Unit {
+        if (cancelledOffWindow || !anchor.ready()) {
+            return
+        }
+        let window = Rect(0.0, 0.0, max(0.0, ctx.viewportWidth), max(0.0, ctx.viewportHeight))
+        let visible = window.intersection(target())
+        if (visible.w <= 0.0 || visible.h <= 0.0) {
+            cancelledOffWindow = true
+            onCancel()
+        }
+    }
+
+    /**
      * Commits when focus leaves the editor. Focus is the only "the user moved on" signal that also
-     * covers Tab traversal, which CUI routes around the overlay; the first frames are ignored
-     * because the editor has not received focus yet (the one-shot `FocusRequest` still retries).
+     * covers a click on a non-editable spot, which CUI routes around the overlay; the latch is
+     * cleared on open, because the editor has not received focus during its first frames yet (the
+     * one-shot `FocusRequest` still retries).
      */
     func observeFocus(ctx: UiContext): Unit {
         if (ctx.focusId == key) {
@@ -146,6 +217,7 @@ public class InlineEditFrame {
             return
         }
         if (sawFocus) {
+            sawFocus = false
             onCommit(draft.value)
         }
     }
@@ -161,33 +233,50 @@ public class InlineEditFrame {
     }
 
     /**
-     * Esc cancels, a press outside the field commits (the Web build's behaviour), everything else
-     * is left to the control and to CUI: returning false for Tab/typing is what keeps traversal and
-     * text entry working while the editor is open.
+     * The transparent backdrop's input protocol:
+     *   - Esc cancels — **unconditionally**, even when the field rect is unusable;
+     *   - Tab / Shift+Tab are consumed and focus stays on the editor (no traversal into the page
+     *     underneath; Esc, Enter or a press outside are the ways out);
+     *   - a primary press inside the field keeps the caret, anywhere else commits (the Web
+     *     build's "click outside = done") — and it is always consumed, so the page's painted
+     *     hotspots can never fire behind an open editor;
+     *   - everything else (wheel, pointer moves, typing) is left to the control and the page.
      */
     func handleOverlay(ctx: UiContext, event: UiEvent): Bool {
+        // 失焦提交挂在这里而不是只挂在 `layout` 上：CUI 的保留图会跳过「本帧没变化」的子树，
+        // 编辑器那段布局并不是每帧都跑，而事件一定会送到 overlay。
+        observeFocus(ctx)
         match (event) {
             case UiEvent.KeyDown(Key.Escape, isRepeat) =>
                 if (!isRepeat) {
                     onCancel()
                 }
                 true
-            case UiEvent.MouseDown(button, x, y) =>
-                if (isPrimaryPointerButton(button) && !fieldRect.contains(x, y)) {
-                    onCommit(draft.value)
-                    true
-                } else {
-                    false
+            case UiEvent.KeyDown(Key.Tab, isRepeat) =>
+                if (!isRepeat) {
+                    ctx.focus(key)
                 }
+                true
+            case UiEvent.MouseDown(button, x, y) =>
+                if (isPrimaryPointerButton(button)) {
+                    if (fieldRect.contains(x, y)) {
+                        ctx.focus(key)
+                    } else {
+                        onCommit(draft.value)
+                    }
+                }
+                true
+            case UiEvent.MouseUp(_, _, _) => true
             case _ => false
         }
     }
 }
 
 /**
- * Dismissal layer for [InlineEditFrame]: registers the overlay that turns "outside press" and
- * "focus went elsewhere" into a commit, and paints the caller's validation line. The editor
- * itself is a sibling `Portal` (see `Ui.inlineEditor`), so its controls are declared during build.
+ * Dismissal layer for [InlineEditFrame]: a full-window, fully transparent backdrop registered
+ * below the editor. It turns "a press outside the field" and "focus went elsewhere" into a
+ * commit, "Esc" into a cancel, and paints the caller's validation line. The editor itself is a
+ * sibling `Portal` (see `Ui.inlineEditor`), so its controls are declared during build.
  */
 public class InlineEditorHost <: Widget {
     private let frame: InlineEditFrame
@@ -205,6 +294,7 @@ public class InlineEditorHost <: Widget {
 
     public func layout(ctx: UiContext, _: Rect): Unit {
         let _ = frame.resolve(ctx)
+        frame.observeViewport(ctx)
         ctx.setOverlay(
             Overlay(handleEvent: {c, e => frame.handleOverlay(c, e)}, render: {c => frame.paintError(c, error)},
                 owner: frame.owner()))

@@ -2,7 +2,7 @@ package textura.views.gtd
 
 import std.collection.*
 import cui.*
-import textura.ui.FocusRequest
+import textura.ui.{FocusRequest, InlineAnchor, inlineAnchor}
 import textura.views.gtd.logic as gl
 
 /*
@@ -57,13 +57,18 @@ class GtdState {
     /** 日期编辑目标条目 id；空串表示关闭。 */
     var dateTarget: State<String>
     var dateDraft: State<String>
-    /** 日期编辑器的绝对矩形（行内日期盒 layout 时记录），原位摆放用。 */
-    var dateRect: Rect
+    /**
+     * 日期编辑器的**窗口绝对矩形**（行内日期盒 layout 时记录），原位摆放用。
+     *
+     * 必须跨帧：`GtdState()` 每帧重建，普通字段下一帧就回到 `Rect.zero()`，
+     * 编辑器会画到窗口左上角而不是日期盒上（docs/DEVICE-NOTES.md §25.1）。
+     */
+    var dateAnchor: InlineAnchor
     var dateFocus: FocusRequest
     /** 场景（context）原位编辑目标条目 id；空串表示关闭。 */
     var sceneTarget: State<String>
     var sceneDraft: State<String>
-    var sceneRect: Rect
+    var sceneAnchor: InlineAnchor
     var sceneFocus: FocusRequest
 
     // ---------------- 澄清表单 ----------------
@@ -105,12 +110,12 @@ class GtdState {
         picker = rememberState<String>("gtd-picker") {""}
         dateTarget = rememberState<String>("gtd-date-target") {""}
         dateDraft = rememberState<String>("gtd-date-draft") {""}
-        dateRect = Rect.zero()
-        dateFocus = FocusRequest()
+        dateAnchor = inlineAnchor("gtd-date-anchor")
+        dateFocus = remember<FocusRequest>("gtd-date-focus") {FocusRequest()}
         sceneTarget = rememberState<String>("gtd-scene-target") {""}
         sceneDraft = rememberState<String>("gtd-scene-draft") {""}
-        sceneRect = Rect.zero()
-        sceneFocus = FocusRequest()
+        sceneAnchor = inlineAnchor("gtd-scene-anchor")
+        sceneFocus = remember<FocusRequest>("gtd-scene-focus") {FocusRequest()}
         clarifyType = rememberState<Int64>("gtd-clarify-type") {0}
         clarifyEnergy = rememberState<Int64>("gtd-clarify-energy") {1}
         clarifyContext = rememberState<Int64>("gtd-clarify-context") {0}

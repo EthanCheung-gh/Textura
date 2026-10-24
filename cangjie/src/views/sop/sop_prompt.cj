@@ -83,7 +83,7 @@ func openSopPrompt(state: SopViewState, kind: SopPromptKind, target: String, val
     state.promptEntry.value = entry
     state.promptText.value = value
     state.promptError.value = ""
-    state.promptRect = rect
+    state.promptAnchor.request(rect)
     state.promptOpen.value = true
     state.promptFocus.request(SOP_PROMPT_INPUT)
 }
@@ -148,9 +148,50 @@ func sopPromptDialog(theme: Theme, store: AppStore, state: SopViewState): Unit {
     }
     let kind = parseSopPromptKind(state.promptKind.value)
     let copy = sopPromptCopy(kind)
-    Ui.inlineEditor(theme, state.promptText, state.promptRect, true, key: SOP_PROMPT_INPUT, multiline: copy.multiline,
-        placeholder: copy.placeholder, error: state.promptError.value, focus: state.promptFocus,
-        onCommit: {value => commitSopPrompt(store, state, value)}, onCancel: {=> closeSopPrompt(state)})
+    Ui.inlineEditor(theme, state.promptText, state.promptAnchor, true, key: SOP_PROMPT_INPUT,
+        multiline: copy.multiline, placeholder: copy.placeholder, error: state.promptError.value,
+        focus: state.promptFocus, onCommit: {value => commitSopPrompt(store, state, value)},
+        onCancel: {=> closeSopPrompt(state)})
+}
+
+/**
+ * 编辑中的字段每帧把矩形写回锚点（滚动检查器、换选中项、窗口 resize 时编辑器跟着字段走）。
+ *
+ * 在页面 `layout` 里调用：页面布局先于编辑器所在的 `Portal`，所以同一帧里编辑器就用上新矩形。
+ * 幂等：矩形没变时 `InlineAnchor` 不递增修订号，不会造成重建风暴。
+ */
+func trackSopPrompt(ctx: UiContext, view: SopFrame): Unit {
+    let state = view.state
+    if (!state.promptOpen.value) {
+        return
+    }
+    let kind = parseSopPromptKind(state.promptKind.value)
+    let rects = inspectorRects(ctx, view, scroll: clampInspectorScroll(ctx, view))
+    match (sopPromptFieldRect(rects, kind, state.promptEntry.value)) {
+        case Some(rect) => state.promptAnchor.update(rect)
+        case None => ()
+    }
+}
+
+/** 「字段种类 → 本帧矩形」的唯一映射：检查器画哪个盒子，编辑器就停在哪个盒子上。 */
+func sopPromptFieldRect(rects: SopInspRects, kind: SopPromptKind, entryId: String): ?Rect {
+    match (kind) {
+        case SopPromptKind.SopTitle => Some(rects.nameInput)
+        case SopPromptKind.SopNotes => Some(rects.notesArea)
+        case SopPromptKind.SopOwner => Some(rects.ownerInput)
+        case SopPromptKind.NodeTitle => Some(rects.titleInput)
+        case SopPromptKind.NodeNotes => Some(rects.nodeNotesArea)
+        case SopPromptKind.NodeOwner => Some(rects.ownerInput)
+        case SopPromptKind.NodeDuration => Some(rects.durationInput)
+        case SopPromptKind.CheckText =>
+            for (row in rects.checkRows) {
+                if (row.entryId == entryId) {
+                    return Some(row.label)
+                }
+            }
+            None
+        case SopPromptKind.EdgeLabel => Some(rects.labelInput)
+    }
 }
 
 /** 写回 store（Esc 不会走到这里，因此取消不改数据）。 */

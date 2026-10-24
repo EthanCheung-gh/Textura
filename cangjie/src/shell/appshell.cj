@@ -278,8 +278,15 @@ public class ShellHost {
     /**
      * Consumes a pending focus request (called from `FocusRequestView.layout`). Runs once per
      * request: later frames only record the current focus id.
+     *
+     * It also keeps focus from *staying* nowhere: an inline editor closed without a field to hand
+     * focus back to (canvas fields whose view never focused anything — GTD's date/scene boxes)
+     * leaves the focused control gone, and CUI then has an empty owner. The last resort is the
+     * current route's sidebar row, so Tab/arrow keys keep working from a sane place
+     * (docs/DEVICE-NOTES.md §25.3).
      */
     func applyFocusRequest(ctx: UiContext): Unit {
+        let previousFocus = observedFocusId
         observedFocusId = ctx.focusId
         match (pendingFocus) {
             case Some(id) =>
@@ -311,6 +318,10 @@ public class ShellHost {
                 } else if (focusFallbackArmed && !lastAppliedFocus.isEmpty()) {
                     focusFallbackArmed = false
                     lastAppliedFocus = ""
+                    ctx.focus("shell-nav-${routeId(route())}")
+                } else if (!previousFocus.isEmpty()) {
+                    // Focus was owned by a control that no longer exists (an inline editor closed
+                    // and its view had no control to restore): never leave the window focusless.
                     ctx.focus("shell-nav-${routeId(route())}")
                 }
         }

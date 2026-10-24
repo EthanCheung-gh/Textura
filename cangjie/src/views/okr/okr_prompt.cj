@@ -51,6 +51,22 @@ func okrFieldEditing(ui: OkrUiState, kind: String, target: String, field!: Strin
         ui.promptField.value == field
 }
 
+/**
+ * 画布上的画法：这个字段是否正被原位编辑器接管；是的话顺手把**本帧**的矩形写回锚点。
+ *
+ * 两个作用必须同时生效，否则真机上又会出现「编辑器留在原地、字段滚走了」或反过来：
+ *   - 返回 true → 画布不再画这个字段的文字与边框（避免两层文字 + 双边框）；
+ *   - `anchor.update(rect)` → 滚动偏移、窗口 resize、同页其它编辑改变行高时，编辑器跟着字段走
+ *     （`Ui.inlineEditor` 的锚点合同，见 `ui/inline_anchor.cj`）。
+ */
+func trackOkrPrompt(ui: OkrUiState, kind: String, target: String, field: String, rect: Rect): Bool {
+    let editing = okrFieldEditing(ui, kind, target, field: field)
+    if (editing) {
+        ui.promptAnchor.update(rect)
+    }
+    editing
+}
+
 private func armPrompt(ui: OkrUiState, kind: String, target: String, field: String, value: String,
     rect: Rect): Unit {
     ui.promptKind.value = kind
@@ -58,7 +74,7 @@ private func armPrompt(ui: OkrUiState, kind: String, target: String, field: Stri
     ui.promptField.value = field
     ui.promptText.value = value
     ui.promptError.value = ""
-    ui.promptRect = rect
+    ui.promptAnchor.request(rect)
     ui.promptOpen.value = true
     ui.promptFocus.request(OKR_PROMPT_INPUT)
 }
@@ -143,7 +159,7 @@ func okrPromptDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
         }
     }
     let copy = promptCopy(ui, objectiveTitle)
-    Ui.inlineEditor(page.theme, ui.promptText, ui.promptRect, true, key: OKR_PROMPT_INPUT,
+    Ui.inlineEditor(page.theme, ui.promptText, ui.promptAnchor, true, key: OKR_PROMPT_INPUT,
         placeholder: copy.placeholder, error: ui.promptError.value, focus: ui.promptFocus,
         onCommit: {value => commitOkrPrompt(ctx, ui, page, value)}, onCancel: {=> closeOkrPrompt(ui)})
 }

@@ -482,6 +482,11 @@ class GtdSelectBox <: Widget {
      * 两边同时画就是「两层文字 + 双边框」（见 `ui/inline_editor.cj`）。
      */
     private let editing: Bool
+    /**
+     * 编辑中的锚点（可空：其它用途的行内 select 不编辑）。盒子在 `layout` 里把自己这一帧的
+     * **窗口绝对矩形**写回去，滚动/换行/窗口 resize 时编辑器因此始终贴在盒子上。
+     */
+    private let anchor: ?InlineAnchor
     private var frame = Rect.zero()
 
     init(
@@ -492,7 +497,8 @@ class GtdSelectBox <: Widget {
         onClick: (Rect) -> Unit,
         fontSize!: Float32 = INLINE_FONT,
         padRight!: Float32 = 24.0,
-        editing!: Bool = false
+        editing!: Bool = false,
+        anchor!: ?InlineAnchor = None
     ) {
         this.tokens = tokens
         this.text = text
@@ -502,6 +508,7 @@ class GtdSelectBox <: Widget {
         this.hoverId = hoverId
         this.onClick = onClick
         this.editing = editing
+        this.anchor = anchor
         emit(this)
     }
 
@@ -511,6 +518,12 @@ class GtdSelectBox <: Widget {
 
     public func layout(_: UiContext, rect: Rect): Unit {
         frame = rect
+        if (editing) {
+            match (anchor) {
+                case Some(target) => target.update(rect)
+                case None => ()
+            }
+        }
     }
 
     public func draw(ctx: UiContext): Unit {
@@ -576,9 +589,12 @@ class GtdDateBox <: Widget {
     private let onClick: (Rect) -> Unit
     /** 正被原位编辑器接管（见 `GtdSelectBox.editing`）。 */
     private let editing: Bool
+    /** 编辑中的锚点：`layout` 里写回本帧的窗口绝对矩形（见 `GtdSelectBox.anchor`）。 */
+    private let anchor: ?InlineAnchor
     private var frame = Rect.zero()
 
-    init(tokens: ThemeTokens, text: String, hoverId: String, onClick: (Rect) -> Unit, editing!: Bool = false) {
+    init(tokens: ThemeTokens, text: String, hoverId: String, onClick: (Rect) -> Unit, editing!: Bool = false,
+        anchor!: ?InlineAnchor = None) {
         this.tokens = tokens
         this.text = if (text.isEmpty()) {
             "mm/dd/yyyy"
@@ -589,6 +605,7 @@ class GtdDateBox <: Widget {
         this.hoverId = hoverId
         this.onClick = onClick
         this.editing = editing
+        this.anchor = anchor
         emit(this)
     }
 
@@ -598,6 +615,12 @@ class GtdDateBox <: Widget {
 
     public func layout(_: UiContext, rect: Rect): Unit {
         frame = rect
+        if (editing) {
+            match (anchor) {
+                case Some(target) => target.update(rect)
+                case None => ()
+            }
+        }
     }
 
     public func draw(ctx: UiContext): Unit {

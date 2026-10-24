@@ -257,10 +257,10 @@ func nextRow(scene: GtdScene, item: gl.GtdItem, pathIndex: gl.PathTitleIndex, ac
                     // 编辑中的那个盒子只留背景（`editing`），文字与边框归真控件，避免叠字/双框。
                     GtdSelectBox(tokens, "@${context}", INLINE_SELECT_W, "gtd-row-context:${item.id}",
                         {rect => openSceneEditor(scene, item, rect)},
-                        editing: scene.state.sceneTarget.value == item.id)
+                        editing: scene.state.sceneTarget.value == item.id, anchor: scene.state.sceneAnchor)
                     GtdDateBox(tokens, dateBoxText(item), "gtd-row-date:${item.id}",
                         {rect => openDateEditor(scene, item, rect)},
-                        editing: scene.state.dateTarget.value == item.id)
+                        editing: scene.state.dateTarget.value == item.id, anchor: scene.state.dateAnchor)
                     Ui.iconButton(scene.theme, IconGlyph.Edit, {=>
                         scene.state.activeNext.value = item.id
                         scene.openClarify(item.id)

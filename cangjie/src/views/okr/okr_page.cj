@@ -72,9 +72,18 @@ class OkrUiState {
     let promptTarget: State<String>
     let promptField: State<String>
     let promptError: State<String>
+    /**
+     * 焦点请求也必须跨帧：本页状态壳每帧重建，普通字段会连同「已武装」的请求一起丢掉，
+     * 真机表现就是编辑器打开了却拿不到焦点——没有插入符、打不进字，提交时值还是空的。
+     */
     let promptFocus: FocusRequest
-    /** 被点字段的绝对矩形（卡片画布 layout 时记录），原位编辑器的摆放位置。 */
-    var promptRect: Rect
+    /**
+     * 被点字段的**窗口绝对矩形**（卡片画布 layout 时记录），原位编辑器的摆放位置。
+     *
+     * 必须跨帧：本页的状态壳每帧重建（`OkrUiState()`，只有 `State` 被 `rememberState` 复用），
+     * 普通字段下一帧就回到 `Rect.zero()`，编辑器会画到窗口左上角（docs/DEVICE-NOTES.md §25.1）。
+     */
+    let promptAnchor: InlineAnchor
     let fields: HashMap<String, State<String>>
 
     init() {
@@ -96,7 +105,7 @@ class OkrUiState {
         this.linkSelected = rememberState<Array<String>>("okr-link-selected") {[]}
         this.linkRemoved = rememberState<Array<String>>("okr-link-removed") {[]}
         this.linkScroll = rememberState<Float32>("okr-link-scroll") {0.0}
-        this.linkFocus = FocusRequest()
+        this.linkFocus = remember<FocusRequest>("okr-link-focus") {FocusRequest()}
         this.confirmObjective = rememberState<String>("okr-confirm-objective") {""}
         this.confirmKr = rememberState<String>("okr-confirm-kr") {""}
         this.statusKr = rememberState<String>("okr-status-kr") {""}
@@ -115,8 +124,8 @@ class OkrUiState {
         this.promptTarget = rememberState<String>("okr-prompt-target") {""}
         this.promptField = rememberState<String>("okr-prompt-field") {""}
         this.promptError = rememberState<String>("okr-prompt-error") {""}
-        this.promptFocus = FocusRequest()
-        this.promptRect = Rect.zero()
+        this.promptFocus = remember<FocusRequest>("okr-prompt-focus") {FocusRequest()}
+        this.promptAnchor = inlineAnchor("okr-prompt-anchor")
         this.fields = HashMap<String, State<String>>()
     }
 
@@ -352,6 +361,19 @@ class OkrPage <: Widget {
 
     public func focusableIds(): Array<String> {
         registeredIds.toArray()
+    }
+
+    /**
+     * 本帧画布登记的命中区，与点击走同一条路径（`handle` 的 `hotspots`）。
+     *
+     * 包内可见、只给测试用：`okr_inline_editor_test.cj` 需要像用户一样点中画上去的字段，
+     * 而不是自己编一个矩形再喂给 `openOkr…Prompt`（那样就测不到「视图记录的矩形对不对」）。
+     */
+    func hotspots(): Array<OkrHotspot> {
+        match (canvas) {
+            case Some(cv) => cv.hotspots.toArray()
+            case None => Array<OkrHotspot>()
+        }
     }
 
     // ---------------------------------------------------------------- Widget

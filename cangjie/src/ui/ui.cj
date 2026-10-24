@@ -456,15 +456,26 @@ public struct Ui {
 
     /**
      * Edits one field **in place**: a real `TextField`/`TextArea` built during build, positioned at
-     * `rect` by a `Portal`, so focus, caret and the IME anchor behave like any other control while
-     * the page keeps its exact painted layout underneath (docs/DEVICE-NOTES.md §20).
+     * the anchor's rectangle by a `Portal`, so focus, caret and the IME anchor behave like any
+     * other control while the page keeps its exact painted layout underneath
+     * (docs/DEVICE-NOTES.md §20/§25).
      *
-     * `rect` is the field rectangle the view recorded while laying its canvas out; `draft` is the
-     * caller's `State<String>` (the editor writes into it, and a commit submits `draft.value`).
+     * `anchor` is the field's **window-absolute** rectangle (see `inline_anchor.cj`); it is owned
+     * by the view and survives frames, so the rect the click recorded is still there when this
+     * declaration runs, and a scroll/resize refresh re-places the editor. `draft` is the caller's
+     * `State<String>` (the editor writes into it, and a commit submits `draft.value`).
+     *
      * Enter commits, Ctrl/Cmd+Enter commits a multi-line field, Esc cancels, a press outside
-     * commits, and focus leaving the editor commits. A commit the caller refuses (validation: it
-     * keeps the editor open and passes `error`) is shown as one small danger-coloured line under
-     * the field — no panel, no scrim, no shadow, same size as the field itself.
+     * commits, Tab keeps the focus inside the editor, and focus leaving the editor commits. A
+     * commit the caller refuses (validation: it keeps the editor open and passes `error`) is shown
+     * as one small danger-coloured line under the field — no panel, no scrim, no shadow, same size
+     * as the field itself.
+     *
+     * An anchor that is not [InlineAnchor.ready] (never laid out, or a zero extent) **does not
+     * open a control**: the dismissal layer is still registered (Esc/backdrop stay usable) and the
+     * editor appears on the first frame that stores a usable rect, which the anchor's revision
+     * triggers. Drawing from a zero rect is what put the editor in the window's top-left corner on
+     * device (docs/DEVICE-NOTES.md §25.1).
      *
      * This is the replacement for `prompt` on text fields; `prompt` stays for confirmations and
      * dangerous actions, where a modal really is the right shape.
@@ -472,7 +483,7 @@ public struct Ui {
     public static func inlineEditor(
         theme: Theme,
         draft: State<String>,
-        rect: Rect,
+        anchor: InlineAnchor,
         open: Bool,
         key!: String,
         multiline!: Bool = false,
@@ -485,12 +496,24 @@ public struct Ui {
         if (!open) {
             return
         }
+        // Build dependency on the anchor: a rect stored *after* the click (or moved by a scroll)
+        // re-describes this scope, which is how the deferred case below ever gets its control.
+        let _ = anchor.token()
         let tokens = tokensOf(theme)
-        let frame = InlineEditFrame(tokens, key, key, rect, multiline, draft, onCommit, onCancel)
+        // One session per editor key, remembered across frames: the blur-commit and off-window
+        // latches are edges, and a per-frame object would silently drop them.
+        let frame = remember<InlineEditFrame>("inline-editor:${key}") {
+            InlineEditFrame(tokens, key, key, anchor, multiline, draft, onCommit, onCancel)
+        }
+        frame.bind(tokens, multiline, draft, onCommit, onCancel)
         let submit: () -> Unit = {=> onCommit(draft.value)}
         // Dismissal layer first: it is registered below the content, so the field sees its own
         // keys and presses and only what it declines (Esc, an outside press) reaches this layer.
+        // It is registered even before the anchor is usable — Esc must always be able to close.
         InlineEditorHost(frame, error)
+        if (!anchor.ready()) {
+            return
+        }
         // Content layer: declared during build through `Portal`, which is what registers the
         // field's focus stop (a control built from layout cannot take focus at all).
         //

@@ -122,6 +122,11 @@ class SopPageWidget <: Widget {
     public func layout(ctx: UiContext, rect: Rect): Unit {
         frame = rect
         view = buildFrame(ctx, workspace, store, theme, tk, state, rect, today)
+        // 原位编辑器的锚点：本帧检查器里那个字段的绝对矩形（滚动/换选中项/resize 都会变）。
+        match (view) {
+            case Some(active) => trackSopPrompt(ctx, active)
+            case None => ()
+        }
     }
 
     public func draw(ctx: UiContext): Unit {
