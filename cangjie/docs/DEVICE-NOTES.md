@@ -845,3 +845,253 @@ $HDC file recv /data/local/tmp/shot.jpeg cangjie/docs/assets/harmony/
 需要补的 4 张截图：SOP 描述可编辑（SOP 设置 → 描述 → 浮层）、Area 下拉（列表含
 「未指定/产品/运营/个人」）、日历年份/月份（2026 与 1–12 全量）、OKR 关联执行项（多行候选 +
 勾选 + 确认后 KR 行出现该执行项）。
+
+---
+
+## 19. 全屏 / 窗口缩放：surface 尺寸不跟随（本轮修复）
+
+### 19.1 三跳链路（哪一跳断了都在屏幕上是同一个症状）
+
+窗口从「启动尺寸」变成「最大化尺寸」，要经过三跳才变成一次重排：
+
+```text
+① ArkTS 侧 XComponent 的布局尺寸
+        ↓ (SDL 创建/重建 EGL surface；OPENHARMONY_SyncSurfaceSize() 只在 buffer 几何变化时重建)
+② SDL_EVENT_WINDOW_RESIZED  →  cangjie-sdl SdlWindow.refreshSize()
+        ↓ 每帧
+③ UiContext.viewportWidth/Height（DesktopApp 从 window.width/height 拷贝）
+        ↓  零尺寸 ViewportSyncView（src/shell/appshell.cj）
+④ ShellHost.viewportWidth/Height  →  ViewContext.width/height  →  各页面重排
+```
+
+③④ 是上一轮修的（§18.2：`ViewportSyncView` + `syncViewport`）；本轮确认 ① 仍然是断的。
+
+### 19.2 根因：XComponent 没有跟着父容器长
+
+```ts
+Row().height('100%') {
+  Column().width('100%') {          // ← 缺 height('100%')：Column 按内容（首帧 surface）定高
+    XComponent({...}).id(...)       // ← 缺 width/height：surface 按启动请求建立一次
+  }
+}
+```
+
+→ surface 首帧按启动尺寸建立后**不再随窗口增长**；`OPENHARMONY_SyncSurfaceSize()` 读到的 buffer
+几何没变，于是既不发 `WINDOW_RESIZED`，③ 也没有新值可拷。屏幕上的表现就是「窗口变大了，页面
+还按启动尺寸排版」。
+
+### 19.3 修法（`harmony/entry/src/main/ets/pages/Index.ets`）
+
+```ts
+Row() {
+  Column() {
+    XComponent({...}).id(SURFACE_ID)
+      .width('100%').height('100%')   // ← 新增：surface 跟随窗口
+      .focusable(true).defaultFocus(true).focusOnTouch(true)   // 原样保留
+      .onFocus(...).onBlur(...)                               // 原样保留
+  }.width('100%').height('100%')      // ← 新增 height
+}.width('100%').height('100%')
+  .onKeyEvent(...)                    // 原样保留（Tab 转发，§10.5/§10.6）
+```
+
+只动尺寸；`id`、`libraryname: 'SDL3'`、`type: SURFACE`、三个 focus 属性、`onKeyEvent` 全部保留。
+
+### 19.4 诊断证据：`size` 行（`PROBE_COMPILED_ON=true` 的包）
+
+探针每秒打一行，把三跳的数字并排放在一起（口径见 `harmony/host/src/probe.cj`）：
+
+```text
+t=101  size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
+t=1115 size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
+t=2115 size w=1930.000000 h=1020.000000 scale=1.000000 changes=0 viewport=1930x1020 built=1020
+```
+
+- `w/h`：驱动此刻报的窗口逻辑尺寸（`UiContext.viewportWidth/Height`）；
+- `changes`：本次会话见过的**不同尺寸个数**——`0` 表示还没发生过一次 resize（启动后的第一帧也算
+  「第一次见到」，不计入变化）；
+- `viewport=`：宿主采纳的尺寸（布局数学的输入）；
+- `built=`：**已提交的树**是按什么高度描述的（比 viewport 小/大 = resize 还差一帧）。
+
+判据：
+
+| 现象 | 含义 |
+|---|---|
+| 最大化后 `changes` 从 0 变 1、`w/h` 变大 | ① 修好了，resize 到了 SDL（进入第 ② / ③ 步核对） |
+| 最大化后 `changes` 仍是 0、`w/h` 不变 | surface 还是没长：按 19.5 用 `hidumper` 取 buffer 尺寸对照 |
+
+### 19.5 若 `size` 仍不变：拿 buffer 尺寸和探针对照
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+# 应用必须在前台（锁屏时既没有它的 surface，也没有截图）
+$HDC shell hidumper -s RenderService -a 'surface' | grep -E "default-size|name ="
+```
+
+- 打印里 `default-size = [WxH]` 就是 **RenderService 侧 buffer 的像素尺寸**；
+- 与探针 `size w=… h=…`（逻辑 px）按 `scale` 换算后比较：
+  - **两者一致**、但 `w/h` 停在启动尺寸 → buffer 确实没变，问题在 ArkTS 布局（回到 19.3）；
+  - **buffer 变大了、探针 `w/h` 没变** → SDL 采纳逻辑没跟上（`OPENHARMONY_SyncSurfaceSize()` 认为
+    已同步）：这时才需要在 vendored SDL 侧打最小补丁，并在 `third_party/README.md` 登记。
+
+### 19.6 仍需用户执行的一次复测
+
+`uinput` 拖不动窗口边缘（§7），全屏只能手工：
+
+1. 解锁设备，应用在前台（任意路由，建议 SOP）；
+2. 把窗口最大化/全屏，盯 `diag.log`：`size` 行的 `w/h` 应变大且 `changes` 变 1；
+3. 目视：侧栏仍 240、内容区右边缘贴住窗口、日历网格/SOP 画布/甘特主体随窗口变高；
+4. 退出全屏，`w/h` 回到原值（证明两个方向都重新排版）。
+
+---
+
+## 20. 原位编辑器：不再「下方又冒出一个一样的框」
+
+### 20.1 症状与三个独立成因
+
+用户在 SOP/OKR/GTD 里点一个字段，看到的是**两个框**：原位旧字段（画布画的）与叠加的真控件，而且
+控件常常比画上去的盒子低一截、甚至大一圈。本轮定位到三个互不相干的原因，缺一不可：
+
+| # | 成因 | 现象 |
+|---|---|---|
+| A | 焦点请求没被**武装**（`FocusRequest.request(key)` 没人调） | 点进去没有光标、打不进字、IME 锚点为空 → 4 条主机测试红 |
+| B | 同一个控件被**发射两次** | 第二个副本排在第一个下面 → 直接就是「下面又冒出一个一样的框」 |
+| C | 编辑器盒子 ≠ 画上去的盒子（高度分档/外层容器居中） | 两层文字 + 双边框，控件盖不住原字段 |
+
+**B 的机理**（最隐蔽，`src/ui/ui.cj` 的 `Ui.prompt` / `Ui.inlineEditor`、`okr_dialogs.cj` 的搜索框
+都踩过）：`style()` / `placeholder()` / `onSubmit()` 是控件自己的 setter（返回同一个控件、不发射
+节点），而 `textStyle()` / `height()` / `width()` / `flex()` 是 **widget 修饰器**——每次调用都
+`applyModifier(child, op)`，把一个包装节点**替换**父列表里的那个 child。于是：
+
+```cangjie
+let editor = TextField(draft, key: Some(key))   // 发射 1：TextField
+editor.style(...)                                // setter，不发射
+editor.textStyle(...)                            // 修饰器 → 替换成 M1（1 个 child）
+editor.height(34.0)                              // 仍作用在**原来的** editor 上：
+                                                 //   M1 已经在父列表里，替换失败 → **再追加一个 M2**
+```
+
+最终 portal 里是 `Stack(Vertical)[M1, M2]`：两个**同一个** `TextField`（同 id、同状态），第二个
+排在第一个下面 46px（= 第一份的自然高度）。修法只有一条：**链在上一次调用的返回值上**
+（`editor.textStyle(...).height(34.0)`），或者 `var w = ...; w = w.height(...)`。
+
+**C 的机理**：`fieldHeight()` 以前对多行字段强制 `≥ 92`，而检查器画的描述区是 92、检查项行只有
+30；再加上编辑器外面套了一层 `VStack(hug)`，它给的内容高度比字段大 76px 并把字段居中，于是控件
+整体下移 38px。现在的规则：
+
+```text
+anchor.h <  40                      → 单行高度（下限 28），不按多行撑高
+multiline && anchor.h >= 40         → 用字段自身高度，最多 40vh（窗口太矮时才截）
+其余                                 → 字段自身高度（下限 28）
+```
+
+并且 portal 的 body 直接是控件本身（不套 `VStack`），所以 `bounds == rect`。
+
+### 20.2 编辑态不再绘制原字段
+
+`editing` 为真时画布只留**背景**（位置/圆角不变），文字、边框、拖拽把手都交给真控件：
+
+| 视图 | 字段 | 判据 |
+|---|---|---|
+| SOP 检查器（设置） | 名称 / 描述 / 默认负责人 | `sopFieldEditing(state, SopTitle/SopNotes/SopOwner)` |
+| SOP 检查器（节点） | 标题 / 描述 / 负责人 / 预计耗时 / 检查项文本 | `NodeTitle/NodeNotes/NodeOwner/NodeDuration/CheckText` |
+| SOP 检查器（连线） | 分支文案 | `EdgeLabel` |
+| OKR 卡片 | 目标标题 / KR 标题 / 指标（起点·当前·目标·单位）/ 负责人 / 新增 KR | `okrFieldEditing(ui, kind, target, field:)` |
+| GTD 行 | 截止日期盒 / `@场景` 盒 | `editing:` 参数（`gtd_next.cj` 传 `dateTarget/sceneTarget`） |
+
+甘特检查器（标题/开始/结束/进度）、顶栏搜索、命令面板、快速收集**本来就是 build 期真控件**
+（`Ui.textInput` / `TextField`），不叠 `Ui.inlineEditor`；本轮复查了全部 `Ui.inlineEditor` 调用点
+（SOP/OKR/GTD 日期/GTD 场景共 4 处），没有误包。
+
+### 20.3 门禁（`src/ui/inline_editor_test.cj`）
+
+- 首帧聚焦、Enter 提交、Esc 取消、点外部提交、点字段内不结束；
+- 插入符锚点落在字段内，且随输入右移（IME 候选窗跟着走，§21）；
+- **几何**：`inlineEditorCoversTheFieldRectangle` 逐字段断言语义节点 bounds == 传入矩形
+  （34px 单行 / 滚动后的 y / 92px 描述区 / 30px 检查项行）；
+- **分档**：`inlineEditorKeepsAFieldAtItsOwnHeight` 断言 18→28、30→30（多行也不撑）、120→120。
+
+`Ui.inlineEditor` 的焦点请求由**调用方**武装（`state.promptFocus.request(SOP_PROMPT_INPUT)`），
+组件本身不重新武装——否则用户 Tab 走之后每帧都会把光标拽回来（与 `promptTabDoesNotSnapBackToTheEditor`
+同一条约束）。
+
+---
+
+## 21. IME 候选窗跟随插入符（`TextConfig.cursorInfo` 桥）
+
+系统输入法把候选条按 `TextConfig.cursorInfo`（**物理屏幕绝对坐标，单位 px**）摆放，而 SDL 的
+openharmony 视频后端没有 `SetTextInputArea` 实现：CUI 每帧算好的 `UiContext.textInputAnchorRect`
+经 `SDL_SetTextInputArea` 发出去是空操作，候选条就停在系统自己决定的位置（§10.3 的现场）。
+
+链路（三处，各自只做一件事）：
+
+1. **宿主**：`textura_ime_anchor(index)` 导出当前聚焦控件的插入符矩形（逻辑 px），
+   `harmony/host/src/main.cj` 每帧更新；
+2. **C 桥**：`entry/src/main/cpp/textura_keys.c` 的 `getImeAnchor()` 用 `dlsym` 取符号（不引入
+   链接期依赖），越界/无锚点返回 `null`；
+3. **ArkTS**：`Index.ets` 每 120ms 读一次，换算成屏幕 px（`windowRect.left/top` + `densityPixels`），
+   矩形**变了才**重新 `controller.attach(true, {inputAttribute, cursorInfo})`——系统只在 attach 时
+   读取光标位置，所以「跟随」= 重新 attach；矩形没变时零成本。
+
+判据：光标在字段里左右移动时，候选条跟着走；`TextInputState.attached` 为假时整条链路直接返回
+（没有输入框就没有锚点）。
+
+---
+
+## 22. 图标：三件套的生成与核对（本轮）
+
+构图取自 Linux 版 `scripts/make_icon.py`（深墨圆角块 + 5×5 淡网格 + 四角纸白节点 + 中心陶土橙
+节点与两条斜线），HarmonyOS 侧只做平台化拆分：`background` 满幅 `#201D1A`、`foreground` 透明底
+且标记缩到 66% 居中、`startIcon` 是圆角块 + 标记的合成图。生成器与规则见 `docs/HARMONY.md` §5.6，
+这里只记**核对方法**（图标是安装期资源，光看仓库文件不算验证）：
+
+```bash
+# 1) 三件套的尺寸/模式
+python3 -c "from PIL import Image;[print(p, Image.open(p).size, Image.open(p).mode) for p in [
+ 'harmony/AppScope/resources/base/media/background.png',
+ 'harmony/AppScope/resources/base/media/foreground.png',
+ 'harmony/entry/src/main/resources/base/media/startIcon.png']]"
+
+# 2) 打包后是否真的进了 HAP（背景/前景会被资源编译器降到 512×512，像素内容一致）
+unzip -p harmony/out/entry-default-signed.hap resources/base/media/foreground.png > /tmp/fg.png
+python3 -c "from PIL import Image;print(Image.open('/tmp/fg.png').size)"
+
+# 3) 设备上肉眼确认（卸载重装才会刷新桌面缓存）
+$HDC uninstall com.ethancheung.textura && $HDC install -r harmony/out/entry-default-signed.hap
+$HDC shell snapshot_display -i 0 -f /data/local/tmp/shot.jpeg   # 桌面/任务栏
+```
+
+本轮实测：三张源图均 `1024×1024 RGBA`；HAP 内 `startIcon.png` 与源文件**逐字节相同**，
+`background/foreground` 被降到 `512×512`（内容等比缩放，见上）。桌面图标的肉眼确认**需要设备
+已解锁**（本轮设备停在锁屏，截图只有时钟），见 §23 的用户待办。
+
+---
+
+## 23. 本轮（surface / 原位编辑器 / 图标）的真机状态与待办
+
+本轮完成的真机动作（设备 `192.168.0.3:36773`，HarmonyOS 26 / API 26）：
+
+| 步骤 | 结果 |
+|---|---|
+| 诊断包（`PROBE_COMPILED_ON=true`）交叉编译 + 打包 | `entry-default-signed.hap` 30001437 B，sha256 `30555f26…`，`STATUS: installable` |
+| `hdc uninstall` → `install -r` → `aa start` | `uninstall bundle successfully` / `install bundle successfully` / `start ability successfully`，`pidof` = 41951 |
+| `diag.log` 的 `size` 行 | **存在**，每秒一行（§19.4 的样例）；`changes=0`（尚未发生 resize） |
+| 出货包（`PROBE_COMPILED_ON=false`，含最终图标与编辑器修复） | `entry-default-signed.hap` 30005415 B，sha256 `7b2855e1…`，卸载重装后 `pidof` = 53329，沙箱里**没有** `diag.log`（探针确实关闭） |
+| 图标三件套进包 | `startIcon.png` 逐字节一致；`background/foreground` 被资源编译器降到 512×512，内容为源图的精确 0.5 缩放（中心像素与 alpha 边界等比，见 §22） |
+
+**本轮没做到的两件事，原因都是设备停在锁屏**（`power-shell wakeup` 只唤醒屏幕，界面仍是时钟）：
+
+1. **最大化一次、看 `size` 行的 `changes` / `w/h` 是否变化**——`uinput` 拖不动窗口边缘，只能手工；
+2. **桌面/任务栏图标的肉眼确认**——锁屏期间 `snapshot_display` 只有锁屏时钟，
+   `hidumper -s RenderService -a 'surface'` 也看不到应用的 surface（前台才有）。
+
+解锁后按顺序做（两步都只需一次）：
+
+```bash
+HDC=~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc
+$HDC shell aa start -a EntryAbility -b com.ethancheung.textura
+# ① 图标：桌面看一眼是否变成「深墨圆角块 + 网格 + 陶土橙节点」
+$HDC shell snapshot_display -i 0 -f /data/local/tmp/icon.jpeg
+# ② 最大化窗口一次，然后确认 size 行的 w/h 变大、changes 变 1
+#    （诊断包才有 diag.log：把 probe.cj 的 PROBE_COMPILED_ON 改回 true 重出包）
+$HDC shell "cat /data/app/el2/100/base/com.ethancheung.textura/files/textura/diag.log | grep size | tail -5"
+```
