@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度）、`CUI-P10-printable-key-fallback`（只有 `KeyDown`、没有 `TextInput` 的可打印字符），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3`；含补丁 `SDL-P01-host-window-push`（`setSizeInPixels` / `setDisplayScaleOverride`），见下文 |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -92,6 +92,67 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 - 影响：桌面路径（`density ≤ 0` 不进入覆盖分支）像素不变，1440×900 对拍 14/14；只有宿主推过密度才生效。
 - 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01/P04 同流程），升级 cangjie-sdl 需重新应用
   SDL-P01，并在本文件登记。
+
+### CUI-P10-printable-key-fallback（本仓新增，最小补丁）
+
+> 编号说明：任务书写的是「第 9 个补丁、登记 CUI-P09」，但 `CUI-P09` 已被上一轮的
+> `host-window-push` 占用并已提交，本补丁按顺序登记为 `CUI-P10`。
+
+- 位置：`CUI/src/text/text_printable_key.cj`（新增 `PrintableKeyFallback` / `printableKeyText`）+
+  `CUI/src/text/text_field.cj`、`CUI/src/text/text_area.cj`（键处理、取消、`arm` 各接一处）+
+  `CUI/src/text/text_printable_key_test.cj`（11 个用例，其中 3 个走真实帧 tick 订阅路径）。
+- 现象（真机）：OKR 指标「当前」框已聚焦（`focus='okr-prompt-input'`），硬件键盘按 `4`/`2` 时
+  `diag.log` 只有 `KeyDown key=Digit(52)` / `Digit(50)`，**没有任何 `TextInput text='4'`**，草稿不变；
+  而按字母 `a` 会被系统输入法接管（弹候选条），空格提交后草稿变成 `啊`。
+- 根因：两个编辑器只在 `UiEvent.TextInput`（输入法对一次按键的解释结果）里插入文本；
+  `Key.Digit` / `Key.Space` 在两个 `handleKey()` 里根本没有分支，`Key.Letter` 只走快捷键表。
+  于是「输入法不解释的键」（数字、空格、未挂输入法时的字母）既没有 `TextInput`、也没有键分支，
+  字符被静默丢掉。见 `docs/DEVICE-NOTES.md` §27。
+- 为什么不能只在应用层修：应用层的 `TextField` / `TextArea` 只是把 `Bindable<String>` 交给 CUI，
+  文本插入完全发生在框架的 `UiEvent.TextInput` → `TextEditorActions.insert` 这一条路径上；
+  应用层既拿不到 `KeyDown(Digit)`（CUI 已经把它派发给控件并返回 false，应用层再插会在别的平台重复插入），
+  也没有 `ux` 级入口能区分「键已被输入法吃掉的平台」和「键需要应用兜底的平台」。
+  任何应用层补丁都只能针对某一个字段写一次性处理，`ComboBox` 内嵌的 `TextField`、SOP 描述的多行
+  `TextArea`、错误提示框里的输入框都得各写一遍，且下一次新增文本控件就会重新漏。这是框架契约的缺口。
+- 为什么是「延迟一拍」而不是立即插入：SDL 对同一次按键先发 `SDL_EVENT_KEY_DOWN`、再发
+  `SDL_EVENT_TEXT_INPUT`，但在输入法介入（软键盘、远程输入法、宿主桥）时两者可以跨帧到达。
+  立即插入会在这些平台上双插入，而桌面主机（按键与 `TextInput` 同批到达）永远测不出来。
+  因此按下时只把字符记进 `pendingPrintable`（每控件一份、放 `localState` 里以跨帧重建存活）
+  并 `requestFrame()`；同帧内到达的 `TextInput` / `TextEditing` 会清空它（输入法优先）；
+  下一帧仍存在时才用与 `inputText` 完全相同的 `actions().insert()` 写进草稿
+  （撤销合并、选区替换、IME 隔离规则都不变）。
+- 「下一帧」走 **`frameSubscriber` 而不是 `UiEvent.Frame`**（这条是踩出来的，别再改回去）：
+  `DesktopApp.stepFrame()` 只把合成帧 tick 派发给 `frameSubscriber` 回调
+  （`dispatchFrameSubscribers`），**从不把 `UiEvent.Frame` 派发进控件树**——树里的 Frame 广播
+  只在宿主主动 `broadcastEvent` 时才发生；`Portal.handle` 更是直接返回 `false` 不向子树转发，
+  而 OKR/GTD/SOP 的原位编辑器与顶栏搜索框正是走这条渲染/事件路径。
+  第一版补丁把 flush 挂在 `handle(UiEvent.Frame)` 上，主机测试全绿、真机完全无效。
+  现在的做法：`PrintableKeyFallback.arm()` 在**每次 build** 读取暂存槽（这个读是保留图的依赖，
+  `stage` 写槽后该控件才会重建），**仅当槽非空**时为这一两帧 `registerFrameSubscriber` 注册一次。
+  `registerFrameSubscriber` 注册进的是本次 build 的 `FrameSubscriptionRegistry`（每次 build 清空，
+  见 `core/frame_subscription.cj`），所以不会泄漏；静止时 `frameSubscriberCount == 0`，
+  `canRepaintPartially` 的 retained 局部重绘策略不被破坏。`handle(UiEvent.Frame)` 保留为幂等的
+  第二触发点，供会广播帧事件的宿主（`WidgetTestHost`、`EventHandler` 包住的自定义壳）使用。
+- 范围：无修饰键的 `Key.Digit` / `Key.Letter` / `Key.Space`。`Ctrl/Cmd/Alt+字母` 仍是命令
+  （`Ctrl+A` 不会被当成字符）；`Shift` 组合不在本轮范围 —— `Key.Digit` 报的是未加 Shift 的码
+  （`Shift+1` 是 `!` 不是 `1`），凭空插入会写错字符，故保持原状。`Key.Letter` 带的是**大写**
+  ASCII（这是 `Ctrl+letter` 表可读的原因），而暂存只在无修饰键时发生，所以兜底按小写插入；
+  Caps Lock 对键事件不可见，若某次大写字母始终没有 `TextInput` 会以小写入稿，接受这个偏差，
+  因为只要输入法在，同帧的 `TextInput` 一定先赢。
+- 验证：主机 `cjpm test`（CUI 包 962 项：961 通过 + 1 个既有的 `unicode17OfficialGraphemeBreakConformance`
+  ERROR——缺 `.dev/unicode/GraphemeBreakTest.txt` 夹具，与本补丁无关；根包 687/687）与
+  `scripts/parity.sh/diff.sh --theme both` 14/14 全绿。新用例先红后绿：把实现换回第一版
+  （只有 `handle(UiEvent.Frame)`）时，走订阅路径的
+  `printableKeyFlushesOnTheFrameTickSubscription` / `printableKeyFrameTickKeepsSuccessiveDigitsInOrder`
+  稳定 FAIL（`text.value` 仍为空、`subscribers()` 为 0），修后 PASS。
+- 如何在屏幕上验证：
+  1. 出货包装机，进 OKR，点 KR 的「当前」框（出现橙色描边 + 值全选）；
+  2. `hdc shell uinput -K -d 2004 -u 2004`（键 `4`）再 `2002`（键 `2`）；
+  3. 框内应立刻显示 `42`（不是 `47`、不是空）——这就是「裸键兜底」生效；
+  4. `uinput -K -d 2054 -u 2054`（Enter）后卡片显示 42，且点击侧栏其它项仍然立刻响应；
+  5. 反向验证输入法路径没被破坏：聚焦顶栏搜索框输入 `ni`，候选条照常出现、空格提交后中文进框
+     （说明同帧 `TextInput` 仍然优先，没有双插入）。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（新增 1 个文件 + 两个编辑器各 4 处改动），并在本文件登记。
 
 ### CUI-P06-arkts-key-bridge（本仓新功能，HAP 侧）
 

@@ -34,6 +34,9 @@ public class TextArea <: Widget {
     private let autofocusDone: State<Bool>
     private var frame = Rect.zero()
     private var rowHeight: Float32 = CUI_SMALL_H
+    // CUI-P10: printable presses the platform reports only as `KeyDown`, inserted one frame later
+    // unless the IME commits them first. See `text_printable_key.cj`.
+    private let printableKeys: PrintableKeyFallback
 
     public init(
         text: Bindable<String>,
@@ -72,10 +75,21 @@ public class TextArea <: Widget {
         this.boundaryCache = localState<TextEditBoundaryCache>("TextArea:${ident}:boundaries") {TextEditBoundaryCache()}
             .value
         this.autofocusDone = localState<Bool>("TextArea:${ident}:autofocused") {false}
+        this.printableKeys = PrintableKeyFallback("TextArea:${ident}", ident)
         // A read-only text area is not an editing stop, so it stays out of Tab traversal.
         if (editable) {
             registerFocusable(ident)
         }
+        // Last, once every member is assigned: `arm` captures this control's insert path and asks for
+        // the frame tick that inserts a staged printable character.
+        printableKeys.arm(isEditable, {
+            ctx, value =>
+                interaction.preferredX.value = -1.0
+                interaction.upstream.value = false
+                let changed = actions().insert(value, ctx.frame.elapsedMs, isolated: false)
+                revealCaretLine()
+                changed
+        })
         emit(this)
     }
 
@@ -289,6 +303,7 @@ public class TextArea <: Widget {
                 pointerY)
             case UiEvent.TextEditing(value, start, length) =>
                 if (ctx.hasFocus(id) && isEditable) {
+                    printableKeys.cancel() // the IME owns this press; its commit is the text
                     ctx.setImeComposition(id, value, start, length)
                     interaction.revealPending.value = true
                     return true
@@ -304,6 +319,10 @@ public class TextArea <: Widget {
                 // One-time initial focus for an editable area, applied after the frame's pointer
                 // events so a stray startup click cannot cancel it; mirrors TextField.
                 applyAutofocus(ctx)
+                // Second, idempotent trigger for hosts that broadcast a frame event down the tree;
+                // `DesktopApp` reaches the staged character through the one-frame subscription that
+                // `PrintableKeyFallback.arm` registers (see `text_printable_key.cj`).
+                printableKeys.flush(ctx)
             case _ => ()
         }
         false
@@ -365,7 +384,15 @@ public class TextArea <: Widget {
                     return navigate(ctx, {=> edit.moveToEnd()}, {=> edit.extendToEnd()})
                 }
                 return interaction.moveEdge(ctx, edit, editorView(ctx), toEnd: true)
-            case Key.Letter(code) => return shortcut(ctx, edit, code)
+            // A plain letter press may be the platform's last word on the character (no `TextInput`
+            // behind it); a modifier makes it a command instead, which `stage` declines.
+            case Key.Letter(code) =>
+                if (printableKeys.stage(ctx, isEditable, key)) {
+                    return true
+                }
+                return shortcut(ctx, edit, code)
+            case Key.Digit(_) => return printableKeys.stage(ctx, isEditable, key)
+            case Key.Space => return printableKeys.stage(ctx, isEditable, key)
             case _ => false
         }
     }
@@ -394,6 +421,8 @@ public class TextArea <: Widget {
         }
         interaction.preferredX.value = -1.0
         interaction.upstream.value = false
+        // The IME delivered the character for a press this control had staged: it supersedes it.
+        printableKeys.cancel()
         let composing = ctx.imeComposition(id).isSome()
         ctx.clearImeComposition()
         if (actions().insert(value, ctx.frame.elapsedMs, isolated: composing)) {
