@@ -14,7 +14,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { KeyCode } from '@kit.InputKit';
 import { inputMethod } from '@kit.IMEKit';
 import { display, window } from '@kit.ArkUI';
-import { sendKey, getImeAnchor } from 'libtextura_keys.so';
+import { sendKey, getImeAnchor, setSurfaceSize, setDisplayDensity } from 'libtextura_keys.so';
 import { TextInputState } from '../common/TextInputState';
 
 const DOMAIN: number = 0x0000;
@@ -22,6 +22,16 @@ const TAG: string = 'Textura/FOCUS';
 
 /* Must match the XComponent's .id() — FocusController.requestFocus() resolves by id. */
 const SURFACE_ID: string = 'SDL_XComponent';
+
+/*
+ * Surface push debounce (docs/DEVICE-NOTES.md §24).
+ *
+ * `onAreaChange` fires on every layout pass — a resize during a window drag can produce dozens of
+ * them — and each accepted push resizes the SDL window, which sends a resize event and re-lays the
+ * page out. 32ms (two frames at 60Hz) coalesces a burst into one push without a visible lag, and the
+ * identical-size check in front of it makes a repeat free.
+ */
+const SURFACE_PUSH_DEBOUNCE_MS: number = 32;
 
 /*
  * Focus convergence schedule: each entry is a delay in ms counted from the *previous* attempt, so
@@ -79,6 +89,11 @@ const SDL_SCANCODE_UP: number = 82;
  * traversal; every other key is left to ArkUI/SDL. See forwardKeyToSdl() and
  * entry/src/main/cpp/textura_keys.c.
  *
+ * The other thing this page does is *measure*: ArkUI owns the XComponent, so `onAreaChange` is the only
+ * place that knows how big the surface really is, and the openharmony video backend never adopts a
+ * size change on its own. The measured size (vp -> px) and `densityPixels` are pushed into the host
+ * through the same NAPI module (onSurfaceAreaChanged / pushDisplayDensity, docs/DEVICE-NOTES.md §24).
+ *
  * Deliberately NOT done here:
  *   - No other key handling in ArkTS. Keys must keep flowing ArkUI -> SDL -> CUI -> Cangjie, which is
  *     exactly what focus unlocks, and character keys must stay with the system input method.
@@ -102,15 +117,148 @@ struct Index {
   private densityPixels: number = 1;
   private windowLeft: number = 0;
   private windowTop: number = 0;
+  /* Last surface layout the page measured, in vp; -1 until the first onAreaChange. */
+  private areaWidthVp: number = -1;
+  private areaHeightVp: number = -1;
+  /* Pending and last accepted push, in pixels (see pushSurfaceSize). */
+  private pendingWidthPx: number = -1;
+  private pendingHeightPx: number = -1;
+  private pushedWidthPx: number = -1;
+  private pushedHeightPx: number = -1;
+  private pushedDensity: number = -1;
+  private surfacePushTimer: number = -1;
 
   aboutToAppear(): void {
     this.startFocusConvergence('appear');
     this.startImeAnchorSync();
+    // Ahead of the first frame: the host applies the pushed density when it creates its SDL window,
+    // so the very first frame is already laid out for this screen instead of 1x (docs §24.3).
+    this.pushDisplayDensity();
   }
 
   aboutToDisappear(): void {
     this.cancelFocusRetry();
     this.stopImeAnchorSync();
+    if (this.surfacePushTimer !== -1) {
+      clearTimeout(this.surfacePushTimer);
+      this.surfacePushTimer = -1;
+    }
+  }
+
+  /*
+   * Surface size + display density push (docs/DEVICE-NOTES.md §24).
+   *
+   * WHY the page has to do this: ArkUI owns the XComponent, and SDL's openharmony video backend keeps
+   * the size it adopted when the window was created. Maximising the window changed the ArkUI layout
+   * while `SDL_GetWindowSize` kept answering the launch size (1930x1020), so CUI laid the whole shell
+   * out for 1930x1020 in the top-left of a 2880x1620 window — background everywhere else (§19.6).
+   *
+   * Two values, one path:
+   *   - the XComponent's laid-out area, converted vp -> px (SDL counts pixels on this backend);
+   *   - `display.getDefaultDisplaySync().densityPixels`, which the backend under-reports as 1.0, so
+   *     the host installs it as the window's content scale and the dp layout is rasterized at the
+   *     panel's real density (§24.3).
+   *
+   * The NAPI calls only store the numbers in the Cangjie host; the host applies them to SDL from its
+   * frame thread. Calling SDL from this thread would race SDL's event pump.
+   */
+  private onSurfaceAreaChanged(area: Area): void {
+    const widthVp: number = Number(area.width);
+    const heightVp: number = Number(area.height);
+    // A teardown-time layout can report 0x0; resizing the window to nothing would collapse the UI.
+    if (!(widthVp > 0) || !(heightVp > 0)) {
+      return;
+    }
+    // Layout passes that do not change the surface (a sibling repaint, a theme flip) cost nothing.
+    if (widthVp === this.areaWidthVp && heightVp === this.areaHeightVp) {
+      return;
+    }
+    this.areaWidthVp = widthVp;
+    this.areaHeightVp = heightVp;
+    this.pendingWidthPx = Math.round(this.getUIContext().vp2px(widthVp));
+    this.pendingHeightPx = Math.round(this.getUIContext().vp2px(heightVp));
+    hilog.info(DOMAIN, TAG, 'textura-size area vp=%{public}dx%{public}d px=%{public}dx%{public}d',
+      Math.round(widthVp), Math.round(heightVp), this.pendingWidthPx, this.pendingHeightPx);
+    this.armSurfacePush();
+  }
+
+  /* (Re)starts the 32ms window: a burst of layout passes ends in exactly one push. */
+  private armSurfacePush(): void {
+    if (this.surfacePushTimer !== -1) {
+      clearTimeout(this.surfacePushTimer);
+    }
+    this.surfacePushTimer = setTimeout(() => {
+      this.surfacePushTimer = -1;
+      this.pushSurfaceSize();
+    }, SURFACE_PUSH_DEBOUNCE_MS);
+  }
+
+  private pushSurfaceSize(): void {
+    // Density first: the host converts the pixel size with whatever density is in force.
+    this.pushDisplayDensity();
+    const width: number = this.pendingWidthPx;
+    const height: number = this.pendingHeightPx;
+    if (width <= 0 || height <= 0) {
+      return;
+    }
+    if (width === this.pushedWidthPx && height === this.pushedHeightPx) {
+      return;
+    }
+    const push: ((pixelWidth: number, pixelHeight: number) => boolean) | undefined = setSurfaceSize;
+    if (push === undefined) {
+      return;
+    }
+    let accepted: boolean = false;
+    try {
+      accepted = push(width, height);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'textura-size push failed (ignored)');
+      return;
+    }
+    // Only a push the host accepted is remembered; a rejected one is retried on the next layout
+    // change instead of being assumed applied.
+    if (accepted) {
+      this.pushedWidthPx = width;
+      this.pushedHeightPx = height;
+    }
+    hilog.info(DOMAIN, TAG, 'textura-size push px=%{public}dx%{public}d accepted=%{public}s',
+      width, height, accepted ? 'true' : 'false');
+  }
+
+  /*
+   * Pushes `densityPixels` when it differs from the last accepted value. 1x panels keep 1.0, which is
+   * exactly what the desktop build reports, so the 1440x900 parity baseline is untouched.
+   */
+  private pushDisplayDensity(): void {
+    let density: number = this.densityPixels;
+    try {
+      density = display.getDefaultDisplaySync().densityPixels;
+      this.densityPixels = density;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'textura-density unavailable, keeping %{public}s', density.toFixed(3));
+    }
+    if (!(density > 0)) {
+      return;
+    }
+    if (this.pushedDensity > 0 && Math.abs(density - this.pushedDensity) < 0.0005) {
+      return;
+    }
+    const push: ((value: number) => boolean) | undefined = setDisplayDensity;
+    if (push === undefined) {
+      return;
+    }
+    let accepted: boolean = false;
+    try {
+      accepted = push(density);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'textura-density push failed (ignored)');
+      return;
+    }
+    if (accepted) {
+      this.pushedDensity = density;
+    }
+    hilog.info(DOMAIN, TAG, 'textura-density push density=%{public}s accepted=%{public}s',
+      density.toFixed(3), accepted ? 'true' : 'false');
   }
 
   /*
@@ -151,6 +299,10 @@ struct Index {
       const rect = win.getWindowProperties().windowRect;
       this.windowLeft = rect.left;
       this.windowTop = rect.top;
+      // The window manager's own answer, next to the surface area the page measures: a window that
+      // is larger than the pushed surface size means ArkUI and SDL still disagree (docs §24.5).
+      hilog.info(DOMAIN, TAG, 'textura-geometry window=%{public}d,%{public}d %{public}dx%{public}d' +
+        ' density=%{public}s', rect.left, rect.top, rect.width, rect.height, this.densityPixels.toFixed(3));
     } catch (e) {
       this.windowLeft = 0;
       this.windowTop = 0;
@@ -396,6 +548,9 @@ struct Index {
           // WINDOW_RESIZED — the page kept laying out for the launch size (docs/DEVICE-NOTES §19).
           .width('100%')
           .height('100%')
+          // ...and the backend still does not adopt a later size on its own, so the measured area is
+          // pushed into SDL through the NAPI bridge (docs/DEVICE-NOTES §24).
+          .onAreaChange((_old: Area, area: Area) => this.onSurfaceAreaChanged(area))
           // Keyboard delivery (see the header comment): without these the XComponent is never in
           // the focus chain and SDL's key callback is never called.
           .focusable(true)

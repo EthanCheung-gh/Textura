@@ -387,6 +387,10 @@ public func SDL_AppInit(appstate: CPointer<Unit>, argc: Int32, argv: CPointer<Un
             WindowSpec("织理 Textura", WINDOW_WIDTH, WINDOW_HEIGHT, supersample: 1),
             theme: theme
         )
+        // The ArkUI page has already measured its XComponent and the display density by the time the
+        // surface exists, so the first frame can use them instead of the spec hint (display_push.cj,
+        // docs/DEVICE-NOTES.md §24).
+        let _ = applyDisplayPush(app) // cjcheck-ignore: ignore-result # probeDisplayPush is the record
         // Store → CUI invalidation bridge (see `ShellHost.revision`). This is what makes a tap that
         // `store.setRoute` accepts actually repaint: before it, the sidebar navigated the store while
         // CUI's retained tree kept the old route, because no CUI `State` read had changed.
@@ -427,6 +431,10 @@ public func SDL_AppIterate(appstate: CPointer<Unit>): Int32 {
         case Some(app) =>
             // Wall time of one hosted frame, measured outermost so it includes input dispatch,
             // build, layout and present. The probe only stores samples when it is enabled.
+            // ArkUI measures the surface and the display density; this is where they reach SDL
+            // (display_push.cj). Applied before the frame is timed, so a resize is laid out for in the
+            // same step instead of one frame late and its cost is not charged to the frame budget.
+            let _ = applyDisplayPush(app) // cjcheck-ignore: ignore-result # probeDisplayPush is the record
             let countersBefore = probeCounters()
             let textBefore = probeTextWork()
             let started = PerformanceClock.counter()
@@ -439,11 +447,13 @@ public func SDL_AppIterate(appstate: CPointer<Unit>): Int32 {
                 case Some(host) => host.store.ui.value().route
                 case None => "unknown"
             }, app.takeHostedFailure())
-            // One line per second: window size, resize count, adopted viewport and the height the
-            // visible tree was built with (probe.cj — the resize evidence for docs/DEVICE-NOTES.md §19).
+            // Resize evidence (probe.cj, docs/DEVICE-NOTES.md §19): one `build#N size=WxH epoch=E` line
+            // whenever the described tree changes size, plus a once-per-second `size` summary that
+            // puts the live window, the adopted viewport and the built tree side by side.
             match (hostedShell) {
                 case Some(host) =>
-                    probeSize(host.viewportWidth, host.viewportHeight, host.builtViewportHeight)
+                    probeBuild(host)
+                    probeSize(host)
                 case None => ()
             }
             // Preferences are written during a build, so by the second frame the first attempt has

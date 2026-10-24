@@ -75,3 +75,54 @@ func gtdFoldsToASingleColumnAtTheMinimumWidth(): Unit {
     @Expect(Float32(ctx.width) - tokens.metrics.sidebarWidth - 48.0, Float32(736.0))
     @Expect(736.0 < 900.0, true)
 }
+
+/*
+ * Shrinking back is the same path as growing: the viewport epoch must bump and the tree must be
+ * described again for 1024×640 (a maximised tree that is only re-laid out would keep 2880-wide,
+ * 1620-tall pages and scroll sideways). `viewport_test.cj` covers the epoch itself; this keeps the
+ * responsive-layout guarantee for all seven routes on the way down (docs/DEVICE-NOTES.md §18.4).
+ */
+@Test
+func shrinkingAfterAMaximisedWindowKeepsEveryRouteInside(): Unit {
+    let routes = [
+        Route.Dashboard,
+        Route.Calendar,
+        Route.Okr,
+        Route.Gtd,
+        Route.Gantt,
+        Route.Sop,
+        Route.Settings
+    ]
+    for (route in routes) {
+        try {
+            setVariable("HOME", NARROW_HOME)
+        } catch (_: Exception) {
+            ()
+        }
+        let clock = FixedClock(NARROW_ANCHOR)
+        let store = AppStore(clock: clock)
+        store.loadFromText(encodeWorkspaceDocument(createSeedWorkspace(clock)))
+        store.setRoute(routeId(route))
+        let runtime = ShellRuntime(ShellPreferences.load(), store)
+        let noLoadError: ?String = None
+        let host = ShellHost(store, runtime, "2026-01-01", false, noLoadError, 2880, 1620)
+        host.armStoreBridge({action => action()})
+        let testHost = WidgetTestHost()
+        let body = {=> buildShell(host)}
+        let _ = testHost.frame(Rect(0.0, 0.0, 2880.0, 1620.0), body: body)
+        let _ = testHost.frame(NARROW_RECT, events: [UiEvent.WindowResized(1024, 640)], body: body)
+        @Expect(host.viewportWidth, Int64(1024))
+        @Expect(host.viewportHeight, Int64(640))
+        @Expect(host.builtViewportWidth, Int64(1024))
+        @Expect(host.builtViewportHeight, Int64(640))
+        for (node in testHost.context.semanticsSnapshot()) {
+            let rect = node.bounds
+            if (rect.w <= 0.0 || rect.h <= 0.0) {
+                continue
+            }
+            if (rect.x < -NARROW_TOLERANCE || rect.right() > Float32(NARROW_RECT.w) + NARROW_TOLERANCE) {
+                @Fail("${routeId(route)} node '${node.properties.label}' at ${rect.x}..${rect.right()} after shrinking")
+            }
+        }
+    }
+}

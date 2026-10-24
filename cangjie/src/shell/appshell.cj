@@ -42,11 +42,14 @@ public class ShellHost {
      */
     public let viewportEpoch: State<Int64>
     /**
-     * The height the last **build** handed to the views, i.e. `ViewContext.height` of the newest
-     * tree. Diagnostics for the resize path: `viewportHeight` may already have moved while this
-     * still reports the height the painted tree was built for.
+     * The size the last **build** handed to the views, i.e. `ViewContext.width`/`height` of the newest
+     * tree, plus how many builds have run. Diagnostics for the resize path: `viewportWidth`/`Height`
+     * may already have moved while these still report the size the painted tree was described with
+     * (on device the probe prints them as `build#N size=WxH epoch=E`, docs/DEVICE-NOTES.md §19).
      */
+    public var builtViewportWidth: Int64
     public var builtViewportHeight: Int64
+    public var buildCount: Int64
     /**
      * The one CUI `State` the shell root reads, so that a store write can invalidate the tree.
      *
@@ -96,7 +99,9 @@ public class ShellHost {
         this.viewportWidth = viewportWidth
         this.viewportHeight = viewportHeight
         this.viewportEpoch = State<Int64>(0)
+        this.builtViewportWidth = viewportWidth
         this.builtViewportHeight = viewportHeight
+        this.buildCount = 0
         this.revision = State<Int64>(0)
     }
 
@@ -181,6 +186,25 @@ public class ShellHost {
         viewportHeight = nextHeight
         viewportEpoch.value = viewportEpoch.value + 1
         true
+    }
+
+    /**
+     * Records the viewport the tree being described right now was built with.
+     *
+     * Called from `buildShell` next to the `ViewContext` construction, so `builtViewportWidth/Height`
+     * and `buildCount` describe the committed tree rather than the live window: a viewport that moved
+     * but did not rebuild shows up as `viewport=2880x1620 built=1930x1020` (docs/DEVICE-NOTES.md §19).
+     * Reading it (like `viewportEpochValue`) never creates a CUI dependency — it is plain arithmetic.
+     */
+    public func noteBuild(): Unit {
+        builtViewportWidth = viewportWidth
+        builtViewportHeight = viewportHeight
+        buildCount += 1
+    }
+
+    /** The current viewport epoch, for diagnostics; reading it outside a build registers nothing. */
+    public func viewportEpochValue(): Int64 {
+        viewportEpoch.value
     }
 
     public func themeName(): String {
@@ -660,7 +684,10 @@ public func buildShell(host: ShellHost): Unit {
                         // which draws no scrollbar gutter (parity ref uses overlay scrollbars).
                         ScrollView(key: "shell-content") {
                             VStack(spacing: vp(0.0)) {
-                                host.builtViewportHeight = host.viewportHeight
+                                // Proof of *build*, not merely of layout: this line runs only while the
+                                // shell is being described, so `builtViewportWidth/Height` are the
+                                // numbers the visible page heights were computed from.
+                                host.noteBuild()
                                 renderRoute(route,
                                     ViewContext(store, ui.theme, host.today, host.viewportWidth, host.viewportHeight,
                                         {id => host.navigate(id)}))

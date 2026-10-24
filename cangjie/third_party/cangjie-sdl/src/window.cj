@@ -33,6 +33,16 @@ public class SdlWindow <: Resource {
     private var scaleValue: Float32
     private var pixelDensityValue: Float32 = 1.0
     private var displayScaleValue: Float32 = 1.0
+    /*
+     * System content scale pushed by the embedding host (SDL-P01). 0 = "ask the backend", which is
+     * what a desktop run wants. Positive = use this instead of SDL's `display / density` ratio.
+     *
+     * Why it exists: the HarmonyOS openharmony backend reports pixel density 1.0 whatever the screen
+     * is, so a 1.125x panel laid out its whole UI in physical pixels — the same dp size but 1.125x
+     * more of them, i.e. everything looked smaller than on a 1x screen. The ArkTS page knows the real
+     * density and pushes it (docs/DEVICE-NOTES.md §24).
+     */
+    private var displayScaleOverrideValue: Float32 = 0.0
 
     /** Dynamic native-window-coordinate scale for one logical UI unit. */
     public prop scale: Float32 {
@@ -118,11 +128,14 @@ public class SdlWindow <: Resource {
                     throw SdlException("SDL_GetWindowID failed: ${lastSdlError()}")
                 }
                 this.idValue = createdWindowId
-                let displayMetrics = queryWindowDisplayMetrics(window, userScale)
+                let displayMetrics = queryWindowDisplayMetrics(window, userScale, displayScaleOverrideValue)
                 this.scaleValue = displayMetrics.contentScale
                 this.pixelDensityValue = displayMetrics.pixelDensity
                 this.displayScaleValue = displayMetrics.displayScale
-                if (floatDifference(scaleValue, spec.scale) > Float32(0.001)) {
+                // A pushed override would make this "resize to spec.scale" step fight the size the
+                // host pushed, so it only runs on the backend-reported scale.
+                if (displayScaleOverrideValue <= Float32(0.0) &&
+                    floatDifference(scaleValue, spec.scale) > Float32(0.001)) {
                     ensureSdl(unsafe {
                         SDL_SetWindowSize(window, scaledDimension(spec.width, scaleValue),
                             scaledDimension(spec.height, scaleValue))
@@ -202,11 +215,53 @@ public class SdlWindow <: Resource {
         Size(Float32(widthValue), Float32(heightValue))
     }
 
+    /*
+     * Resizes the window to a size already expressed in window **pixels** (SDL-P01).
+     *
+     * `setSize` takes logical units and multiplies by the current scale; the embedding host pushes
+     * the pixel size the OS laid out, so it must not be multiplied again. An identical size skips the
+     * SDL call — the last line of defence against the "push -> resize event -> re-layout -> push"
+     * loop (the page debounces first; docs/DEVICE-NOTES.md §24) — but the size is always re-read
+     * afterwards, because the openharmony backend can adopt a surface change on its own and the cache
+     * must follow either way. Returns the logical size SDL reports now.
+     */
+    public func setSizeInPixels(pixelWidth: Int32, pixelHeight: Int32): Size {
+        renderer.ensureRenderAccess("setSizeInPixels SdlWindow")
+        if (pixelWidth <= 0 || pixelHeight <= 0) {
+            return Size(Float32(widthValue), Float32(heightValue))
+        }
+        var currentWidth: Int32 = 0
+        var currentHeight: Int32 = 0
+        let known = unsafe { SDL_GetWindowSize(windowPtr, inout currentWidth, inout currentHeight) }
+        if (!known || currentWidth != pixelWidth || currentHeight != pixelHeight) {
+            ensureSdl(unsafe { SDL_SetWindowSize(windowPtr, pixelWidth, pixelHeight) }, "SDL_SetWindowSize")
+        }
+        refreshSize()
+    }
+
+    /**
+     * Uses `scale` as the system content scale for this window instead of the backend's
+     * `display / density` ratio (SDL-P01); `scale <= 0` restores the backend value.
+     *
+     * Recomputes the display metrics, so the renderer's drawing scale, the cached logical
+     * `width`/`height` and `currentDisplayScale` all move together — the layout keeps its own units
+     * and only the pixel budget per unit changes (docs/DEVICE-NOTES.md §24.3).
+     */
+    public func setDisplayScaleOverride(scale: Float32): Unit {
+        renderer.ensureRenderAccess("setDisplayScaleOverride SdlWindow")
+        displayScaleOverrideValue = if (scale.isNaN() || scale.isInf() || scale <= Float32(0.0)) {
+            Float32(0.0)
+        } else {
+            scale
+        }
+        let _ = refreshDisplayMetrics() // cjcheck-ignore: ignore-result # the metrics land in the window's own fields
+    }
+
     /** Refreshes dynamic DPI values and updates the Renderer scale/epoch when they change. */
     public func refreshDisplayMetrics(): WindowDisplayMetrics {
         renderer.ensureRenderAccess("refreshDisplayMetrics SdlWindow")
         renderer.ensureRenderAccess("refresh window display metrics")
-        let metrics = queryWindowDisplayMetrics(windowPtr, userScale)
+        let metrics = queryWindowDisplayMetrics(windowPtr, userScale, displayScaleOverrideValue)
         let changed = floatDifference(scaleValue, metrics.contentScale) > Float32(0.001) ||
             floatDifference(pixelDensityValue, metrics.pixelDensity) > Float32(0.001) ||
             floatDifference(displayScaleValue, metrics.displayScale) > Float32(0.001)
@@ -430,7 +485,18 @@ public class SdlWindow <: Resource {
     }
 }
 
-private func queryWindowDisplayMetrics(window: CPointer<Unit>, userScale: Float32): WindowDisplayMetrics {
+private func queryWindowDisplayMetrics(
+    window: CPointer<Unit>,
+    userScale: Float32,
+    scaleOverride: Float32
+): WindowDisplayMetrics {
+    if (scaleOverride > Float32(0.0)) {
+        // Pushed by the host (SDL-P01): the backend under-reports the surface density, so the ratio
+        // comes from the platform instead. Density 1 keeps `currentPixelDensity` (and therefore the
+        // CUI `displayScale = scale * pixelDensity`) equal to the override, which is the factor the
+        // layout uses to turn logical units into the window's pixels.
+        return displayMetricsFromScales(userScale, Float32(1.0), scaleOverride)
+    }
     let densityValue = unsafe { SDL_GetWindowPixelDensity(window) }
     let displayValue = unsafe { SDL_GetWindowDisplayScale(window) }
     let density = if (densityValue > Float32(0.0)) {

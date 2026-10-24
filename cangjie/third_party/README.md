@@ -6,8 +6,8 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一），见下文 |
-| cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3` |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度），见下文 |
+| cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3`；含补丁 `SDL-P01-host-window-push`（`setSizeInPixels` / `setDisplayScaleOverride`），见下文 |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
 | SDL3 / SDL3_ttf（OHOS） | 与 PixCap 阶段一致 | PixCap `.sdl3` 的 aarch64-linux-ohos 产物 | 见 `.sdl3-ohos/`，鸿蒙阶段使用，宿主构建不要指向它 |
@@ -74,6 +74,24 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
 - 实测：真机上无输入框时 `K` 不再进输入法（候选条消失，`Ctrl+K` 打开命令面板、`Ctrl+N` 打开快速收集）；
   聚焦顶栏搜索框后输入 `ni`，系统输入法候选条正常出现（你/拟/呢/尼…），中文输入未被破坏。
 - 上游同步提示：升级 cangjie-sdl/CUI 时需重新应用本补丁，并在本表登记版本。
+
+### CUI-P09-host-window-push（本仓新增，最小补丁，含 cangjie-sdl 绑定扩展 SDL-P01）
+
+- 位置：`CUI/src/desktop/desktop_app.cj`（新增 `DesktopApp.applyHostWindow()`）+
+  `cangjie-sdl/src/window.cj`（新增 `SdlWindow.setSizeInPixels()` / `setDisplayScaleOverride()`，
+  并在 `queryWindowDisplayMetrics()` 里接受覆盖值）。见 `docs/DEVICE-NOTES.md` §24。
+- 现象（真机）：窗口最大化后 UI 仍按启动尺寸 1930×1020 排版贴在左上，右侧/下方大片空白；且整机
+  `densityPixels = 1.75`，而 openharmony 后端报 pixel density 1.0，于是 1.75× 屏上所有控件/字号都按像素排，
+  视觉上偏小。
+- 根因：ArkUI 持有 XComponent surface，openharmony 视频后端在**建窗时**采纳一次尺寸后不再采纳后来变化；
+  且该后端不报真实屏幕密度。
+- 改动：宿主（ArkTS 页面）把自己的实测结果推给 CUI —— `applyHostWindow(pxW, pxH, density)` 先装密度
+  （`setDisplayScaleOverride` 让 `scale = userScale × density`、`pixelDensity = 1`，于是逻辑尺寸 = 像素/密度、
+  绘制按密度放大、`UiContext.displayScale` 同步），再用**像素**尺寸 `setSizeInPixels` 调 `SDL_SetWindowSize`
+  并回读（相同尺寸不重复调用）。密度为 0 时完全走原路径，桌面行为与像素不变。
+- 影响：桌面路径（`density ≤ 0` 不进入覆盖分支）像素不变，1440×900 对拍 14/14；只有宿主推过密度才生效。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01/P04 同流程），升级 cangjie-sdl 需重新应用
+  SDL-P01，并在本文件登记。
 
 ### CUI-P06-arkts-key-bridge（本仓新功能，HAP 侧）
 

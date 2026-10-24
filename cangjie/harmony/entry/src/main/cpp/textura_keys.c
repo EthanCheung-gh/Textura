@@ -1,21 +1,27 @@
 /*
- * TEXTURA-CUI-P05 — ArkTS → SDL key bridge for the keys ArkUI keeps for itself.
+ * TEXTURA-CUI-P05 — ArkTS → SDL bridges that only ArkUI can feed.
  *
- * The XComponent is the only surface, and SDL's HarmonyOS port receives hardware keys through
- * OH_NativeXComponent_RegisterKeyEventCallback. That callback is only reached for keys ArkUI does not
- * consume first. Tab is consumed by ArkUI's focus traversal before the component sees it, so the
- * shell's focus ring could never be driven from the keyboard (no `ev# KeyDown key=Tab` line on
- * device, ever).
+ * 1. Keys. The XComponent is the only surface, and SDL's HarmonyOS port receives hardware keys
+ *    through OH_NativeXComponent_RegisterKeyEventCallback. That callback is only reached for keys
+ *    ArkUI does not consume first. Tab is consumed by ArkUI's focus traversal before the component
+ *    sees it, so the shell's focus ring could never be driven from the keyboard (no `ev# KeyDown
+ *    key=Tab` line on device, ever). The page root therefore forwards exactly those keys into SDL's
+ *    event queue through this module.
+ * 2. Surface size + display density (docs/DEVICE-NOTES.md §24). ArkUI owns the XComponent, so the
+ *    page is the only place that knows the real visible size; the openharmony video backend never
+ *    adopts a size change on its own (maximising left SDL at the launch size). The page pushes the
+ *    measured size and `densityPixels` here, and the host applies both to SDL from its frame thread.
  *
- * The page root therefore forwards exactly those keys from ArkTS into SDL's event queue through this
- * tiny NAPI module. Everything else is left alone: character keys already reach CUI once text input is
- * focus-driven (TEXTURA-CUI-P05 in CUI), and Escape/Ctrl arrive natively.
+ * Everything else is left alone: character keys already reach CUI once text input is focus-driven
+ * (TEXTURA-CUI-P05 in CUI), and Escape/Ctrl arrive natively.
  *
  * Why no SDL headers: the HAP ships libSDL3.so but no SDL headers are part of the build, and the
  * event we need is small and stable. SDL_PushEvent is resolved at run time from the already-loaded
  * SDL library, and the union below reproduces SDL3's SDL_KeyboardEvent layout (type / reserved /
  * timestamp / windowID / which / scancode / key / mod / raw / down / repeat) inside a 128-byte
- * buffer, which is larger than SDL_Event and therefore safe to pass.
+ * buffer, which is larger than SDL_Event and therefore safe to pass. The size and density entry
+ * points do not touch SDL at all: they call two scalars in the Cangjie host, so the thread that owns
+ * SDL is the only one that calls SDL.
  */
 #include <dlfcn.h>
 #include <stdint.h>
@@ -180,12 +186,100 @@ static napi_value GetImeAnchor(napi_env env, napi_callback_info info)
     return result;
 }
 
+/*
+ * setSurfaceSize(width, height): boolean
+ *
+ * The XComponent's visible size in **pixels**, measured by the page (ArkUI lays out in vp, the page
+ * converts with vp2px). ArkUI owns the surface, so it knows this before SDL does — and the openharmony
+ * video backend never adopts a later size on its own: maximising the window left `SDL_GetWindowSize`
+ * answering the launch size 1930x1020 while the surface was 2880x1620, so the whole shell stayed laid
+ * out in the top-left (docs/DEVICE-NOTES.md §19, §24).
+ *
+ * This module only stores the value in the host library (`textura_push_surface_size`); the host
+ * applies it to SDL from its frame thread. Calling SDL_SetWindowSize here would touch the video
+ * subsystem from the ArkUI thread, which races SDL's event pump.
+ *
+ * Returns whether the host accepted the request. `false` means the host library is not loaded yet or
+ * the size was rejected; the page keeps its own debounce either way.
+ */
+typedef void (*tx_push_size_fn)(int32_t, int32_t);
+typedef void (*tx_push_density_fn)(float);
+
+/* libtextura_host.so is loaded by requireCJLib in the ability's onCreate, i.e. before this page
+ * exists, so the handle is always present unless startup failed. Symbols are resolved on demand and
+ * cached, exactly like getImeAnchor does. */
+static void *host_handle(void)
+{
+    static void *host = NULL;
+    static bool resolved = false;
+    if (!resolved) {
+        resolved = true;
+        host = dlopen("libtextura_host.so", RTLD_NOW | RTLD_GLOBAL);
+    }
+    return host;
+}
+
+static napi_value SetSurfaceSize(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value argv[2] = { NULL, NULL };
+    napi_value result = NULL;
+    bool accepted = false;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) == napi_ok && argc >= 2) {
+        double width = 0.0;
+        double height = 0.0;
+        if (napi_get_value_double(env, argv[0], &width) == napi_ok &&
+            napi_get_value_double(env, argv[1], &height) == napi_ok &&
+            width > 0.0 && height > 0.0) {
+            tx_push_size_fn push = (tx_push_size_fn)dlsym(host_handle() ? host_handle() : RTLD_DEFAULT,
+                "textura_push_surface_size");
+            if (push) {
+                push((int32_t)(width + 0.5), (int32_t)(height + 0.5));
+                accepted = true;
+            }
+        }
+    }
+    napi_get_boolean(env, accepted, &result);
+    return result;
+}
+
+/*
+ * setDisplayDensity(density): boolean
+ *
+ * `display.getDefaultDisplaySync().densityPixels` — 1.0 on a 1x panel, 1.125 / 1.5 / 2.0 on a scaled
+ * one. The openharmony backend reports pixel density 1.0 regardless, so without this the layout ran in
+ * physical pixels and every control looked small on a high-density monitor. The host installs it as
+ * the window's content scale (SDL-P01), which keeps the dp layout and rasterizes it at `density`.
+ */
+static napi_value SetDisplayDensity(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argv[1] = { NULL };
+    napi_value result = NULL;
+    bool accepted = false;
+    if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) == napi_ok && argc >= 1) {
+        double density = 0.0;
+        if (napi_get_value_double(env, argv[0], &density) == napi_ok && density > 0.0) {
+            tx_push_density_fn push = (tx_push_density_fn)dlsym(host_handle() ? host_handle() : RTLD_DEFAULT,
+                "textura_push_display_density");
+            if (push) {
+                push((float)density);
+                accepted = true;
+            }
+        }
+    }
+    napi_get_boolean(env, accepted, &result);
+    return result;
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports)
 {
     napi_property_descriptor desc[] = {
         { "sendKey", NULL, SendKey, NULL, NULL, NULL, napi_default, NULL },
         { "getImeAnchor", NULL, GetImeAnchor, NULL, NULL, NULL, napi_default, NULL },
+        { "setSurfaceSize", NULL, SetSurfaceSize, NULL, NULL, NULL, napi_default, NULL },
+        { "setDisplayDensity", NULL, SetDisplayDensity, NULL, NULL, NULL, napi_default, NULL },
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

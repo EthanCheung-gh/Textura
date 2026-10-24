@@ -38,6 +38,7 @@ import std.sort.sort
 import cui.*
 import sdl.input.Mouse
 import sdl.system.PerformanceClock
+import textura.shell.{DisplayPush, ShellHost}
 import textura.ui.isPrimaryPointerButton
 
 /*
@@ -258,7 +259,7 @@ private var probeSizeLastW: Float32 = -1.0
 private var probeSizeLastH: Float32 = -1.0
 private var probeSizeChanges: Int64 = 0
 
-func probeSize(hostViewportWidth: Int64, hostViewportHeight: Int64, builtHeight: Int64): Unit {
+func probeSize(host: ShellHost): Unit {
     if (!probeActive) {
         return
     }
@@ -283,7 +284,52 @@ func probeSize(hostViewportWidth: Int64, hostViewportHeight: Int64, builtHeight:
     probeSizeLastEmitMs = now
     let scale = ctx.displayScale
     probeEmit("size w=${w} h=${h} scale=${scale} changes=${probeSizeChanges}" +
-        " viewport=${hostViewportWidth}x${hostViewportHeight} built=${builtHeight}")
+        " viewport=${host.viewportWidth}x${host.viewportHeight}" +
+        " built=${host.builtViewportWidth}x${host.builtViewportHeight}" +
+        " epoch=${host.viewportEpochValue()} builds=${host.buildCount}")
+}
+
+/* ------------------------------------------------------------------ per-build resize trace */
+
+/*
+ * One line per *build* that changes either the size the tree was described with or the viewport
+ * epoch — the two facts that must move together when the window is resized.
+ *
+ * The `size` line above samples once a second and cannot say *why* a number moved; this line is
+ * event-shaped and answers the two questions the resize investigation actually asks:
+ *
+ *   build#N   how many times `buildShell` has described the tree this session. A resize must add at
+ *             least one; a stale, cached tree shows a number that never moves.
+ *   size=WxH  the `ViewContext.width/height` the newest tree was built with (`built=`, not the live
+ *             window). After a resize this must equal `viewport=`.
+ *   viewport= the size the shell adopted from the driver; `size` != `viewport` means the rebuild is
+ *             still one frame away (or that the rebuild never happened at all — the device bug this
+ *             line exists for).
+ */
+private var probeBuildLastW: Int64 = -1
+private var probeBuildLastH: Int64 = -1
+private var probeBuildLastEpoch: Int64 = -1
+private var probeBuildLastViewportW: Int64 = -1
+private var probeBuildLastViewportH: Int64 = -1
+
+func probeBuild(host: ShellHost): Unit {
+    if (!probeActive) {
+        return
+    }
+    let epoch = host.viewportEpochValue()
+    let unchanged = host.builtViewportWidth == probeBuildLastW &&
+        host.builtViewportHeight == probeBuildLastH && epoch == probeBuildLastEpoch &&
+        host.viewportWidth == probeBuildLastViewportW && host.viewportHeight == probeBuildLastViewportH
+    if (unchanged) {
+        return
+    }
+    probeBuildLastW = host.builtViewportWidth
+    probeBuildLastH = host.builtViewportHeight
+    probeBuildLastEpoch = epoch
+    probeBuildLastViewportW = host.viewportWidth
+    probeBuildLastViewportH = host.viewportHeight
+    probeEmit("build#${host.buildCount} size=${host.builtViewportWidth}x${host.builtViewportHeight}" +
+        " epoch=${epoch} viewport=${host.viewportWidth}x${host.viewportHeight}")
 }
 
 /* ------------------------------------------------------------------ hosted frame failures */
@@ -309,6 +355,33 @@ func probeFailure(route: String, failure: ?Exception): Unit {
             }
         case None => ()
     }
+}
+
+/* ------------------------------------------------------------------ ArkUI surface push (one line) */
+
+/*
+ * Reports one applied ArkUI push: the pixel size the XComponent was laid out at and the display
+ * density it was measured with (docs/DEVICE-NOTES.md §24).
+ *
+ * This is the first half of the resize evidence and it exists to separate two failures that look
+ * identical on screen: `changes=0` in the `size` line with no `push` line at all means the page never
+ * reached the host (ArkTS/NAPI side), while a `push` line without a following `build#N` means the host
+ * got the number and SDL refused to adopt it. Density is printed as a milli value so a fractional
+ * density (1.125 on the external panel) is readable without float formatting.
+ *
+ * `pixel` is what the window manager laid out; the logical viewport is `pixel / density`, which is
+ * printed too because that is the number the layout actually used.
+ */
+func probeDisplayPush(
+    pixelWidth: Int64, pixelHeight: Int64, densityMilli: Int64, adoptedWidth: Int64, adoptedHeight: Int64
+): Unit {
+    if (!probeActive) {
+        return
+    }
+    let push = DisplayPush(pixelWidth, pixelHeight, Float32(densityMilli) / Float32(1000.0))
+    probeEmit("push size=${pixelWidth}x${pixelHeight} density=${densityMilli}per1000" +
+        " logical=${push.logicalWidth()}x${push.logicalHeight()}" +
+        " adopted=${adoptedWidth}x${adoptedHeight}")
 }
 
 private func probeState(ctx: UiContext): String {

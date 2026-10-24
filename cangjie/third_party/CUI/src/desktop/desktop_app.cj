@@ -3,7 +3,8 @@ package cui.desktop
 import std.collection.ArrayList
 import std.env.getCommandLine
 import std.sync.Mutex
-import sdl.{FrameInfo, Key, MouseButton, Rect, RenderPass, SdlWindow, UiEvent, UiEventRecord, WindowSpec, SdlException}
+import sdl.{FrameInfo, Key, MouseButton, Rect, RenderPass, SdlWindow, Size, UiEvent, UiEventRecord, WindowSpec,
+    SdlException}
 import sdl.input.{Cursor, SystemCursor}
 import sdl.dialogs.FileDialogOptions
 import sdl.dialogs.FileDialogRequest
@@ -191,6 +192,34 @@ public class DesktopApp {
     public func setMinimumSize(width: Int32, height: Int32): Unit {
         ensureUiAccess("set the minimum window size")
         window.setMinimumSize(width, height)
+    }
+
+    /**
+     * Applies a window size and display density measured by the embedding host (CUI-P09).
+     *
+     * A host that owns the surface — HarmonyOS' ArkUI `XComponent` — knows the real visible size
+     * before SDL does, and on that backend SDL never learns it on its own: maximising the window left
+     * the shell laid out for the launch size inside a much larger surface. `pixelWidth/pixelHeight`
+     * are window pixels (what `SDL_GetWindowSize` reports there), `density` is the display's
+     * pixel-per-logical-unit factor; the layout keeps using logical units, so the same dp layout is
+     * simply rasterized at that density (docs/DEVICE-NOTES.md §24).
+     *
+     * Order matters: the density is installed first, so the size is converted to logical units with
+     * the factor that will be in force. `density <= 0` leaves the display density untouched.
+     *
+     * Returns the logical window size the window reports afterwards — the host logs it as the
+     * evidence that SDL really adopted the pushed size (a backend that ignores the resize shows the
+     * old number here while the page keeps pushing the new one).
+     */
+    public func applyHostWindow(pixelWidth: Int32, pixelHeight: Int32, density: Float32): Size {
+        ensureUiAccess("apply the host window size")
+        if (density > 0.0) {
+            window.setDisplayScaleOverride(density)
+            ctx.displayScale = window.scale * window.currentPixelDensity
+        }
+        let size = window.setSizeInPixels(pixelWidth, pixelHeight)
+        scheduler.invalidate()
+        size
     }
 
     /**
