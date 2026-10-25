@@ -249,7 +249,14 @@ class OkrRingOp {
     }
 }
 
-/** 一帧的绘制指令集合；顺序即绘制顺序（阴影 → 填充 → 描边 → 虚线 → 点 → 线 → 图标 → 文字）。 */
+/**
+ * 一帧的绘制指令集合；顺序即绘制顺序（阴影 → 填充 → 描边 → 虚线 → 点 → 线 → 图标 → 文字）。
+ *
+ * **跨帧复用**：`OkrPage` 把同一个 `OkrPaint` 记在 `remember` 里，每次 layout 交给 `PageCanvas`
+ * 复用，由它先 `clear()` 再按本帧几何重填。容器（连同已经长到全量的底层数组）因此不再每帧新建：
+ * 光标闪烁这类「只重绘、不改内容」的帧原本要重新分配 10 个 `ArrayList` 及其扩容数组，现在只是把
+ * 长度归零。
+ */
 class OkrPaint {
     let shadows = ArrayList<OkrShadowOp>()
     let fills = ArrayList<OkrFillOp>()
@@ -261,6 +268,26 @@ class OkrPaint {
     let chevrons = ArrayList<OkrChevronOp>()
     let texts = ArrayList<OkrTextOp>()
     let rings = ArrayList<OkrRingOp>()
+
+    /** 清空全部指令，保留容器已分配的容量（跨帧复用时的唯一入口）。 */
+    func clear(): Unit {
+        shadows.clear()
+        fills.clear()
+        strokes.clear()
+        dashes.clear()
+        dots.clear()
+        lines.clear()
+        icons.clear()
+        chevrons.clear()
+        texts.clear()
+        rings.clear()
+    }
+
+    /** 指令总条数（测试与诊断用：跨帧复用后它必须等于「一次 layout 产生的条数」）。 */
+    func opCount(): Int64 {
+        shadows.size + fills.size + strokes.size + dashes.size + dots.size + lines.size + icons.size +
+            chevrons.size + texts.size + rings.size
+    }
 
     func draw(ctx: UiContext, tokens: ThemeTokens): Unit {
         // Viewport culling. The only thing that changes while a wheel scrolls this page is the

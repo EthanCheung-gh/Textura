@@ -56,7 +56,8 @@ class OkrHotspot {
 class PageCanvas {
     let tokens: ThemeTokens
     let theme: Theme
-    let paint = OkrPaint()
+    /** 本帧指令批。`OkrPage` 传进来的是跨帧复用的那个实例（先 `clear()` 再重填）。 */
+    let paint: OkrPaint
     let children = ArrayList<Widget>()
     let childRects = ArrayList<Rect>()
     let hotspots = ArrayList<OkrHotspot>()
@@ -71,10 +72,17 @@ class PageCanvas {
      */
     let measureOnly: Bool
 
-    init(tokens: ThemeTokens, theme: Theme, measureOnly!: Bool = false) {
+    init(tokens: ThemeTokens, theme: Theme, measureOnly!: Bool = false, reuse!: ?OkrPaint = None) {
         this.tokens = tokens
         this.theme = theme
         this.measureOnly = measureOnly
+        match (reuse) {
+            case Some(batch) =>
+                // 跨帧复用：高度预演不产出指令，只有真布局会重填这个批。
+                batch.clear()
+                this.paint = batch
+            case None => this.paint = OkrPaint()
+        }
     }
 
     func color(): TokenColors {
@@ -101,6 +109,10 @@ class PageCanvas {
      */
     private func emitText(x: Float32, centerY: Float32, value: String, size: Float32, weight: Int64, color: Color,
         width: Float32, mono: Bool, id: String, hoverColor: ?Color): Float32 {
+        if (measureOnly) {
+            // 高度预演只关心行高/游标推进：它量过的宽已经算好，指令对象一个都不留。
+            return width
+        }
         paint.texts.add(OkrTextOp(x, centerY, value, size, weight, color, width, mono: mono, id: id,
             hoverColor: hoverColor))
         width
@@ -144,47 +156,77 @@ class PageCanvas {
     }
 
     func fill(rect: Rect, radius: Float32, color: Color, id!: String = "", hoverColor!: ?Color = None): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.fills.add(OkrFillOp(snap(rect), radius, color, id: id, hoverColor: hoverColor))
     }
 
     /** `border: 1px` 在 CSS 里占满整像素行；描边中心内缩半个线宽才不会出现半像素灰边。 */
     func stroke(rect: Rect, radius: Float32, color: Color): Unit {
+        if (measureOnly) {
+            return
+        }
         let width = tokens.metrics.borderWidth
         let frame = snap(rect).inset(width / 2.0)
         paint.strokes.add(OkrStrokeOp(frame, max(0.0, radius - width / 2.0), width, color))
     }
 
     func dashed(rect: Rect, radius: Float32, color: Color): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.dashes.add(OkrDashOp(snap(rect), radius, color))
     }
 
     func shadow(rect: Rect, radius: Float32): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.shadows.add(OkrShadowOp(snap(rect), radius))
     }
 
     func dot(centerX: Float32, centerY: Float32, radius: Float32, color: Color): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.dots.add(OkrDotOp(centerX, centerY, radius, color))
     }
 
     func hLine(x1: Float32, x2: Float32, y: Float32, color: Color, dashed!: Bool = false): Unit {
+        if (measureOnly) {
+            return
+        }
         let top = snapValue(y)
         paint.lines.add(OkrLineOp(x1, top, x2, top + 1.0, tokens.metrics.borderWidth, color, dashed: dashed))
     }
 
     func vLine(x: Float32, y1: Float32, y2: Float32, color: Color, dashed!: Bool = false): Unit {
+        if (measureOnly) {
+            return
+        }
         let left = snapValue(x)
         paint.lines.add(OkrLineOp(left, y1, left + 1.0, y2, tokens.metrics.borderWidth, color, dashed: dashed))
     }
 
     func chevron(rect: Rect, up: Bool, color: Color): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.chevrons.add(OkrChevronOp(rect, up, color))
     }
 
     func icon(rect: Rect, glyph: IconGlyph, color: Color): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.icons.add(OkrIconOp(rect, glyph, color))
     }
 
     func focusRingFor(id: String, rect: Rect, radius: Float32): Unit {
+        if (measureOnly) {
+            return
+        }
         paint.rings.add(OkrRingOp(id, rect, radius))
     }
 
@@ -227,6 +269,9 @@ class PageCanvas {
     }
 
     func addHotspot(id: String, rect: Rect, action: () -> Unit): Unit {
+        if (measureOnly) {
+            return
+        }
         hotspots.add(OkrHotspot(id, rect, action))
     }
 

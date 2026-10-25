@@ -220,6 +220,14 @@ class OkrPage <: Widget {
     let ui: OkrUiState
 
     private var canvas: ?PageCanvas = None
+    /**
+     * 跨帧保留的绘制指令批（`remember`）。
+     *
+     * CUI 每帧重建整棵树——光标闪烁这种「只重绘」的帧也一样——所以 `OkrPage` 每帧都是新实例、
+     * 每帧都要重新走一遍 layout。指令批挂在这里而不是 `PageCanvas` 里，容器才能跨帧存活：
+     * 每帧只 `clear()` + 重填，不再新建 10 个 `ArrayList` 及其扩容数组。
+     */
+    private let pagePaint: OkrPaint
     private var contentHeight: Float32 = 0.0
     private var measured: Bool = false
     private var measuredWidth: Float32 = -1.0
@@ -235,6 +243,7 @@ class OkrPage <: Widget {
         }
         this.theme = this.tokens.theme()
         this.workspace = ctx.store.state.value()
+        this.pagePaint = remember<OkrPaint>("okr-page-paint") {OkrPaint()}
         let uiState = ctx.store.ui.value()
         this.data = buildOkrPageData(workspace, uiState.okrPeriod, uiState.search, ctx.today)
         this.ui = ui
@@ -364,6 +373,17 @@ class OkrPage <: Widget {
     }
 
     /**
+     * 本帧画布使用的绘制批（包内可见、只给测试用）：`okr_paint_reuse_test.cj` 用它钉住
+     * 「两次 layout 之间批与容器是同一实例、且长度不叠加」。
+     */
+    func paintBatch(): ?OkrPaint {
+        match (canvas) {
+            case Some(cv) => Some(cv.paint)
+            case None => None
+        }
+    }
+
+    /**
      * 本帧画布登记的命中区，与点击走同一条路径（`handle` 的 `hotspots`）。
      *
      * 包内可见、只给测试用：`okr_inline_editor_test.cj` 需要像用户一样点中画上去的字段，
@@ -404,7 +424,7 @@ class OkrPage <: Widget {
     }
 
     public func layout(ctx: UiContext, rect: Rect): Unit {
-        let cv = PageCanvas(tokens, theme)
+        let cv = PageCanvas(tokens, theme, reuse: Some(pagePaint))
         layoutPage(ctx, cv, rect)
         canvas = Some(cv)
     }
