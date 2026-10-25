@@ -209,6 +209,31 @@ func printableKeyDigitsArriveInOneBatchAsOneEdit(): Unit {
     @Expect(body.value, "42")
 }
 
+/*
+ * End-to-end cover for the numeric keypad. The SDL binding decodes a keypad press to the *same*
+ * `Key.Digit` the main number row produces (`SDL_SCANCODE_KP_1..KP_0`, `SDLK_KP_1..KP_0`), so a
+ * keypad digit reaches a field through exactly this path and nothing in CUI has to know about the
+ * keypad. `55` is ASCII `7`, i.e. what a keypad 7 press carries.
+ */
+@Test
+func keypadDigitReachesTheDraftThroughThePrintableKeyFallback(): Unit {
+    let ctx = printableContext()
+    let body = State<String>("")
+    let field = TextField(body, key: "printable-keypad")
+    field.layout(ctx, Rect(0.0, 0.0, 240.0, 40.0))
+    ctx.focus("printable-keypad")
+    let handle = fieldHandler(field)
+    printableFrame(ctx, UInt64(0))
+    @Expect(handle(ctx, UiEvent.KeyDown(Key.Digit(55), false)))
+    @Expect(body.value, "")
+    @Expect(!tickFrame(ctx, handle, UInt64(0)))
+    @Expect(body.value, "")
+    @Expect(!tickFrame(ctx, handle, UInt64(16)))
+    @Expect(body.value, "7")
+    @Expect(!tickFrame(ctx, handle, UInt64(32)))
+    @Expect(body.value, "7")
+}
+
 @Test
 func printableKeyDigitsAndSpaceReachTheMultilineArea(): Unit {
     let ctx = printableContext()

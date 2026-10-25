@@ -24,6 +24,143 @@ func keyFromScancodeMapsLettersAndControls(): Unit {
     }
 }
 
+/*
+ * Numeric keypad. SDL reports the keypad digits and the keypad Enter with their own identities —
+ * scancodes 88..98 (`SDL_scancode.h`) and keycodes 0x40000058..0x40000062 (`SDL_keycode.h`) — and
+ * neither falls in the ASCII keycode branch nor in the main-row scancode branch, so every keypad
+ * digit used to arrive as `Key.RawScancode` and never reached a text field. Both identities are
+ * covered because which one a platform bridge fills in is platform specific, and each digit is
+ * asserted on its own: the digit order is `KP_1 = 89 … KP_9 = 97, KP_0 = 98`, so a single offset
+ * would shift the whole row.
+ */
+
+private func expectKeypadDigit(key: Key, digit: UInt8, label: String): Unit {
+    match (key) {
+        case Key.Digit(value) => @Expect(value, digit)
+        case _ => @Fail("${label} should decode to Key.Digit(${digit}).")
+    }
+}
+
+@Test
+func numpadDigitScancodesDecodeToDigits(): Unit {
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_0), UInt8(48), "KP_0 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_1), UInt8(49), "KP_1 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_2), UInt8(50), "KP_2 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_3), UInt8(51), "KP_3 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_4), UInt8(52), "KP_4 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_5), UInt8(53), "KP_5 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_6), UInt8(54), "KP_6 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_7), UInt8(55), "KP_7 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_8), UInt8(56), "KP_8 scancode")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_KP_9), UInt8(57), "KP_9 scancode")
+}
+
+@Test
+func numpadEnterScancodeDecodesToEnter(): Unit {
+    match (keyFromScancode(SDL_SCANCODE_KP_ENTER)) {
+        case Key.Enter => @Expect(true)
+        case _ => @Fail("KP_ENTER scancode should decode to Key.Enter.")
+    }
+}
+
+@Test
+func numpadDigitKeycodesDecodeToDigits(): Unit {
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_0, SDLK_KP_0), UInt8(48), "KP_0 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_1, SDLK_KP_1), UInt8(49), "KP_1 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_2, SDLK_KP_2), UInt8(50), "KP_2 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_3, SDLK_KP_3), UInt8(51), "KP_3 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_4, SDLK_KP_4), UInt8(52), "KP_4 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_5, SDLK_KP_5), UInt8(53), "KP_5 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_6, SDLK_KP_6), UInt8(54), "KP_6 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_7, SDLK_KP_7), UInt8(55), "KP_7 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_8, SDLK_KP_8), UInt8(56), "KP_8 keycode")
+    expectKeypadDigit(keyFromEvent(SDL_SCANCODE_KP_9, SDLK_KP_9), UInt8(57), "KP_9 keycode")
+}
+
+@Test
+func numpadEnterKeycodeDecodesToEnter(): Unit {
+    match (keyFromEvent(SDL_SCANCODE_KP_ENTER, SDLK_KP_ENTER)) {
+        case Key.Enter => @Expect(true)
+        case _ => @Fail("KP_ENTER keycode should decode to Key.Enter.")
+    }
+}
+
+@Test
+func numpadPressDecodesThroughTheNativeKeyboardRecord(): Unit {
+    // The whole path a keypad press takes: SDL event struct -> decodeEventRecord -> KeyDown.
+    match (decodeRawKeyboard(SDL_SCANCODE_KP_7, SDLK_KP_7).event) {
+        case UiEvent.KeyDown(Key.Digit(value), repeating) =>
+            @Expect(value, UInt8(55))
+            @Expect(!repeating)
+        case _ => @Fail("A keypad 7 press should arrive as KeyDown(Key.Digit('7')).")
+    }
+    match (decodeRawKeyboard(SDL_SCANCODE_KP_ENTER, SDLK_KP_ENTER).event) {
+        case UiEvent.KeyDown(Key.Enter, _) => @Expect(true)
+        case _ => @Fail("A keypad Enter press should arrive as KeyDown(Key.Enter).")
+    }
+}
+
+@Test
+func mainRowDigitsAndLettersKeepTheirScancodeMapping(): Unit {
+    // Regression guard for the keypad work: the main number row is scancode 30..39 and the letters
+    // are 4..29, and neither may be rewritten by the new branch.
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_1), UInt8(49), "main-row 1")
+    expectKeypadDigit(keyFromScancode(31), UInt8(50), "main-row 2")
+    expectKeypadDigit(keyFromScancode(32), UInt8(51), "main-row 3")
+    expectKeypadDigit(keyFromScancode(33), UInt8(52), "main-row 4")
+    expectKeypadDigit(keyFromScancode(34), UInt8(53), "main-row 5")
+    expectKeypadDigit(keyFromScancode(35), UInt8(54), "main-row 6")
+    expectKeypadDigit(keyFromScancode(36), UInt8(55), "main-row 7")
+    expectKeypadDigit(keyFromScancode(37), UInt8(56), "main-row 8")
+    expectKeypadDigit(keyFromScancode(38), UInt8(57), "main-row 9")
+    expectKeypadDigit(keyFromScancode(SDL_SCANCODE_0), UInt8(48), "main-row 0")
+    for (index in 0..26) {
+        let scancode = SDL_SCANCODE_A + Int32(index)
+        match (keyFromScancode(scancode)) {
+            case Key.Letter(value) => @Expect(value, UInt8(UInt32(65) + UInt32(index)))
+            case _ => @Fail("scancode ${scancode} should still decode to a letter.")
+        }
+    }
+}
+
+@Test
+func navigationScancodesAreNotTakenOverByTheKeypad(): Unit {
+    // With NumLock off the keypad's 1/2/3/4/6/7/8/9 positions navigate, and SDL surfaces that
+    // through these scancodes. They must keep their navigation keys instead of becoming digits.
+    match (keyFromScancode(SDL_SCANCODE_HOME)) {
+        case Key.Home => @Expect(true)
+        case _ => @Fail("Home scancode should stay Key.Home.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_END)) {
+        case Key.End => @Expect(true)
+        case _ => @Fail("End scancode should stay Key.End.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_PAGEUP)) {
+        case Key.PageUp => @Expect(true)
+        case _ => @Fail("PageUp scancode should stay Key.PageUp.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_PAGEDOWN)) {
+        case Key.PageDown => @Expect(true)
+        case _ => @Fail("PageDown scancode should stay Key.PageDown.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_LEFT)) {
+        case Key.Left => @Expect(true)
+        case _ => @Fail("Left scancode should stay Key.Left.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_RIGHT)) {
+        case Key.Right => @Expect(true)
+        case _ => @Fail("Right scancode should stay Key.Right.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_UP)) {
+        case Key.Up => @Expect(true)
+        case _ => @Fail("Up scancode should stay Key.Up.")
+    }
+    match (keyFromScancode(SDL_SCANCODE_DOWN)) {
+        case Key.Down => @Expect(true)
+        case _ => @Fail("Down scancode should stay Key.Down.")
+    }
+}
+
 @Test
 func buttonFromCodeMapsKnownButtons(): Unit {
     match (buttonFromCode(SDL_BUTTON_LEFT)) {
@@ -198,6 +335,23 @@ private func decodeRawRenderEvent(eventType: UInt32, windowId: UInt32): UiEventR
         renderer.timestamp = UInt64(23)
         renderer.windowID = windowId
         unsafe { CPointer<SdlRenderEvent>(eventResource.value).write(renderer) }
+        record = decodeEventRecord(unsafe { eventResource.value.read() })
+    }
+    record
+}
+
+private func decodeRawKeyboard(scancode: Int32, keycode: UInt32): UiEventRecord {
+    let eventPtr = unsafe { LibC.malloc<SdlEvent>() }
+    var record = UiEventRecord(UiEvent.Unknown(UInt32(0)))
+    try (eventResource = eventPtr.asResource()) {
+        var key = SdlKeyboardEvent()
+        key.eventType = SDL_EVENT_KEY_DOWN
+        key.timestamp = UInt64(31)
+        key.windowID = UInt32(5)
+        key.scancode = scancode
+        key.key = keycode
+        key.repeat = false
+        unsafe { CPointer<SdlKeyboardEvent>(eventResource.value).write(key) }
         record = decodeEventRecord(unsafe { eventResource.value.read() })
     }
     record

@@ -19,9 +19,12 @@ private let ASCII_LOWER_Z: UInt32 = UInt32(122)
 
 /**
  * A decoded keyboard key. Letter and digit variants prefer SDL's logical keycode, so shortcuts
- * follow the active layout; navigation keys fall back to the physical scancode. Unmapped physical
- * keys arrive as `RawScancode`, so no press is dropped. Composed printable text (IME included)
- * arrives separately as `UiEvent.TextInput`. `UiEventMetadata` preserves both native identities.
+ * follow the active layout; navigation keys fall back to the physical scancode. The numeric keypad
+ * decodes to the same `Digit`/`Enter` variants as the main row, from whichever of its scancode
+ * (`KP_1 = 89 … KP_0 = 98`, `KP_ENTER = 88`) and keycode (`0x40000059 … 0x40000062`,
+ * `0x40000058`) the platform filled in. Unmapped physical keys arrive as `RawScancode`, so no press
+ * is dropped. Composed printable text (IME included) arrives separately as `UiEvent.TextInput`.
+ * `UiEventMetadata` preserves both native identities.
  */
 public enum Key {
     | Escape
@@ -308,13 +311,21 @@ private func copyCandidates(source: CPointer<CPointer<UInt8>>, count: Int32): Ar
     result.toArray()
 }
 
-private func keyFromEvent(scancode: Int32, keycode: UInt32): Key {
+// `internal` rather than `private` so `events_test.cj` can pin the logical-keycode identity on its
+// own, the same way `keyFromScancode` is exposed for the physical one.
+internal func keyFromEvent(scancode: Int32, keycode: UInt32): Key {
     if (keycode >= ASCII_LOWER_A && keycode <= ASCII_LOWER_Z) {
         Key.Letter(UInt8(keycode - ASCII_LOWER_A + ASCII_UPPER_A))
     } else if (keycode >= ASCII_UPPER_A && keycode <= ASCII_UPPER_Z) {
         Key.Letter(UInt8(keycode))
     } else if (keycode >= ASCII_DIGIT_ZERO && keycode <= ASCII_DIGIT_NINE) {
         Key.Digit(UInt8(keycode))
+    } else if (keycode >= SDLK_KP_1 && keycode <= SDLK_KP_9) {
+        Key.Digit(UInt8(keycode - SDLK_KP_1 + ASCII_DIGIT_ZERO + UInt32(1)))
+    } else if (keycode == SDLK_KP_0) {
+        Key.Digit(UInt8(ASCII_DIGIT_ZERO))
+    } else if (keycode == SDLK_KP_ENTER) {
+        Key.Enter
     } else {
         keyFromScancode(scancode)
     }
@@ -380,6 +391,14 @@ internal func keyFromScancode(scancode: Int32): Key {
         } else {
             Key.Digit(UInt8(UInt32(scancode - SDL_SCANCODE_1) + ASCII_DIGIT_ZERO + UInt32(1)))
         }
+    } else if (scancode >= SDL_SCANCODE_KP_1 && scancode <= SDL_SCANCODE_KP_9) {
+        // Keypad digits are 89..97 in ascending order, but `KP_0` sits *after* them at 98, so the
+        // offset has to come from `KP_1` and `KP_0` needs its own branch.
+        Key.Digit(UInt8(UInt32(scancode - SDL_SCANCODE_KP_1) + ASCII_DIGIT_ZERO + UInt32(1)))
+    } else if (scancode == SDL_SCANCODE_KP_0) {
+        Key.Digit(UInt8(ASCII_DIGIT_ZERO))
+    } else if (scancode == SDL_SCANCODE_KP_ENTER) {
+        Key.Enter
     } else if (scancode == SDL_SCANCODE_ESCAPE) {
         Key.Escape
     } else if (scancode == SDL_SCANCODE_BACKSPACE) {

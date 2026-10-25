@@ -73,6 +73,37 @@ internal let SDL_SCANCODE_RIGHT: Int32 = 79
 internal let SDL_SCANCODE_LEFT: Int32 = 80
 internal let SDL_SCANCODE_DOWN: Int32 = 81
 internal let SDL_SCANCODE_UP: Int32 = 82
+// Numeric keypad, values from SDL3 `include/SDL3/SDL_scancode.h` (USB usage page 0x07, cluster
+// 83..99). The digit order is the trap: `KP_1` is 89 through `KP_9` is 97 and *then* `KP_0` is 98,
+// so an offset from `KP_0` would shift every key. The remaining cluster keys (`KP_DIVIDE` 84,
+// `KP_MULTIPLY` 85, `KP_MINUS` 86, `KP_PLUS` 87, `KP_PERIOD` 99) have no `Key` variant and stay
+// `RawScancode`.
+internal let SDL_SCANCODE_KP_ENTER: Int32 = 88
+internal let SDL_SCANCODE_KP_1: Int32 = 89
+internal let SDL_SCANCODE_KP_2: Int32 = 90
+internal let SDL_SCANCODE_KP_3: Int32 = 91
+internal let SDL_SCANCODE_KP_4: Int32 = 92
+internal let SDL_SCANCODE_KP_5: Int32 = 93
+internal let SDL_SCANCODE_KP_6: Int32 = 94
+internal let SDL_SCANCODE_KP_7: Int32 = 95
+internal let SDL_SCANCODE_KP_8: Int32 = 96
+internal let SDL_SCANCODE_KP_9: Int32 = 97
+internal let SDL_SCANCODE_KP_0: Int32 = 98
+// SDL3 `include/SDL3/SDL_keycode.h`: a keycode for a scancode-backed key is
+// `SDLK_SCANCODE_MASK (1 << 30) | scancode`, so the keypad digits are `SDLK_KP_1 = 0x40000059`
+// through `SDLK_KP_9 = 0x40000061`, `SDLK_KP_0 = 0x40000062`, and `SDLK_KP_ENTER = 0x40000058`.
+// Both identities have to decode: which one SDL fills in depends on the platform bridge.
+internal let SDLK_KP_ENTER: UInt32 = UInt32(0x40000058)
+internal let SDLK_KP_1: UInt32 = UInt32(0x40000059)
+internal let SDLK_KP_2: UInt32 = UInt32(0x4000005A)
+internal let SDLK_KP_3: UInt32 = UInt32(0x4000005B)
+internal let SDLK_KP_4: UInt32 = UInt32(0x4000005C)
+internal let SDLK_KP_5: UInt32 = UInt32(0x4000005D)
+internal let SDLK_KP_6: UInt32 = UInt32(0x4000005E)
+internal let SDLK_KP_7: UInt32 = UInt32(0x4000005F)
+internal let SDLK_KP_8: UInt32 = UInt32(0x40000060)
+internal let SDLK_KP_9: UInt32 = UInt32(0x40000061)
+internal let SDLK_KP_0: UInt32 = UInt32(0x40000062)
 internal let SDL_BUTTON_LEFT: UInt8 = UInt8(1)
 internal let SDL_BUTTON_MIDDLE: UInt8 = UInt8(2)
 internal let SDL_BUTTON_RIGHT: UInt8 = UInt8(3)
