@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度）、`CUI-P10-printable-key-fallback`（只有 `KeyDown`、没有 `TextInput` 的可打印字符），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度）、`CUI-P10-printable-key-fallback`（只有 `KeyDown`、没有 `TextInput` 的可打印字符）、`CUI-P11-paint-clip-accessor`（自绘画布读取逻辑裁剪矩形），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3`；含补丁 `SDL-P01-host-window-push`（`setSizeInPixels` / `setDisplayScaleOverride`），见下文 |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -153,6 +153,28 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
   5. 反向验证输入法路径没被破坏：聚焦顶栏搜索框输入 `ni`，候选条照常出现、空格提交后中文进框
      （说明同帧 `TextInput` 仍然优先，没有双插入）。
 - 上游同步提示：升级 CUI 时需重新应用本补丁（新增 1 个文件 + 两个编辑器各 4 处改动），并在本文件登记。
+
+### CUI-P11-paint-clip-accessor（本仓新增，只读访问器）
+
+- 位置：`CUI/src/core/spatial_clip.cj`（`extend UiContext` 新增 `public func clipPaintBounds(): ?Rect`）。
+- 背景：「启动即 OKR、鼠标滚轮滚动明显卡顿」在主机侧的量化显示，同一个文档下 OKR 每帧向渲染器
+  提交 **606 次文字绘制**（第二名页面 161–237 次），绘制树走查 **22–23ms/帧**，而 `build` 0.2ms、
+  `layout` 0.05ms —— 瓶颈不在排版重算，而在**绘制量按文档长度增长**：OKR 是自绘画布，一整页
+  （几十张卡片）是一张 `draw` 指令表，滚动容器只给了它一个裁剪矩形，视口外的部分每帧照样下发、
+  再由 backend 的 scissor 丢掉。
+- 为什么应用层自己做不到：`ScrollView` 的裁剪矩形存在 `UiContext` 的**逻辑** `spatialClip` 里
+  （`visibleBounds` / `paintBounds`），两个读取入口 `currentSpatialVisibility()` /
+  `currentSpatialPaintBounds()` 都是 `cui.core` 包内可见；应用层唯一能拿到的是
+  `renderer.clipRect()`，那是**后端**状态（`SDL_GetRenderClipRect`），在 retained 子树录制命令
+  期间并不反映嵌套的 `pushClip`，用它做裁剪判断会在"录制"和"直接绘制"两条路径上给出不同的矩形
+  —— 正是会漏画的用法。
+- 改动：只增加一个只读方法，返回 `currentSpatialPaintBounds()`（无裁剪时为 `None`）。不改任何绘制
+  行为、不新增状态、不改变帧时序；不调用方等于什么都没发生。调用方是
+  `src/views/okr/okr_ops.cj` 的视口裁剪（外扩 32px，见该文件注释）。
+- 验证：1440×900 对拍 **14/14**（`okr-light`/`okr-dark` 与改前**逐字节相同**：
+  `c7929df4…` / `30d82a8e…`）；150 条数据、1645×920（文档 3369px > 视口 864px，裁剪必然生效）下
+  改前改后截图仍逐字节相同，而 `tree` 从 23.3ms/帧降到 7.7ms/帧、文字绘制 606 → 169 次/帧。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（单文件、单方法），并在本表登记版本。
 
 ### CUI-P06-arkts-key-bridge（本仓新功能，HAP 侧）
 

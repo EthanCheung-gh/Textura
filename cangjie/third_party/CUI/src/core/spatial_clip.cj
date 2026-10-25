@@ -86,4 +86,19 @@ extend UiContext {
             case None => None
         }
     }
+
+    /**
+     * Textura patch CUI-P11: the rectangle the renderer is clipping this draw to, in logical units,
+     * or `None` when the draw is unclipped.
+     *
+     * A self-drawing page (the OKR canvas paints every card itself) has no per-row widget boundary
+     * for the framework to cull at, so inside a scroll viewport it re-issues the whole document and
+     * leaves `ScrollView`'s clip to throw the pixels away — cost that scales with document length
+     * instead of with the viewport. This accessor is the logical-clip equivalent of
+     * `renderer.clipRect()`, and unlike that one it is also correct while a retained subtree records
+     * its commands (no SDL call, no dependence on the last clip the backend happened to apply).
+     */
+    public func clipPaintBounds(): ?Rect {
+        currentSpatialPaintBounds()
+    }
 }
