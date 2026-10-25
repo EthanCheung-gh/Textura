@@ -32,13 +32,20 @@ enum SopInspVariant {
 /** One checklist row inside the node inspector. */
 class SopCheckRow {
     let entryId: String
+    /** The box that is painted: `.sop-checkbox` is 14×14 in `sop.css`, and stays 14×14 here. */
     let checkbox: Rect
+    /**
+     * The box that is *clicked*: the row's whole leading gutter (the checkbox column, up to where
+     * the text starts). Painting keeps the 14×14 box; only the accept area grows.
+     */
+    let target: Rect
     let label: Rect
     let remove: Rect
 
-    init(entryId: String, checkbox: Rect, label: Rect, remove: Rect) {
+    init(entryId: String, checkbox: Rect, target: Rect, label: Rect, remove: Rect) {
         this.entryId = entryId
         this.checkbox = checkbox
+        this.target = target
         this.label = label
         this.remove = remove
     }
@@ -199,7 +206,12 @@ func inspectorRects(ctx: UiContext, view: SopFrame, scroll!: Float32 = 0.0): Sop
             let checkbox = Rect(bodyX, cursor + 8.0, 14.0, 14.0)
             let remove = Rect(bodyX + innerWidth - SOP_ICON_SM, cursor + 2.0, SOP_ICON_SM, SOP_ICON_SM)
             let label = Rect(bodyX + 22.0, cursor, innerWidth - 22.0 - SOP_ICON_SM - 4.0, 30.0)
-            rows.add(SopCheckRow(entry.id, checkbox, label, remove))
+            // 命中区 = 行首那一格（`label.x` 之前的 22 × 整行 30），画出来的盒子仍是 14×14。
+            // 14 逻辑 px 在真机 1.75 密度下只有 24.5 设备 px，注入/手指只要偏几像素就落到行内空处
+            // ——docs/DEVICE-NOTES.md §27.4 的 B-4 九组坐标全部落在小盒子外面（三个 x 里有两个本来
+            // 就对准了复选框那一列）。文本行从 `label.x` 起，两个盒子不重叠，点文本仍是编辑。
+            let target = Rect(bodyX, cursor, label.x - bodyX, label.h)
+            rows.add(SopCheckRow(entry.id, checkbox, target, label, remove))
             cursor = snapPx(cursor + 30.0 + 8.0)
         }
         if (checklist.isEmpty()) {
@@ -840,9 +852,9 @@ func handleNodeInspector(ctx: UiContext, view: SopFrame, rects: SopInspRects, x:
     if (handleNodeFields(view, rects, item, x, y)) {
         return true
     }
-    // 检查项: toggle / delete / add.
+    // 检查项: toggle / delete / add. 勾选用行首那一格（`row.target`，不是画出来的 14×14）。
     for (row in rects.checkRows) {
-        if (row.checkbox.contains(x, y)) {
+        if (row.target.contains(x, y)) {
             let next = ArrayList<ChecklistEntry>()
             for (entry in checklistOf(item)) {
                 if (entry.id == row.entryId) {
