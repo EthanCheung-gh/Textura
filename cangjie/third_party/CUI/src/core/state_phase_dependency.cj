@@ -246,6 +246,21 @@ class PhaseStateDependencies {
                     let candidate = committed[index]
                     if (candidate.sourceIdentity == identity) {
                         ensurePending().add(candidate)
+                        // Textura patch CUI-P12 (third_party/README.md): a prefix-reused edge is
+                        // part of this collection's frontier, so the reconciliation index has to
+                        // record it as well. Without this, `closeRemovedDependencies` — which trusts
+                        // the index as soon as one exists — treated every prefix-reused read as
+                        // removed and closed its observation while the edge stayed committed, and
+                        // `reuseDependency` then kept finding the closed edge. The phase stopped
+                        // observing those States for the rest of its life: a wheel over the shell
+                        // ScrollView moved the offset, but no layout phase was invalidated, so the
+                        // page kept painting its pre-scroll geometry until a rebuild (route change)
+                        // forced new coordinates.
+                        match (pendingSources) {
+                            case Some(index) =>
+                                let _ = index.add(identity) // cjcheck-ignore: ignore-result # the identity is already the same pending edge
+                            case None => ()
+                        }
                         return true
                     }
                 }

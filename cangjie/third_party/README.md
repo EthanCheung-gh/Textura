@@ -6,7 +6,7 @@
 
 | 依赖 | 版本 / pin | 来源 | 说明 |
 |---|---|---|---|
-| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度）、`CUI-P10-printable-key-fallback`（只有 `KeyDown`、没有 `TextInput` 的可打印字符）、`CUI-P11-paint-clip-accessor`（自绘画布读取逻辑裁剪矩形），见下文 |
+| CUI | 0.9.6 | PixCap-Cangjie `third_party/CUI` | 含补丁 `CUI-P01-hosted-frame-step`（`beginHostedRun` / `step` / `endHostedRun`）、`CUI-P02-overlay-scrollbar`（`ScrollView.scrollBarVisible`）、`CUI-P03-hosted-frame-cost`（`lastFrameCost` / `deliver` / 宿主事件等待上限）、`CUI-P04-released-scene-node`（路由切换冻结）、`CUI-P05-text-input-on-focus`（输入法抢字符键）、`CUI-P06-arkts-key-bridge`（HAP 侧 Tab 转发）、`CUI-P07-hosted-failure-accessor`（宿主逐帧取帧失败，诊断用）、`CUI-P08-pointer-button-normalization`（触摸后端的按键码归一）、`CUI-P09-host-window-push`（宿主推送窗口尺寸与屏幕密度）、`CUI-P10-printable-key-fallback`（只有 `KeyDown`、没有 `TextInput` 的可打印字符）、`CUI-P11-paint-clip-accessor`（自绘画布读取逻辑裁剪矩形）、`CUI-P12-phase-prefix-observation`（滚轮滚动后不重排/不重画），见下文 |
 | cangjie-sdl | 0.9.6，pin `98edeb79cb6d58b7c8ed86d8d6b5342dca4291a6` | PixCap-Cangjie `third_party/cangjie-sdl` | Cangjie SDL3/SDL3_ttf 绑定；`cjpm.toml` 的 `[ffi.c]` 指向 `./.sdl3`；含补丁 `SDL-P01-host-window-push`（`setSizeInPixels` / `setDisplayScaleOverride`），见下文 |
 | SDL3（宿主 x86_64） | 3.5.0，源码 ref `6defbc0129b5ba90bab3f6c67bbc1e9329e24ff1` | 由 PixCap `third_party/SDL` 源码本机构建 | 见 `.sdl3/libSDL3.so`；`libSDL3.so.0` 为同名符号链接 |
 | SDL3_ttf（宿主 x86_64） | 3.2.2，vendored FreeType，Harfbuzz/PlutoSVG 关闭 | 由 PixCap `third_party/SDL_ttf` 源码本机构建 | 见 `.sdl3/libSDL3_ttf.so`；`libSDL3_ttf.so.0` 为符号链接 |
@@ -153,6 +153,43 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
   5. 反向验证输入法路径没被破坏：聚焦顶栏搜索框输入 `ni`，候选条照常出现、空格提交后中文进框
      （说明同帧 `TextInput` 仍然优先，没有双插入）。
 - 上游同步提示：升级 CUI 时需重新应用本补丁（新增 1 个文件 + 两个编辑器各 4 处改动），并在本文件登记。
+
+### CUI-P12-phase-prefix-observation（本仓新增，最小补丁）
+
+- 位置：`CUI/src/core/state_phase_dependency.cj`（`reuseCommittedPrefix` 内补 4 行索引维护）+
+  `CUI/src/core/state_phase_dependency_storage_test.cj`（回归用例）、
+  `CUI/src/testing/scroll_wheel_host_test.cj`（3 个宿主帧用例）。
+- 现象（真机）：**启动即 OKR 时，滚轮滚动后画面不刷新**（像卡住、没有滚动感）；切到别的页签再切回来，
+  才看到滚动后的页面。
+- 主机定位（Xvfb + SDL opengl + 真字体 + `XTest` 滚轮注入，1645×920，150 条数据，改前 trace）：
+  - 滚轮事件确实到达 `ScrollView.handle`（`dy=-1`、指针在裁剪区内），`scrollByWheel` 逐格推进偏移
+    `0 → 72 → 144 → …`；
+  - 但同一段 trace 里 `ScrollView.layout` / `OkrPage.layout` **一次都没再跑**（8 次全部发生在启动期），
+    子画布矩形不变 ⇒ 自绘画布按旧坐标重放；
+  - 改前截图差分 **0 像素**：不只是「没重画」，而是「什么都没动」；
+  - 决定性一行：`stateSet id=<offset> listeners=0` —— 滚轮写入时偏移 State **没有任何监听者**，
+    于是这次写入只请求了一帧，没有让任何保留阶段失效。
+- 根因：`PhaseStateDependencies` 的「committed prefix 复用」把已提交的边直接塞进 pending 前沿，
+  **没有**登记进 `pendingSources` 去重索引。一旦某轮 trace 在复用若干读之后才分叉，`commit()` 走
+  reconcile（`closeRemovedDependencies`）并信任该索引，那些**仍在 pending 里的边**被判为「已移除」而关闭观察；
+  而 committed 前沿保留的正是同一个（已关闭的）对象，下一轮 `reuseDependency` 命中它、不会再开观察，
+  该阶段从此对这一批 State 永久失聪。滚动容器刚好满足触发条件：外壳每次 layout 都会写入一个状态
+  （视口同步），使每轮都走 reconcile；滚动偏移又在同一次 layout 里被读 ⇒ 被误关 ⇒ 滚轮写入不再触发布局。
+- 为什么不能只在 OKR 里 `ctx.requestFrame()`：`requestFrame()` 只保证「来一帧」，不动布局缓存；
+  OKR 的指令表是在 `layout` 里按 `rect.y` 生成的，布局缓存命中就重放旧坐标，结果是「有帧、没变化」。
+  这也不是 OKR 独有：任何在 layout 里读状态的保留子树（Lazy 行、检查器、输入框）在同样的时序下都会失聪，
+  所以补丁落在 CUI 的失效传播里。
+- 改动：`reuseCommittedPrefix` 在把边加入 pending 前沿之后，同步登记到 `pendingSources`（若已存在）。
+  不新增状态、不改任何布局/绘制语义；索引依旧只是「pending 前沿的成员表」，只是不再漏项。
+- 验证：新用例 `prefixReusedReadsStayObservedWhenTheTraceDivergesLater` 先红（9 条前缀复用的读里 8 条
+  `listenerSlotCount()==0`，写入不再触发失效）后绿；根包 `cjpm test` 700/700；CUI 包 `cjpm test`
+  966 通过 + 1 个既有 `unicode17OfficialGraphemeBreakConformance` ERROR（缺 `.dev/unicode` 夹具，与本补丁无关）；
+  `scripts/parity.sh`/`diff.sh --theme both` **14/14**，`okr-light`/`okr-dark` 与改前**逐字节相同**
+  （`c7929df4…` / `30d82a8e…`）。同一 Xvfb 装置上改前滚轮后像素差 0、改后 347,811 像素（23%），
+  再滚一次又差 256,203 像素，且点击同路由的页签不再改变画面。
+- 已知边界：滚轮仍是一格 `CUI_SCROLL_WHEEL_STEP`（72 逻辑像素）的**瞬时**位移，不是惯性/动画滚动；
+  本轮只修「不动」，滚动动画另议。
+- 上游同步提示：升级 CUI 时需重新应用本补丁（单文件、单函数、4 行），并在本表登记版本。
 
 ### CUI-P11-paint-clip-accessor（本仓新增，只读访问器）
 
