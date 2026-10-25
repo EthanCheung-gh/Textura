@@ -1,6 +1,6 @@
 package textura.views.okr
 
-import std.collection.ArrayList
+import std.collection.{ArrayList, HashMap}
 import cui.*
 import textura.ui.*
 
@@ -463,7 +463,6 @@ func drawDashedSpan(ctx: UiContext, x1: Float32, y1: Float32, x2: Float32, y2: F
     }
 }
 
-/** 文字 advance 宽（CSS px 入参）。 */
 /** chevron 在 24 网格上是 (6,9)-(12,15)-(18,9)，strokeWidth 1.75；`up` 为垂直镜像。 */
 func drawChevron(ctx: UiContext, op: OkrChevronOp): Unit {
     let side = min(op.rect.w, op.rect.h)
@@ -487,16 +486,102 @@ func drawChevron(ctx: UiContext, op: OkrChevronOp): Unit {
     ctx.renderer.fillCircle(x1, yTip, pen.width / 2.0, op.color)
 }
 
-func okrTextW(ctx: UiContext, text: String, size: Float32, weight: Int64, mono!: Bool = false): Float32 {
-    if (text.isEmpty()) {
-        return 0.0
+/**
+ * 文字 advance 的重复测量缓存。
+ *
+ * 为什么需要：OKR 页的几何全部由「量文字宽 → 定位 → 再量下一个」算出，一次 layout 里 `okrTextW`
+ * 被调用约 300 次，而页面每帧要跑三次布局（一次真布局 + 两次高度预演），**一帧约 1900 次调用**；
+ * 主机实测其中只有约 109 个不同的 `(文字, 字号, 字重, mono)`。CUI 的 `textWidth` 虽然带段落缓存，
+ * 但每次命中仍要构造 `ParagraphCacheKey`（含 `uiEnvironmentKey()`），实测每次约 288 B 堆分配，
+ * 1900 次 ≈ 0.5 MB/帧——比整页的绘制指令对象高一个量级，是页面最大的单一分配源。
+ *
+ * 正确性：缓存里存的就是 `UiContext.textWidth` 的返回值，键里带上**全部**影响它的入参
+ * （文字、字号、字重、mono）；`displayScale` / `fontScale` 变化时整表失效。命中与未命中返回同一个
+ * 浮点数，因此布局与像素都不可能因此改变（parity 逐字节相同是这条结论的验收）。
+ *
+ * 每线程一份：仓颉的 `ThreadLocal` 与 CUI 自己的跨帧缓存（`state_store.cj`）同款，避免测试并行时
+ * 共享可变哈希表。
+ */
+private let OKR_WIDTH_MEMO = ThreadLocal<OkrWidthMemo>()
+
+/** 缓存条目上限：超过就整表清空（文字集合由工作区决定，正常远低于此值）。 */
+private let OKR_WIDTH_MEMO_LIMIT: Int64 = 4096
+
+private class OkrWidthEntry {
+    let size: Float32
+    let weight: Int64
+    let mono: Bool
+    let width: Float32
+
+    init(size: Float32, weight: Int64, mono: Bool, width: Float32) {
+        this.size = size
+        this.weight = weight
+        this.mono = mono
+        this.width = width
     }
+}
+
+private class OkrWidthMemo {
+    private let buckets = HashMap<String, ArrayList<OkrWidthEntry>>()
+    private var displayScale: Float32 = -1.0
+    private var fontScale: Float32 = -1.0
+
+    func width(ctx: UiContext, text: String, size: Float32, weight: Int64, mono: Bool): Float32 {
+        if (displayScale != ctx.displayScale || fontScale != ctx.fontScale) {
+            buckets.clear()
+            displayScale = ctx.displayScale
+            fontScale = ctx.fontScale
+        }
+        match (buckets.get(text)) {
+            case Some(entries) =>
+                for (entry in entries) {
+                    if (entry.size == size && entry.weight == weight && entry.mono == mono) {
+                        return entry.width
+                    }
+                }
+            case None => ()
+        }
+        let width = measureText(ctx, text, size, weight, mono)
+        if (buckets.size >= OKR_WIDTH_MEMO_LIMIT) {
+            buckets.clear()
+        }
+        let entries = match (buckets.get(text)) {
+            case Some(value) => value
+            case None =>
+                let fresh = ArrayList<OkrWidthEntry>()
+                let _ = buckets.add(text, fresh)
+                fresh
+        }
+        entries.add(OkrWidthEntry(size, weight, mono, width))
+        width
+    }
+}
+
+private func okrWidthMemo(): OkrWidthMemo {
+    match (OKR_WIDTH_MEMO.get()) {
+        case Some(memo) => memo
+        case None =>
+            let memo = OkrWidthMemo()
+            OKR_WIDTH_MEMO.set(Some(memo))
+            memo
+    }
+}
+
+private func measureText(ctx: UiContext, text: String, size: Float32, weight: Int64, mono: Bool): Float32 {
     let family: ?String = if (mono) {
         Some(fontMono())
     } else {
         None
     }
     ctx.textWidth(text, pointSize: fpSize(ctx, size), style: FontStyle(weight: cssWeight(weight)), font: family)
+}
+
+/** 文字 advance 宽（CSS px 入参）；同一 `(文字, 字号, 字重, mono)` 每线程只真正测一次。 */
+func okrTextW(ctx: UiContext, text: String, size: Float32, weight: Int64, mono!: Bool = false): Float32 {
+    if (text.isEmpty()) {
+        return 0.0
+    }
+    okrWidthMemo().width(ctx, text, size, weight, mono)
 }
 
 /** 单行文本按 `maxWidth` 截断并补 U+2026（CSS `text-overflow: ellipsis`）。 */

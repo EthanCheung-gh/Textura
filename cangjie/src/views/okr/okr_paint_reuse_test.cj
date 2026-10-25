@@ -193,3 +193,25 @@ func drawDoesNotMutateTheBatchAndStillCulls(): Unit {
     @Expect(paint.opCount(), 2)
     @Expect(refEq((head as Object).getOrThrow(), (paint.texts[0] as Object).getOrThrow()), true) // cjcheck-ignore: unchecked-cast # drawn ops are not rebuilt
 }
+
+/* ------------------------------------------------------------------ 3. 文字宽度缓存 */
+
+@Test
+func widthMemoReturnsTheSameAdvanceAsADirectMeasure(): Unit {
+    let host = WidgetTestHost()
+    let ctx = host.context
+    let direct = ctx.textWidth("关键结果", pointSize: fpSize(ctx, 12.5), style: FontStyle(weight: cssWeight(550)),
+        font: Option<String>.None)
+    let first = okrTextW(ctx, "关键结果", 12.5, 550)
+    let second = okrTextW(ctx, "关键结果", 12.5, 550)
+    @Expect(first, direct)
+    @Expect(second, direct)
+    // 字号/字重/mono 都进键：换成 mono 家族必须重新量，仍然与直接测量逐位相同。
+    let directMono = ctx.textWidth("关键结果", pointSize: fpSize(ctx, 12.5), style: FontStyle(weight: cssWeight(550)),
+        font: Some(fontMono()))
+    @Expect(okrTextW(ctx, "关键结果", 12.5, 550, mono: true), directMono)
+    // 字号也是键的一部分。
+    let directBig = ctx.textWidth("关键结果", pointSize: fpSize(ctx, 20.0), style: FontStyle(weight: cssWeight(550)),
+        font: Option<String>.None)
+    @Expect(okrTextW(ctx, "关键结果", 20.0, 550), directBig)
+}
