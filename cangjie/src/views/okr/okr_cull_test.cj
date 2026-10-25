@@ -134,6 +134,87 @@ func cullDrawsAnOpThatSitsOnTheMarginBoundary(): Unit {
     @Expect(textDrawsAt(boundary + 1.0, CULL_VIEWPORT.h), 1)
 }
 
+/* ------------------------------------------------------------------ 3. 滚轮滚动后必须重排重画 */
+
+/*
+ * 契约：「滚轮滚一次，下一帧画面就动」。OKR 的 op 表是在 `layout` 里按 `rect.y` 生成的
+ * （`OkrPage.layout` → `layoutPage`），所以这条用例的画布也照着做：`layout` 收到什么偏移，
+ * `draw` 就画在哪。任何一环断掉——偏移没写、布局没重跑、绘制命中缓存——都会让可见 op 数量停在
+ * 滚之前的值，也就是真机上「滚轮像坏了、切路由回来才看到滚动结果」的那个现象。
+ *
+ * 根因在 CUI 的失效传播（补丁 CUI-P12，`core/state_phase_dependency.cj`）：保留布局阶段的
+ * 依赖可能在 reconcile 时被误关，偏移 State 从此没有监听者，布局再也不会被失效。
+ */
+private class WheelCanvasRecord {
+    var layoutCalls: Int64 = 0
+    var layoutY: Float32 = 0.0
+}
+
+/** 按 layout 收到的矩形生成 op 表的画布；`farY` 是第二条 op 的中心 y（偏移量的基准）。 */
+private class ScrollingPaintCanvas <: Widget {
+    private let tokens: ThemeTokens
+    private let record: WheelCanvasRecord
+    private let farY: Float32
+    private var paint = OkrPaint()
+
+    init(tokens: ThemeTokens, record: WheelCanvasRecord, farY: Float32) {
+        this.tokens = tokens
+        this.record = record
+        this.farY = farY
+        emit(this)
+    }
+
+    public func measure(_: UiContext, available: Size): Size {
+        Size(available.w, 4000.0)
+    }
+
+    public func layout(_: UiContext, assigned: Rect): Unit {
+        record.layoutCalls += 1
+        record.layoutY = assigned.y
+        let next = OkrPaint()
+        // 第一条留在可见区里（滚一格之后仍在），这样「绘制次数」只反映第二条的进出。
+        next.texts.add(OkrTextOp(10.0, assigned.y + 60.0, "顶部", 12.0, 400, tokens.color.text, 30.0))
+        next.texts.add(OkrTextOp(10.0, assigned.y + farY, "远端", 12.0, 400, tokens.color.text, 30.0))
+        paint = next
+    }
+
+    public func draw(ctx: UiContext): Unit {
+        paint.draw(ctx, tokens)
+    }
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+}
+
+@Test
+func wheelScrollReLaysOutTheCanvasAndChangesTheVisibleOps(): Unit {
+    let record = WheelCanvasRecord()
+    let tokens = ThemeTokens.light()
+    // 第二条 op 在滚之前正好落在裁剪余量之外（盒子上边 153 > 可见区下边界 152），滚一格后进入可见区。
+    let farY = CULL_VIEWPORT.h + OKR_CULL_MARGIN + 13.0
+    let testHost = WidgetTestHost()
+    let body = {=>
+        ScrollView(key: Some("okr-wheel")) {
+            ScrollingPaintCanvas(tokens, record, farY)
+        }.width(CULL_VIEWPORT.w).height(CULL_VIEWPORT.h)
+        ()
+    }
+
+    let warm = testHost.frame(CULL_VIEWPORT, body: body)
+    @Expect(Int64(warm.metrics.textDraws), 1)
+    @Expect(record.layoutY, Float32(0.0))
+    let layoutsBefore = record.layoutCalls
+
+    // SDL 把「向下滚一格」报成 y 轴 -1。
+    let scrolled = testHost.frame(CULL_VIEWPORT,
+        events: [UiEvent.MouseWheel(0.0, -1.0, 200.0, 60.0)], body: body)
+
+    @Expect(record.layoutY, -72.0)
+    @Expect(record.layoutCalls > layoutsBefore, true)
+    @Expect(Int64(scrolled.metrics.textDraws), 2)
+}
+
 /* ------------------------------------------------------------------ helpers */
 
 private func oneTextPaint(): OkrPaint {
