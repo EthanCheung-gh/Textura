@@ -83,30 +83,47 @@ class PageCanvas {
 
     // ------------------------------------------------------------------ paint helpers
 
-    /** 一条左对齐文字；返回 advance 宽。 */
+    /** 一条左对齐文字；返回 advance 宽。宽度同时留给绘制与视口裁剪用（见 `OkrTextOp.box`）。 */
     func text(ctx: UiContext, x: Float32, centerY: Float32, value: String, size: Float32, weight: Int64,
         color: Color, mono!: Bool = false, id!: String = "", hoverColor!: ?Color = None): Float32 {
         if (value.isEmpty()) {
             return 0.0
         }
-        paint.texts.add(OkrTextOp(x, centerY, value, size, weight, color, mono: mono, id: id, hoverColor: hoverColor))
-        okrTextW(ctx, value, size, weight, mono: mono)
+        emitText(x, centerY, value, size, weight, color, okrTextW(ctx, value, size, weight, mono: mono), mono,
+            id, hoverColor)
+    }
+
+    /**
+     * 落盘一条已量过宽的文字 op。
+     *
+     * 与 `text` 分开是为了让 `textRight`/`textCenter` 只用**一次**测量：它们先要宽度才能定 `x`，
+     * 再把同一条 op 交给 `text` 只会再量一遍（每帧多出的几十次 `measureText` 全来自这里）。
+     */
+    private func emitText(x: Float32, centerY: Float32, value: String, size: Float32, weight: Int64, color: Color,
+        width: Float32, mono: Bool, id: String, hoverColor: ?Color): Float32 {
+        paint.texts.add(OkrTextOp(x, centerY, value, size, weight, color, width, mono: mono, id: id,
+            hoverColor: hoverColor))
+        width
     }
 
     /** 右对齐文字（先量宽再定位）。 */
     func textRight(ctx: UiContext, right: Float32, centerY: Float32, value: String, size: Float32, weight: Int64,
         color: Color, mono!: Bool = false, id!: String = "", hoverColor!: ?Color = None): Float32 {
+        if (value.isEmpty()) {
+            return 0.0
+        }
         let width = okrTextW(ctx, value, size, weight, mono: mono)
-        text(ctx, right - width, centerY, value, size, weight, color, mono: mono, id: id, hoverColor: hoverColor)
-        width
+        emitText(right - width, centerY, value, size, weight, color, width, mono, id, hoverColor)
     }
 
     /** 居中文字。 */
     func textCenter(ctx: UiContext, centerX: Float32, centerY: Float32, value: String, size: Float32, weight: Int64,
         color: Color, mono!: Bool = false, id!: String = "", hoverColor!: ?Color = None): Float32 {
+        if (value.isEmpty()) {
+            return 0.0
+        }
         let width = okrTextW(ctx, value, size, weight, mono: mono)
-        text(ctx, centerX - width / 2.0, centerY, value, size, weight, color, mono: mono, id: id, hoverColor: hoverColor)
-        width
+        emitText(centerX - width / 2.0, centerY, value, size, weight, color, width, mono, id, hoverColor)
     }
 
     /**
@@ -217,10 +234,20 @@ class PageCanvas {
         paint.draw(ctx, tokens)
     }
 
-    /** 子控件画在自绘层之上（徽章/进度条/输入框都落在自己的 frame 内，不与其他元素重叠）。 */
+    /**
+     * 子控件画在自绘层之上（徽章/进度条/输入框都落在自己的 frame 内，不与其他元素重叠）。
+     *
+     * 与 `OkrPaint.draw` 一样先做视口裁剪：滚出视口的输入框/徽章不再下发绘制命令。控件本身仍在
+     * `children` 里——事件派发、焦点环、`inlineEditor` 的锚点全部照旧，裁剪只影响画。
+     */
     func drawChildren(ctx: UiContext): Unit {
-        for (child in children) {
-            child.draw(ctx)
+        let bounds = okrPaintBounds(ctx)
+        var index = 0
+        while (index < children.size) {
+            if (!okrClipped(bounds, childRects[index])) {
+                children[index].draw(ctx)
+            }
+            index += 1
         }
     }
 }

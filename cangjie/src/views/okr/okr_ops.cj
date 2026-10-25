@@ -35,6 +35,8 @@ class OkrTextOp {
     let size: Float32
     let weight: Int64
     let color: Color
+    /** advance 宽（布局阶段已经量过；绘制与可见性判断都直接用它，不再重复测量） */
+    let width: Float32
     /** `.mono` —— 使用 `--font-mono` 族 */
     let mono: Bool
     /** 可悬停区域的 id（空串表示不参与 hover 换色） */
@@ -48,6 +50,7 @@ class OkrTextOp {
         size: Float32,
         weight: Int64,
         color: Color,
+        width: Float32,
         mono!: Bool = false,
         id!: String = "",
         hoverColor!: ?Color = None
@@ -58,9 +61,57 @@ class OkrTextOp {
         this.size = size
         this.weight = weight
         this.color = color
+        this.width = width
         this.mono = mono
         this.id = id
         this.hoverColor = hoverColor
+    }
+
+    /**
+     * 这一条文字可能落笔的盒子，用于视口裁剪。
+     *
+     * 行盒高度取 `±size`（`drawText` 画的是 `height ≈ 1.3 × size` 的行、垂直居中在 `centerY`），
+     * 宽度用布局阶段量到的 advance；两侧都留够，宁可多画一条也不裁掉半个字形。
+     */
+    func box(): Rect {
+        Rect(x, centerY - size, width, size * 2.0)
+    }
+}
+
+/*
+ * 视口裁剪（CUI-P11 `UiContext.clipPaintBounds`）。
+ *
+ * 为什么需要它：OKR 是自绘画布，一整页（可能几十张卡片）就是一张 `draw` 的指令表，而滚动容器
+ * `ScrollView` 只给了画布一个裁剪矩形。滚动时唯一变化的就是这个矩形——文档几何一点没动——但画布
+ * 每帧都把整篇文档重新下发，视口外的部分被 backend 的 scissor 白白丢掉：滚动的成本因此按「文档
+ * 长度」而不是「视口大小」增长，一页 150 条数据的 workspace 每帧要画 600 多条文字。
+ *
+ * 裁剪判据的保守性：`paintBounds` 之外还要再放宽 `OKR_CULL_MARGIN`。阴影（`--shadow-2`
+ * blur 32 + offsetY 12 ⇒ 最多外溢 28px）、焦点环（outset 3px）、形状的 0.7px 抗锯齿边都在
+ * 这个余量之内，所以「被跳过」的 op 与视口至少隔 32px，一个像素都不可能落在可见区。
+ */
+let OKR_CULL_MARGIN: Float32 = 32.0
+
+/** 本帧真正能落笔的区域（裁剪矩形外扩 `OKR_CULL_MARGIN`）；`None` = 没有被裁剪。 */
+func okrPaintBounds(ctx: UiContext): ?Rect {
+    match (ctx.clipPaintBounds()) {
+        case Some(clip) => Some(Rect(clip.x - OKR_CULL_MARGIN, clip.y - OKR_CULL_MARGIN,
+            clip.w + OKR_CULL_MARGIN * 2.0, clip.h + OKR_CULL_MARGIN * 2.0))
+        case None => None
+    }
+}
+
+/**
+ * `true` 表示 `rect` 与可见区**严格分离**，可以整条跳过。
+ *
+ * 判据是严格不等式：仅仅贴住边界的 op 仍然会被画出来。这样「跳过」的边缘情况永远是保守的
+ * ——最坏情况是多重画一条本来就落在 32px 余量里的 op，绝不会出现少画。
+ */
+func okrClipped(bounds: ?Rect, rect: Rect): Bool {
+    match (bounds) {
+        case Some(clip) => rect.right() < clip.x || rect.x > clip.right() || rect.bottom() < clip.y ||
+            rect.y > clip.bottom()
+        case None => false
     }
 }
 
@@ -212,34 +263,72 @@ class OkrPaint {
     let rings = ArrayList<OkrRingOp>()
 
     func draw(ctx: UiContext, tokens: ThemeTokens): Unit {
+        // Viewport culling. The only thing that changes while a wheel scrolls this page is the
+        // `ScrollView`'s clip, not the document geometry, so every op the clip has scrolled out is
+        // released here instead of being pushed into the renderer and thrown away by its scissor —
+        // the whole reason a scroll step used to cost the same as painting the entire document.
+        // `okrPaintBounds` inflates the clip by `OKR_CULL_MARGIN`, so nothing that can paint into
+        // the viewport (shadow halo, focus ring, anti-aliasing fringe) is ever skipped.
+        let bounds = okrPaintBounds(ctx)
         for (op in shadows) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             shadow1(ctx, tokens, op.rect, op.radius)
         }
         for (op in fills) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             fillRound(ctx, op.rect, op.radius, opColor(ctx, op.id, op.color, op.hoverColor))
         }
         for (op in strokes) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             strokeRound(ctx, op.rect, op.radius, op.width, op.color)
         }
         for (op in dashes) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             dashedRoundRect(ctx, op.rect, op.radius, op.color)
         }
         for (op in dots) {
+            if (okrClipped(bounds, Rect(op.centerX - op.radius, op.centerY - op.radius, op.radius * 2.0,
+                op.radius * 2.0))) {
+                continue
+            }
             ctx.renderer.fillCircle(op.centerX, op.centerY, op.radius, op.color)
         }
         for (op in lines) {
+            if (okrClipped(bounds, Rect(op.x1, op.y1, op.x2 - op.x1, op.y2 - op.y1))) {
+                continue
+            }
             drawLine(ctx, op)
         }
         for (op in icons) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             paintSpec(ctx, op.glyph, op.rect, op.color)
         }
         for (op in chevrons) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             drawChevron(ctx, op)
         }
         for (op in texts) {
+            if (okrClipped(bounds, op.box())) {
+                continue
+            }
             drawText(ctx, op)
         }
         for (op in rings) {
+            if (okrClipped(bounds, op.rect)) {
+                continue
+            }
             if (ctx.showFocusRing(op.id)) {
                 focusRing(ctx, tokens, op.rect, op.radius)
             }
