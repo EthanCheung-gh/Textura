@@ -6,6 +6,8 @@ cangjie-sdl 的 SDL3 绑定；目标有两个：在 1440×900 下与 Web 版逐�
 - 802 个 `.cj`（含 vendored CUI / cangjie-sdl 绑定），根目录 `cjpm.toml` 只依赖 `cui`。
 - 七条路由全部是真实业务视图，不再是占位面板。
 - 本目录自洽：不修改仓库根的 `src/`、`package.json`、`vite.config.ts`、`src-tauri/`。
+- **接手先读 [`docs/HANDOFF.md`](docs/HANDOFF.md)**：当前 HEAD / 已装包 sha256 / 已验证与未验证项 /
+  唯一阻塞项（OKR prompt 触发的仓颉运行时 GC 崩溃）与下一步，以及真机取证的可复用命令与坑。
 
 ## 1. 当前状态
 
