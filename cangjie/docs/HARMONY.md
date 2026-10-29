@@ -44,7 +44,7 @@
 | `hdc` | `~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc`（**不在 PATH**，文档一律写绝对路径） | 设备安装/日志/取库 |
 | CUI | 0.9.6 vendored，含 `CUI-P01-hosted-frame-step` | `beginHostedRun/step/endHostedRun` |
 | cangjie-sdl | 0.9.6 pin `98edeb79` | SDL3 绑定 |
-| SDL3（ohos） | `third_party/cangjie-sdl/.sdl3-ohos/libSDL3.so`<br>build-id `516bb2a8d60c32b25cec0648de6af145ca832954`，sha256 `cea7d57d…361febfa` | 预编译，**不重修源码**（见 §8） |
+| SDL3（ohos） | `third_party/cangjie-sdl/.sdl3-ohos/libSDL3.so`<br>build-id `524b323796c7c5bfce0580caaeef98eda21b8bc4`，sha256 `dac9e725…08a562` | 预编译；2026-10-29 修复 OHOS 剪贴板 double free 后重编（§8，补丁 `cangjie-sdl/patches/sdl-openharmony-clipboard-double-free.patch`） |
 | SDL3_ttf（ohos） | `.sdl3-ohos/libSDL3_ttf.so`<br>build-id `d8701394c394e8ba6d172c78e2a0bbb01f3c673d`，sha256 `cb51514d…5e8c` | 同上 |
 | `libark_interop_loader.so` | `~/cangjie-ohos-sdk/cangjie/build/linux_ohos_aarch64_llvm/ohos/`（217 992 B） | ArkTS 侧启动仓颉运行时 |
 | `libohos.*.so` / `libcj_ndk_ffi.z.so` | 同上目录（`libohos.ark_interop.so` 2 112 304 B 等 7 个） | loader 启动运行时后按名解析的 interop 库 |
@@ -1306,8 +1306,8 @@ $HDC shell ls -l /data/app/el2/100/base/com.ethancheung.textura/files/fonts/
 
 - `libtextura_host.so` 无 SONAME；loader 按文件名 `dlopen`，无影响，但不要改成互相 NEEDED 的关系。
 - hvigor 会自动往 HAP 塞 `libc++_shared.so`（NDK 版本，SONAME 不同），目前是惰性负载（§5.4）。
-- `.sdl3-ohos` 的两个库是参考项目**打完 4 个 SDL 补丁后**的构建产物（事件保留、uinput 事件、
-  窗口尺寸跟随 XComponent、指针/surface 同步）。CUI 依赖其中「事件保留」那条（它自己轮询队列），
+- `.sdl3-ohos` 的两个库是参考项目**打完 5 个 SDL 补丁后**的构建产物（事件保留、uinput 事件、
+  窗口尺寸跟随 XComponent、指针/surface 同步、**OHOS 剪贴板 double free**）。CUI 依赖其中「事件保留」那条（它自己轮询队列），
   所以不能随意替换成上游原版。
 - `libs/arm64-v8a/ohos/` 由 `stage_libs.sh` 每次 `rm -rf` 重建；不要手工往里放库，
   加库请改 `_common.sh` 的 `OHOS_INTEROP_LIBS`（`assemble_hap.sh` 会断言数量与关键成员）。
@@ -1353,6 +1353,14 @@ aa force-stop + aa start → prefs … route='okr' → 截图直接开在 OKR �
 
 1. 设备上出现 SDL 层的具体 bug，且判定必须升级 pin；
 2. `.sdl3-ohos` 与 `libSDL3_ttf.so` 缺失或架构不符（`file` 不是 aarch64）。
+
+**已发生的例外（2026-10-29）**：设备上真的出现了 SDL 层 bug —— OHOS 粘贴板
+`OPENHARMONY_GetClipboardText` 对 `OH_UdmfData_GetRecord` 借来的 record 调 `OH_UdmfRecord_Destroy`，
+`OH_UdmfData_Destroy` 再释放一次 → double free / SIGTRAP（真机用 `uitest uiInput text` 注入文字必崩）。
+按第 1 条重编：补丁留在 PixCap-Cangjie（`third_party/SDL`，未提交），导出到本仓
+`third_party/cangjie-sdl/patches/sdl-openharmony-clipboard-double-free.patch`（README 有复现步骤）。
+只替换了 `.sdl3-ohos/`（宿主 `.sdl3/` 未动）。build-id `516bb2a8…` → `524b3237…b8bc4`，
+sha256 `cea7d57d…361febfa` → `dac9e725d8309bad91f73daeeb40eeec12c3ef265e82d450b22e1cfedc08a562`。
 
 重编步骤（参考项目脚本，**不要**在本仓改 `third_party/SDL` 源码；需要补丁先报协调者）：
 

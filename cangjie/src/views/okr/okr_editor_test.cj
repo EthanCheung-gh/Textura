@@ -293,6 +293,62 @@ func okrEditorEnterWritesTheTitleToTheStore(): Unit {
     @Expect(ui.editTarget.value, "")
 }
 
+/**
+ * 真机回归 B（`docs/DEVICE-NOTES.md` 本轮）：标题按 Enter 后必须**留在编辑页**。
+ *
+ * `editId` 是「列表页 / 编辑页」的唯一开关（`okr.cj:37`），所以它是这类「误关闭」的判据：
+ * Enter 之后标题已写库、输入框已收起，但页面仍然是编辑页（顶栏「返回目标列表」还在）。
+ */
+@Test
+func okrEditorEnterOnTitleKeepsTheEditorPage(): Unit {
+    let harness = OkrEditorHarness()
+    let ui = harness.stateOrFail()
+    harness.clickNode(okrEditorPencilId("title"))
+    harness.typeText("回车提交但不退出")
+    harness.pressEnter()
+    harness.frame()
+    @Expect(okrTitleOf(harness.store, harness.objectiveId), "回车提交但不退出")
+    @Expect(ui.editTarget.value, "")
+    @Expect(harness.node(okrEditorTitleId()).isNone(), true)
+    @Expect(ui.editId.value, harness.objectiveId)
+    @Expect(harness.nodeByLabel("返回目标列表").isSome(), true)
+}
+
+/**
+ * 同一次按键被投递两次（真机上 SDL 原生键回调与输入法确认各来一次）时，
+ * 第二个 Enter 也只能落在标题铅笔上——不能把页面关掉。
+ */
+@Test
+func okrEditorDoubleEnterOnTitleStaysInTheEditorPage(): Unit {
+    let harness = OkrEditorHarness()
+    let ui = harness.stateOrFail()
+    harness.clickNode(okrEditorPencilId("title"))
+    harness.typeText("连按两次回车")
+    harness.pressEnter()
+    harness.pressEnter()
+    harness.frame()
+    @Expect(okrTitleOf(harness.store, harness.objectiveId), "连按两次回车")
+    @Expect(ui.editId.value, harness.objectiveId)
+    @Expect(harness.nodeByLabel("返回目标列表").isSome(), true)
+}
+
+/** KR 标题回车：同样只收起这一行，编辑页不关。 */
+@Test
+func okrEditorEnterOnKeyResultTitleKeepsTheEditorPage(): Unit {
+    let harness = OkrEditorHarness()
+    let ui = harness.stateOrFail()
+    let krId = okrFirstKeyResultOf(harness.store, harness.objectiveId)
+    harness.clickNode(okrEditorKrPencilId(krId))
+    harness.typeText("KR 标题·改")
+    harness.pressEnter()
+    harness.frame()
+    @Expect(okrTitleOf(harness.store, krId), "KR 标题·改")
+    @Expect(ui.editTarget.value, "")
+    @Expect(harness.node(okrEditorKrTitleId(krId)).isNone(), true)
+    @Expect(ui.editId.value, harness.objectiveId)
+    @Expect(harness.nodeByLabel("返回目标列表").isSome(), true)
+}
+
 /** 失焦立即写：标题输入框里敲字后点别处的铅笔（焦点离开），下一帧提交。 */
 @Test
 func okrEditorBlurWritesTheTitleToTheStore(): Unit {

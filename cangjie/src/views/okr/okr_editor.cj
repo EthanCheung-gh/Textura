@@ -487,16 +487,28 @@ func okrEditorCommitTitle(store: AppStore, ui: OkrUiState, objectiveId: String, 
     }
 }
 
-/** 标题回车：提交并收起（React `EditableTitle` 的 Enter → blur → commit → 退出编辑）。 */
-func okrEditorCommitTitleAndClose(store: AppStore, ui: OkrUiState, entry: OkrObjEntry): Unit {
+/**
+ * 标题回车：提交并**只收起标题这一个字段**（React `EditableTitle` 的 Enter → blur → commit）。
+ *
+ * 名字里原来是 `...AndClose`，那个 "Close" 被读成「关闭编辑页」：2026-10-29 真机上按 Enter 后
+ * 页面回到了目标列表。语义上这里只收起字段，**页面级状态
+ * `editId` 一律不动** —— 离开编辑页只有 Esc（两段）与「返回目标列表」两条路。
+ *
+ * 收起后输入框随之被销毁，焦点不能留在它上面（CUI 会把失效焦点清空）；交回标题铅笔，
+ * 键盘焦点就仍在编辑页内，重复投递 / 输入法确认带来的第二个 Enter 也只会落在铅笔上，
+ * 不会落到页面上第一个可聚焦控件（顶栏的「返回目标列表」）把它当成激活。
+ */
+func okrEditorCommitTitleAndCollapse(store: AppStore, ui: OkrUiState, entry: OkrObjEntry): Unit {
     okrEditorCommitTitle(store, ui, entry.item.id, entry.item.title)
     ui.editTarget.value = ""
+    ui.editorFocus.request(okrEditorPencilId("title"))
 }
 
-/** KR 标题回车：整块提交并收起（与 `EditableTitle` 同义）。 */
-func okrEditorCommitKrAndClose(store: AppStore, ui: OkrUiState, kr: OkrKrEntry): Unit {
+/** KR 标题回车：整块提交并收起该行（与 `EditableTitle` 同义；同样不离开编辑页）。 */
+func okrEditorCommitKrAndCollapse(store: AppStore, ui: OkrUiState, kr: OkrKrEntry): Unit {
     okrEditorCommitKr(store, ui, kr)
     ui.editTarget.value = ""
+    ui.editorFocus.request(okrEditorKrPencilId(kr.item.id))
 }
 
 /** 一条 KR 的「整块提交」：标题 + 负责人 + 指标（切走 / 失焦 / Esc 都用它）。 */
@@ -956,7 +968,7 @@ func okrEditorHero(store: AppStore, ui: OkrUiState, entry: OkrObjEntry, tokens: 
                     // 标题是「文档」字段但打开即全选 + 回车即收起（React `EditableTitle`）。
                     okrEditorInput(ui, tokens, ui.field(okrEditorDraftTitle(objective.id), objective.title),
                         okrEditorTitleId(), "一句话说明这条要达成什么",
-                        {=> okrEditorCommitTitleAndClose(store, ui, entry)}, selectAll: true)
+                        {=> okrEditorCommitTitleAndCollapse(store, ui, entry)}, selectAll: true)
                 }.hug().fillWidth()
             } else {
                 HStack(spacing: vp(tokens.space.s2)) {
@@ -1251,7 +1263,7 @@ func okrEditorKrRow(store: AppStore, ui: OkrUiState, entry: OkrObjEntry, kr: Okr
             // 标题输入整行：`TextField` 会占满可用宽度，和按钮挤在同一行会把按钮挤成 0 宽。
             okrEditorInput(ui, tokens, ui.field(okrEditorDraftKrTitle(krId), kr.item.title),
                 okrEditorKrTitleId(krId), "可量化的结果，例如「把首周留存提升到 45%」",
-                {=> okrEditorCommitKrAndClose(store, ui, kr)}, selectAll: true)
+                {=> okrEditorCommitKrAndCollapse(store, ui, kr)}, selectAll: true)
             okrEditorKrDetail(store, ui, entry, kr, tokens, theme)
         } else {
             HStack(spacing: vp(tokens.space.s2)) {

@@ -298,6 +298,27 @@ third_party/SDL_ttf/build/libSDL3_ttf.so: ELF 64-bit LSB shared object, ARM aarc
   `ScrollView(key: "shell-content").scrollBarVisible(false).keyboardScroll(true).revealFocusedOnFocus(true)`。
 - 上游同步提示：升级 CUI 时需重新应用本补丁（与 CUI-P01 同流程），并在本表登记版本。
 
+### SDL-P02-openharmony-clipboard-double-free（本仓新增，最小补丁）
+
+> 编号说明：`SDL-P01` 是 cangjie-sdl **绑定**侧补丁（`setSizeInPixels`）；本补丁落在 SDL **C 源码**
+> （`third_party/SDL`），按 SDL 补丁序列登记为 `SDL-P02`，补丁文件在
+> `cangjie-sdl/patches/sdl-openharmony-clipboard-double-free.patch`。
+
+- 位置：`third_party/SDL/src/video/openharmony/SDL_openharmonyclipboard.c`
+  （`OPENHARMONY_GetClipboardText`，删两处 `OH_UdmfRecord_Destroy(udmfrec)`）。
+- 现象（真机）：OKR 编辑页用 `uitest uiInput text "…"` 注入文字（走系统粘贴板）时进程 SIGTRAP 秒崩；
+  `faultlog/faultlogger` 的 `Reason: SIGTRAP`，栈落在 `free()` ← `OH_UdmfRecord_Destroy` ←
+  `OPENHARMONY_GetClipboardText` ← `SDL_GetClipboardText`。
+- 根因：`OH_UdmfData_GetRecord(data, 0)` 返回的是 **data 借用的 record**（所有权不转移），
+  SDL 却在成功路径（以及 `udspt` 创建失败分支）里 `OH_UdmfRecord_Destroy(udmfrec)`，
+  随后 `OH_UdmfData_Destroy(udmfdata)` 再释放一次 → double free。
+- 改动：只删这两处 `OH_UdmfRecord_Destroy`，保留 `OH_UdmfData_Destroy`（由它释放 record）；
+  `SetClipboardText` 不动（本轮只修 Get）。
+- 产物：`.sdl3-ohos/libSDL3.so` 重编，build-id `524b3237…b8bc4`，
+  sha256 `dac9e725…a562`（详见 `docs/HARMONY.md` §1、§8）。
+- 上游同步提示：升级 SDL pin 时先确认上游是否已修；重新执行
+  `PixCap-Cangjie/scripts/build_ohos_deps.sh sdl` 并把产物拷回 `.sdl3-ohos/`（桌面 `.sdl3/` 不换）。
+
 ## 上游文档
 
 - CUI API：`CUI/docs/api/cui/**`
