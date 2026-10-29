@@ -1,0 +1,117 @@
+{
+  "baseUrl": "http://localhost:1434",
+  "results": [
+    {
+      "label": "截图前工作区为演示数据（清 localStorage 后重新播种）",
+      "ok": true,
+      "detail": {
+        "objectives": [
+          {
+            "id": "obj_activation",
+            "title": "让新用户在第一周就爱上织理",
+            "period": "2026-Q4"
+          }
+        ],
+        "notes": "本季度聚焦激活与留存，所有 KR 以周为单位复盘。",
+        "metricCurrent": 47,
+        "search": "",
+        "theme": "light",
+        "storedTheme": null
+      }
+    },
+    {
+      "label": "浅色编辑视图 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor.png（1440×900）",
+      "ok": true,
+      "detail": {
+        "viewport": {
+          "w": 1440,
+          "h": 900
+        },
+        "editorWidth": 1080,
+        "fieldRows": 2,
+        "fieldGroupHeight": 55,
+        "heroHeight": 326,
+        "notesWidth": 1030,
+        "krMetaRows": 3,
+        "firstKrHeight": 121,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "1024×720 布局与 1440 对比（判断是否有代表性差异）",
+      "ok": true,
+      "detail": {
+        "representative": true,
+        "wide": {
+          "viewport": {
+            "w": 1440,
+            "h": 900
+          },
+          "editorWidth": 1080,
+          "fieldRows": 2,
+          "fieldGroupHeight": 55,
+          "heroHeight": 326,
+          "notesWidth": 1030,
+          "krMetaRows": 3,
+          "firstKrHeight": 121,
+          "overflowX": 0
+        },
+        "narrow": {
+          "viewport": {
+            "w": 1024,
+            "h": 720
+          },
+          "editorWidth": 736,
+          "fieldRows": 2,
+          "fieldGroupHeight": 55,
+          "heroHeight": 326,
+          "notesWidth": 686,
+          "krMetaRows": 3,
+          "firstKrHeight": 155,
+          "overflowX": 0
+        }
+      }
+    },
+    {
+      "label": "1024 编辑视图 console error = 0（截图前）",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor-1024.png（1024×720）",
+      "ok": true
+    },
+    {
+      "label": "深色主题重载后工作区仍是演示数据",
+      "ok": true
+    },
+    {
+      "label": "深色主题生效",
+      "ok": true,
+      "detail": {
+        "theme": "dark",
+        "storedTheme": "dark"
+      }
+    },
+    {
+      "label": "深色编辑视图 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor-dark.png",
+      "ok": true
+    }
+  ]
+}

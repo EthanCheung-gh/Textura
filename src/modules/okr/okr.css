@@ -1403,6 +1403,266 @@ html[data-theme='dark'] .okr-conf-btn--high.is-active {
   flex: 1;
 }
 
+/* ============================================================
+   目标编辑视图（独立页面式） — .okr-editor*
+   ============================================================ */
+.okr-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 1080px;
+  min-width: 0;
+}
+
+.okr-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.okr-editor-crumb {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.okr-editor-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.okr-editor-save[data-state='error'] {
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+
+.okr-editor-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+.okr-editor-heading {
+  margin: 0;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* 同时作用于 EditableTitle 的按钮与输入态 */
+.okr-editor-title {
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.input.okr-editor-title {
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+}
+
+.okr-editor-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.okr-editor-fields {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.okr-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.okr-editor-field .select {
+  min-width: 168px;
+  height: 32px;
+}
+
+.okr-editor-field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.okr-editor-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.okr-editor-progress .progress-row {
+  flex: 1 1 240px;
+  min-width: 120px;
+}
+
+.okr-editor-pct {
+  min-width: 40px;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.okr-editor-dates {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.textarea.okr-editor-notes {
+  min-height: 78px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.okr-editor-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+.okr-editor-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.okr-editor-section-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.okr-editor-section-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.okr-editor-kr-empty {
+  padding: var(--space-3) var(--space-4);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.okr-editor-section .okr-add-kr {
+  margin: var(--space-3) var(--space-4);
+}
+
+.okr-editor-exec-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+.okr-editor-exec-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.okr-editor-exec-line svg {
+  color: var(--text-muted);
+}
+
+.okr-editor-hint {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.okr-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-1);
+}
+
+.okr-editor-empty {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+@media (max-width: 760px) {
+  .okr-editor-hero {
+    padding: var(--space-4);
+  }
+
+  .okr-editor-fields {
+    align-items: stretch;
+  }
+
+  .okr-editor-field {
+    flex: 1 1 100%;
+  }
+
+  .okr-editor-field .select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .okr-editor-dates {
+    gap: var(--space-2);
+  }
+}
+
 @media (max-width: 1180px) {
   .okr-health-side {
     align-items: flex-start;

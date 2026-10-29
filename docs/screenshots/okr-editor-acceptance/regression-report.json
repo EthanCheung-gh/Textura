@@ -1,0 +1,348 @@
+{
+  "baseUrl": "http://localhost:1434",
+  "results": [
+    {
+      "flow": "3-routes",
+      "label": "今日（dashboard）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "dashboard",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 577,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "日历（calendar）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "calendar",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 1743,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "OKR（okr）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "okr",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 701,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "GTD（gtd）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "gtd",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 781,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "甘特（gantt）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "gantt",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 378,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "SOP（sop）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "sop",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 546,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-routes",
+      "label": "设置（settings）console error = 0 且无横向溢出",
+      "ok": true,
+      "detail": {
+        "route": "settings",
+        "rootPresent": true,
+        "overflowX": 0,
+        "mainTextLength": 820,
+        "boundary": false,
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "OKR 列表态视图切换（卡片/表格/对齐）仍在",
+      "ok": true,
+      "detail": [
+        {
+          "label": "切换卡片密度",
+          "options": [
+            "紧凑",
+            "详细"
+          ],
+          "active": "详细"
+        },
+        {
+          "label": "切换 OKR 视图",
+          "options": [
+            "卡片",
+            "表格",
+            "对齐"
+          ],
+          "active": "卡片"
+        }
+      ]
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "OKR 列表态密度切换（紧凑/详细）仍在",
+      "ok": true,
+      "detail": [
+        {
+          "label": "切换卡片密度",
+          "options": [
+            "紧凑",
+            "详细"
+          ],
+          "active": "详细"
+        },
+        {
+          "label": "切换 OKR 视图",
+          "options": [
+            "卡片",
+            "表格",
+            "对齐"
+          ],
+          "active": "卡片"
+        }
+      ]
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "「新建目标」按钮仍在",
+      "ok": true,
+      "detail": {
+        "headerButtons": [
+          "新建目标"
+        ]
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "「新建季度」按钮仍在",
+      "ok": true,
+      "detail": {
+        "periodButtons": [
+          "2026 Q41本季",
+          "新建季度"
+        ]
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "列表卡片与编辑入口数量一致（1 目标 = 1 编辑按钮）",
+      "ok": true,
+      "detail": {
+        "cards": 1,
+        "editButtons": 1
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "密度「紧凑」隐藏指标输入",
+      "ok": true,
+      "detail": {
+        "rows": 3,
+        "metricInputs": 0
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "密度「详细」恢复指标输入（12 个）",
+      "ok": true,
+      "detail": {
+        "rows": 3,
+        "metricInputs": 12
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "表格视图渲染目标与 3 条 KR，无横向溢出",
+      "ok": true,
+      "detail": {
+        "exists": true,
+        "caption": "季度 OKR 复盘表",
+        "objectiveRows": 1,
+        "krRows": 4,
+        "text": "季度 OKR 复盘表\n目标\t关键结果\t指标\t当前进度\t信心\t执行项\n\n让新用户在第一周就爱上织理\n进行中\n3 KR · 信心 6\n29%\n\n让新用户在第一周就爱上织理\t\nNPS 从 42 提升到 60\n\t42 → 60 分\t\n28%\n\t\n4 · 中\t0\n让新用户在第一周就爱上织理\t\n周活跃用户 1200 → 2000\n",
+        "overflowX": 0
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "对齐视图渲染目标与 3 条 KR，无横向溢出",
+      "ok": true,
+      "detail": {
+        "exists": true,
+        "objectives": 1,
+        "krs": 3,
+        "text": "让新用户在第一周就爱上织理\n产品\n进行中\nO · 29%\n信心 6\nNPS 从 42 提升到 60\n42 → 60 分\n28%\n4\n\n没有关联执行项。\n\n周活跃用户 1200 → 2000\n1200 → 2000 人\n31%\n6\n\n没有关联执行项。\n\n付费转化率 2.1% → 3.0%\n2.1 → 3%\n28%\n7\n\n",
+        "overflowX": 0
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "切回卡片视图正常",
+      "ok": true
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "OKR 列表态期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-quick-capture",
+      "label": "快速收集 1 条：action + inbox + 标签/场景解析",
+      "ok": true,
+      "detail": {
+        "id": "act_f969caab09",
+        "kind": "action",
+        "status": "inbox",
+        "tags": [
+          "qa"
+        ],
+        "context": "电脑",
+        "clarified": false
+      }
+    },
+    {
+      "flow": "3-quick-capture",
+      "label": "快速收集会话列表出现该条",
+      "ok": true,
+      "detail": {
+        "sessionRows": [
+          "验收快速收集#qa@电脑"
+        ]
+      }
+    },
+    {
+      "flow": "3-quick-capture",
+      "label": "Esc 关闭快速收集弹窗",
+      "ok": true
+    },
+    {
+      "flow": "3-quick-capture",
+      "label": "快速收集期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-gantt-drag",
+      "label": "甘特存在可拖动任务条",
+      "ok": true,
+      "detail": {
+        "label": "需求梳理与竞品盘点，2026-10-19 至 2026-10-23，进度 100%",
+        "height": 22
+      }
+    },
+    {
+      "flow": "3-gantt-drag",
+      "label": "甘特拖拽后日期变化并写入 localStorage",
+      "ok": true,
+      "detail": {
+        "beforeRange": {
+          "start": "2026-10-19",
+          "end": "2026-10-23"
+        },
+        "afterRange": {
+          "start": "2026-10-21",
+          "end": "2026-10-25"
+        },
+        "storedStart": "2026-10-21",
+        "storedEnd": "2026-10-25"
+      }
+    },
+    {
+      "flow": "3-gantt-drag",
+      "label": "刷新后甘特日期保留",
+      "ok": true,
+      "detail": {
+        "reloaded": "需求梳理与竞品盘点，2026-10-21 至 2026-10-25，进度 100%",
+        "reloadRange": {
+          "start": "2026-10-21",
+          "end": "2026-10-25"
+        }
+      }
+    },
+    {
+      "flow": "3-gantt-drag",
+      "label": "甘特拖拽期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "3-calendar-add",
+      "label": "日历存在今天（2026-10-29）的日期格",
+      "ok": true
+    },
+    {
+      "flow": "3-calendar-add",
+      "label": "日历添加 1 条：action + next + start=end=今天",
+      "ok": true,
+      "detail": {
+        "id": "act_04ffc535ee",
+        "kind": "action",
+        "status": "next",
+        "start": "2026-10-29",
+        "end": "2026-10-29"
+      }
+    },
+    {
+      "flow": "3-calendar-add",
+      "label": "新条目出现在当天面板",
+      "ok": true,
+      "detail": {
+        "inPanel": true,
+        "cellDots": 3
+      }
+    },
+    {
+      "flow": "3-calendar-add",
+      "label": "日历添加期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,418 @@
+{
+  "baseUrl": "http://localhost:1434",
+  "results": [
+    {
+      "flow": "2a-card-edit-button",
+      "label": "卡片存在编辑按钮（data-edit-objective 指向目标 id）",
+      "ok": true,
+      "detail": {
+        "ariaLabel": "编辑目标：让新用户在第一周就爱上织理",
+        "title": "编辑目标：让新用户在第一周就爱上织理",
+        "dataEditObjective": "obj_activation",
+        "rect": {
+          "x": 1311,
+          "y": 304.09375,
+          "w": 26,
+          "h": 26
+        },
+        "svg": true,
+        "index": 0,
+        "visible": true
+      }
+    },
+    {
+      "flow": "2a-card-edit-button",
+      "label": "编辑按钮 aria-label = 「编辑目标：…」",
+      "ok": true,
+      "detail": {
+        "ariaLabel": "编辑目标：让新用户在第一周就爱上织理"
+      }
+    },
+    {
+      "flow": "2a-card-edit-button",
+      "label": "编辑按钮在「更多操作」左侧（DOM 顺序 + 几何 x 坐标）",
+      "ok": true,
+      "detail": {
+        "order": [
+          "编辑目标：让新用户在第一周就爱上织理",
+          "「让新用户在第一周就爱上织理」更多操作"
+        ],
+        "editX": 1311,
+        "editRight": 1337,
+        "moreX": 1337
+      }
+    },
+    {
+      "flow": "2a-card-edit-button",
+      "label": "编辑按钮可见、含图标、可访问名非空",
+      "ok": true,
+      "detail": {
+        "visible": true
+      }
+    },
+    {
+      "flow": "2a-card-edit-button",
+      "label": "点击编辑按钮进入编辑视图（region 出现）",
+      "ok": true
+    },
+    {
+      "flow": "2a-card-edit-button",
+      "label": "2a 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "列表态存在季度条 / 健康度 / 筛选提示 / 卡片",
+      "ok": true,
+      "detail": {
+        "periodbar": true,
+        "health": true,
+        "filterNote": true,
+        "cards": 1
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "页面 h1「OKR」保留",
+      "ok": true,
+      "detail": {
+        "h1": "OKR"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "季度条 / 健康度 / 筛选提示 / 卡片列表全部消失",
+      "ok": true,
+      "detail": {
+        "periodbar": false,
+        "health": false,
+        "filterNote": false,
+        "cards": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "编辑视图隐藏列表页头操作（密度/视图/新建目标）",
+      "ok": true,
+      "detail": {
+        "headerButtons": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "显示目标标题",
+      "ok": true,
+      "detail": {
+        "title": "让新用户在第一周就爱上织理"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "显示 3 个 KR",
+      "ok": true,
+      "detail": {
+        "krRows": 3,
+        "krTitles": [
+          "NPS 从 42 提升到 60",
+          "周活跃用户 1200 → 2000",
+          "付费转化率 2.1% → 3.0%"
+        ]
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "显示指标输入（3 KR × 4 字段 = 12）",
+      "ok": true,
+      "detail": {
+        "metricInputs": 12
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "执行项概览文案「关联执行项 N · 已完成 M」",
+      "ok": true,
+      "detail": {
+        "exec": "关联执行项 0 · 已完成 0"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "保存状态 role=status 且显示「已保存」",
+      "ok": true,
+      "detail": {
+        "saveText": "已保存",
+        "saveRole": "status",
+        "saveState": "idle"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "面包屑显示当前季度 · 目标编辑",
+      "ok": true,
+      "detail": {
+        "crumb": "2026 Q4 · 目标编辑"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "目标操作按钮（移动 / 复制 / 删除）",
+      "ok": true,
+      "detail": {
+        "actions": [
+          "移动到其他季度",
+          "复制为新季度目标",
+          "删除目标"
+        ]
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "编辑视图可访问性：role=region + aria-labelledby 指向标题",
+      "ok": true,
+      "detail": {
+        "labelledby": "okr-editor-heading-obj_activation",
+        "headingId": "okr-editor-heading-obj_activation"
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "打开 KR「关联执行项」弹窗",
+      "ok": true
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "关联 1 条已完成执行项后概览为「关联执行项 1 · 已完成 1」",
+      "ok": true,
+      "detail": {
+        "exec": "关联执行项 1 · 已完成 1",
+        "executionRows": 1
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "2b 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "标题修改写入 localStorage",
+      "ok": true,
+      "detail": {
+        "title": "让新用户在第一周就爱上织理（编辑验收）"
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "KR 当前值 47 → 55 写入 localStorage",
+      "ok": true,
+      "detail": {
+        "current": 55,
+        "start": 42,
+        "target": 60
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "在 600ms 内切回列表（实测切换耗时 < 600ms）",
+      "ok": true,
+      "detail": {
+        "switchMs": 287,
+        "backAtFrame": 2757.5999999996275
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "notes 在 600ms 内切走仍写入 localStorage（未丢字）",
+      "ok": true,
+      "detail": {
+        "notes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。"
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "重新进入编辑视图：标题 / notes / KR 当前值都正确",
+      "ok": true,
+      "detail": {
+        "title": "让新用户在第一周就爱上织理（编辑验收）",
+        "notes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
+        "metric": "55",
+        "exec": "关联执行项 0 · 已完成 0"
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "刷新后标题 / notes / KR 当前值保留（DOM + 存储）",
+      "ok": true,
+      "detail": {
+        "title": "让新用户在第一周就爱上织理（编辑验收）",
+        "notes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
+        "metric": "55",
+        "storedTitle": "让新用户在第一周就爱上织理（编辑验收）",
+        "storedNotes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
+        "storedCurrent": 55
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "2c 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "进入编辑视图后焦点落在「返回目标列表」",
+      "ok": true,
+      "detail": {
+        "active": "返回目标列表",
+        "isBack": true
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "Esc 返回列表，焦点回到该卡片的编辑按钮",
+      "ok": true,
+      "detail": {
+        "isEditButton": true,
+        "id": "obj_activation",
+        "ariaLabel": "编辑目标：让新用户在第一周就爱上织理"
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "新建第二个目标（同季度）",
+      "ok": true,
+      "detail": {
+        "id": "obj_eecad56bc2",
+        "title": "第二个目标：把激活率做成可复用的增长手册",
+        "period": "2026-Q4"
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "进入另一个目标：标题 / 0 个 KR / 执行项 0 正确",
+      "ok": true,
+      "detail": {
+        "title": "第二个目标：把激活率做成可复用的增长手册",
+        "crumb": "2026 Q4 · 目标编辑",
+        "krRows": 0,
+        "krEmpty": "还没有关键结果。用一个可量化的结果来支撑这个目标，例如「NPS 从 42 提升到 60」。",
+        "exec": "关联执行项 0 · 已完成 0",
+        "storedKrs": 0
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "2d 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "删除前出现确认弹窗（含目标名与 KR 数）",
+      "ok": true,
+      "detail": {
+        "title": "删除目标？",
+        "description": "「让新用户在第一周就爱上织理」及其 3 个关键结果、子孙执行项都会被删除。此操作可以用撤销恢复。",
+        "confirm": [
+          "取消",
+          "删除目标"
+        ]
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "删除目标 → 回到列表且目标与 KR 消失",
+      "ok": true,
+      "detail": {
+        "cards": 0,
+        "emptyTitle": "本季度还没有目标",
+        "emptyText": "本季度还没有目标\n\n先写一个定性的目标（O），再用 2–4 个可量化的关键结果（KR）定义「做到了」。例如：目标「让新用户第一周就爱上织理」，KR「NPS 从 42 提升到 60」。\n\n新建本季度目标\n目标（O）\n一句定性描述，方向明确、鼓",
+        "storedObjective": false,
+        "storedKrs": 0,
+        "periodbar": true
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "删除后列表展示空态",
+      "ok": true,
+      "detail": {
+        "emptyText": "本季度还没有目标\n\n先写一个定性的目标（O），再用 2–4 个可量化的关键结果（KR）定义「做到了」。例如：目标「让新用户第一周就爱上织理」，KR「NPS 从 42 提升到 60」。\n\n新建本季度目标\n目标（O）\n一句定性描述，方向明确、鼓"
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "移动后仍留在编辑视图",
+      "ok": true,
+      "detail": {
+        "editorStillOpen": true,
+        "h1": "OKR",
+        "crumb": "2026 Q1 · 目标编辑",
+        "storedPeriod": "2026-Q1",
+        "krPeriods": [
+          "2026-Q1"
+        ],
+        "objectiveCards": 0
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "移动后面包屑季度更新为 2026 Q1",
+      "ok": true,
+      "detail": {
+        "crumb": "2026 Q1 · 目标编辑",
+        "hint": "目标周期将设为 2026 Q1。"
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "目标与全部 KR 的季度一起改为 2026-Q1（存储）",
+      "ok": true,
+      "detail": {
+        "storedPeriod": "2026-Q1",
+        "krPeriods": [
+          "2026-Q1"
+        ]
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "返回列表后停在新季度且能看到该目标",
+      "ok": true,
+      "detail": {
+        "activePeriod": "2026 Q1",
+        "pressed": "true",
+        "cards": [
+          "目标：让新用户在第一周就爱上织理"
+        ]
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "2e 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "2e-delete-move",
+      "label": "2f 空态：跳过（无法从 UI 触发；okrEditor.test.ts 已覆盖缺失 id）",
+      "ok": true,
+      "detail": {
+        "skipped": true,
+        "reason": "editingId 只能由卡片按钮写入真实目标 id；不存在 id 的空态由 resolveEditorObjective 单测覆盖"
+      }
+    }
+  ]
+}
