@@ -541,6 +541,8 @@ private class OkrWidthMemo {
                 }
             case None => ()
         }
+        // P0 观测量（`okr_metrics.cj`）：只有走到这里才是真的测。缓存行为一行未改。
+        okrMetrics.textMeasureMisses += 1
         let width = measureText(ctx, text, size, weight, mono)
         if (buckets.size >= OKR_WIDTH_MEMO_LIMIT) {
             buckets.clear()
@@ -578,6 +580,8 @@ private func measureText(ctx: UiContext, text: String, size: Float32, weight: In
 
 /** 文字 advance 宽（CSS px 入参）；同一 `(文字, 字号, 字重, mono)` 每线程只真正测一次。 */
 func okrTextW(ctx: UiContext, text: String, size: Float32, weight: Int64, mono!: Bool = false): Float32 {
+    // P0 观测量：调用次数（含 canvas 的 text/textRight/textCenter 与 buttonWidth 等所有测宽点）。
+    okrMetrics.textMeasureCalls += 1
     if (text.isEmpty()) {
         return 0.0
     }
@@ -587,12 +591,14 @@ func okrTextW(ctx: UiContext, text: String, size: Float32, weight: Int64, mono!:
 /** 单行文本按 `maxWidth` 截断并补 U+2026（CSS `text-overflow: ellipsis`）。 */
 func ellipsize(ctx: UiContext, text: String, size: Float32, weight: Int64, maxWidth: Float32,
     mono!: Bool = false): String {
+    okrMetrics.ellipsizeCalls += 1
     if (okrTextW(ctx, text, size, weight, mono: mono) <= maxWidth) {
         return text
     }
     let runes = text.toRuneArray()
     var keep = runes.size
     while (keep > 0) {
+        okrMetrics.ellipsizeCandidates += 1
         let candidate = String(runes[0..keep]) + "…"
         if (okrTextW(ctx, candidate, size, weight, mono: mono) <= maxWidth) {
             return candidate
@@ -675,6 +681,8 @@ func roundPercent(value: Float64): Float64 {
 
 /** 两位补零（`.okr-kr-index` 的 `01`）。 */
 func pad2(value: Int64): String {
+    // P0 观测量：KR 序号是一次纯格式化（每行 KR 每帧一次），计入 `stringBuilds`。
+    okrMetrics.stringBuilds += 1
     if (value < 10) {
         "0${value}"
     } else {

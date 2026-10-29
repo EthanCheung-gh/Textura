@@ -219,7 +219,9 @@ func layoutKrRow(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEnt
     if (!detailed) {
         badgeX += cv.badge(ctx, badgeX, badgesTop, okrStatusLabel(kr.item.status), okrStatusTone(kr.item.status)) + 6.0
         let metricText = match (kr.metric) {
-            case Some(metric) => "${formatNumber(metric.current)} / ${formatNumber(metric.target)}${unitSuffix(metric.unit)}"
+            case Some(metric) =>
+                okrMetrics.stringBuilds += 2
+                "${formatNumber(metric.current)} / ${formatNumber(metric.target)}${unitSuffix(metric.unit)}"
             case None => "无指标"
         }
         badgeX += cv.text(ctx, badgeX, badgeCenter, metricText, 11.0, 400, c.textMuted, mono: true) + 6.0
@@ -341,6 +343,7 @@ func layoutMetricEditor(page: OkrPage, ctx: UiContext, cv: PageCanvas, kr: OkrKr
     }
     // 摘要：`42 → 60 分` + `换算 28%` + 超额/低于起点
     var summaryX = cursor
+    okrMetrics.stringBuilds += 1
     let metricText = formatMetric(kr.metric)
     summaryX += cv.text(ctx, summaryX, y + 14.0, metricText, 11.0, 400, c.textMuted, mono: true) + OKR_S2
     match (info.percent) {
@@ -415,6 +418,7 @@ func layoutKrMeta(page: OkrPage, ctx: UiContext, cv: PageCanvas, entry: OkrObjEn
     }
     var hint = pace
     if (kr.metric.isSome()) {
+        okrMetrics.stringBuilds += 1
         hint += " · 指标 ${formatMetric(kr.metric)}"
     }
     if (kr.execs.size == 0) {
@@ -469,6 +473,7 @@ func layoutExecList(page: OkrPage, ctx: UiContext, cv: PageCanvas, kr: OkrKrEntr
         if (exec.via == ExecutionVia.Child) {
             cursor += cv.badge(ctx, cursor, centerY - OKR_BADGE_H / 2.0, "子项", BadgeTone.Neutral) + 6.0
         }
+        okrMetrics.stringBuilds += 1
         cv.textRight(ctx, rowRect.right() - 30.0, centerY, formatSchedule(exec.schedule()), 10.5, 400, c.textMuted,
             mono: true)
         page.paintIconButton(ctx, cv, "okr-unlink-${exec.item.id}", Rect(rowRect.right() - 24.0, centerY - 13.0, 26.0,

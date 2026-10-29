@@ -369,6 +369,8 @@ class OkrPage <: Widget {
     }
 
     public func focusableIds(): Array<String> {
+        // P0 观测量：每次调用都 `toArray()` 一次（B/C 类分配，见 docs/OKR-EDIT-PLAN.md §3）。
+        okrMetrics.focusableIdCalls += 1
         registeredIds.toArray()
     }
 
@@ -427,6 +429,8 @@ class OkrPage <: Widget {
         let cv = PageCanvas(tokens, theme, reuse: Some(pagePaint))
         layoutPage(ctx, cv, rect)
         canvas = Some(cv)
+        // P0 观测量：一帧 = 一次真布局（高度预演的 `PageCanvas(measureOnly: true)` 不算）。
+        okrMetrics.noteFrame(cv.paint.opCount(), cv.hotspots.size, cv.children.size)
     }
 
     public func draw(ctx: UiContext): Unit {
@@ -550,8 +554,11 @@ class OkrPage <: Widget {
         let h1Line: Float32 = 22.0 * 1.5
         let pLine: Float32 = 13.0 * 1.5
         cv.text(ctx, x0, y + h1Line / 2.0, "OKR", 22.0, 650, c.text)
+        okrMetrics.stringBuilds += 1
         let elapsed = jsNumberToString(data.summary.elapsedPercent)
-        let subtitle = "用可量化的关键结果推进 ${quarterLabel(data.period)} · 时间已过 ${elapsed}%"
+        okrMetrics.stringBuilds += 1
+        let periodText = quarterLabel(data.period)
+        let subtitle = "用可量化的关键结果推进 ${periodText} · 时间已过 ${elapsed}%"
         cv.text(ctx, x0, y + h1Line + OKR_S1 + pLine / 2.0, subtitle, 13.0, 400, c.textMuted)
         var right = x0 + w
         let buttonW = buttonWidth(ctx, "新建目标", 1, Some(IconGlyph.Plus))
@@ -583,6 +590,7 @@ class OkrPage <: Widget {
         var x = x0
         for (chip in data.chips) {
             let active = chip.isActive
+            okrMetrics.stringBuilds += 1
             let label = quarterLabel(chip.period)
             let labelW = okrTextW(ctx, label, 12.5, 550)
             let countText = "${chip.count}"
@@ -732,6 +740,7 @@ class OkrPage <: Widget {
         let timeLabel = "季度时间进度"
         let timeLabelW = okrTextW(ctx, timeLabel, 11.0, 400)
         cv.text(ctx, timeLeft, timeCenter, timeLabel, 11.0, 400, c.textMuted)
+        okrMetrics.stringBuilds += 1
         let pctText = "${jsNumberToString(data.summary.elapsedPercent)}%"
         let pctW = max(34.0, okrTextW(ctx, pctText, 11.0, 400, mono: true))
         let barLeft = timeLeft + timeLabelW + OKR_S2

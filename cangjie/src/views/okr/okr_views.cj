@@ -119,6 +119,7 @@ func layoutTable(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Float32, w: 
                 tx += cv.badge(ctx, tx, rowY + 20.0 - OKR_BADGE_H / 2.0, "缺少抓手", BadgeTone.Warn, dot: true)
             }
             var mx = x0 + 12.0 + columns[0] + columns[1]
+            okrMetrics.stringBuilds += 1
             cv.text(ctx, mx, rowY + 20.0, formatMetric(kr.metric), 11.5, 400, c.textMuted, mono: true)
             mx += columns[2]
             cv.progress(ctx, Rect(mx, rowY + 20.0 - 2.5, 112.0, 5.0), Float32(kr.progress),
@@ -285,6 +286,7 @@ func layoutAlignment(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Float32,
             cv.progress(ctx, Rect(metaRight, cursor + 8.0, 70.0, 5.0), Float32(kr.progress),
                 okrProgressTone(kr.progress, kr.behind), ControlSize.Sm)
             metaRight -= OKR_S2
+            okrMetrics.stringBuilds += 1
             let metricText = formatMetric(kr.metric)
             let metricW = okrTextW(ctx, metricText, 11.0, 400, mono: true)
             metaRight -= metricW
@@ -321,6 +323,7 @@ func layoutAlignment(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Float32,
                     var emRight = right
                     emRight -= cv.textRight(ctx, emRight, cursor + 12.0, "${itemProgress}%", 10.5, 400, c.textMuted, mono: true)
                     emRight -= OKR_S2
+                    okrMetrics.stringBuilds += 1
                     emRight -= cv.textRight(ctx, emRight, cursor + 12.0, formatSchedule(exec.schedule()), 10.5, 400,
                         c.textFaint, mono: true)
                     emRight -= OKR_S2
@@ -455,5 +458,6 @@ func emptyStateBody(page: OkrPage, ctx: UiContext, cv: PageCanvas, x0: Float32, 
 }
 
 func quarterLabel2(period: String): String {
+    okrMetrics.stringBuilds += 1
     quarterLabel(period)
 }
