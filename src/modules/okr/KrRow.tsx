@@ -36,7 +36,12 @@ interface KrRowProps {
   count: number;
   elapsedPercent: number;
   density: OkrDensity;
-  onDelete: (kr: Item) => void;
+  onDelete?: (kr: Item) => void;
+  /**
+   * 列表卡片只读：只渲染展示内容（标题/状态/指标/负责人/信心/进度/执行项摘要），
+   * 不挂载任何输入控件、行内操作按钮与关联弹窗。编辑视图保持 `false`。
+   */
+  readOnly?: boolean;
 }
 
 /**
@@ -52,6 +57,7 @@ export const KrRow = memo(function KrRow({
   elapsedPercent,
   density,
   onDelete,
+  readOnly = false,
 }: KrRowProps) {
   const updateItem = useWorkspace((state) => state.updateItem);
   const moveItem = useWorkspace((state) => state.moveItem);
@@ -84,6 +90,64 @@ export const KrRow = memo(function KrRow({
     : delta < 0
       ? `领先时间进度 ${Math.abs(delta)} 个点`
       : `与时间进度相差 ${delta} 个点`;
+
+  if (readOnly) {
+    const doneCount = executionItems.filter((entry) => entry.item.status === 'done').length;
+    return (
+      <li className={clsx('okr-kr', `okr-kr--${density}`, 'okr-kr--readonly')}>
+        <div className="okr-kr-main">
+          <span className="okr-kr-index mono" aria-hidden="true">
+            {String(index + 1).padStart(2, '0')}
+          </span>
+
+          <div className="okr-kr-heading">
+            <span className={clsx('okr-kr-title', 'okr-kr-title--readonly')}>{kr.title}</span>
+            <span className="okr-kr-badges">
+              {behind ? (
+                <Badge
+                  tone="danger"
+                  dot
+                  className="okr-behind-badge"
+                  title={`进度 ${progress}% · 季度时间 ${elapsedPercent}%`}
+                >
+                  落后
+                </Badge>
+              ) : null}
+              {noGrip ? (
+                <Badge tone="warn" dot title="没有指标，也没有关联执行项">
+                  缺少抓手
+                </Badge>
+              ) : null}
+              <Badge tone={statusTone(kr.status)}>{STATUS_LABELS[kr.status]}</Badge>
+              <span className="okr-kr-inline-metric mono">
+                {metric ? formatMetric(metric) : '无指标'}
+              </span>
+              <span className="okr-kr-owner">{kr.okr?.krOwner || '未指派'}</span>
+            </span>
+          </div>
+
+          <div className="okr-kr-progress">
+            <Progress
+              value={progress}
+              tone={progressTone(progress, behind)}
+              size="sm"
+              ariaLabel={`${kr.title} 进度`}
+            />
+            <span className="okr-kr-pct mono">{progress}%</span>
+          </div>
+
+          <ConfidenceScale value={confidence} readOnly ariaLabel={`${kr.title} 信心指数`} />
+        </div>
+
+        <div className="okr-kr-detail okr-kr-detail--readonly">
+          <span className={clsx('okr-kr-pace', behind && 'is-behind')}>{paceHint}</span>
+          <span className="okr-kr-exec-line">
+            执行项 {executionItems.length} · 已完成 {doneCount}
+          </span>
+        </div>
+      </li>
+    );
+  }
 
   return (
     <li className={clsx('okr-kr', `okr-kr--${density}`)}>
@@ -169,7 +233,7 @@ export const KrRow = memo(function KrRow({
             label={`删除「${kr.title}」`}
             size="sm"
             variant="danger"
-            onClick={() => onDelete(kr)}
+            onClick={() => onDelete?.(kr)}
           >
             <Icon name="trash" size={14} />
           </IconButton>

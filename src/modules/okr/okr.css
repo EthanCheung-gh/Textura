@@ -269,6 +269,14 @@
   letter-spacing: -0.01em;
 }
 
+/* 列表态标题：纯文本，不带行内编辑的按钮外观与点击提示。 */
+.okr-objective-title--readonly {
+  display: block;
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .okr-objective-notes {
   font-size: 12.5px;
   line-height: 1.5;
@@ -357,6 +365,9 @@
 .okr-objective-tools {
   position: relative;
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .okr-menu {
@@ -456,6 +467,13 @@
   line-height: 1.4;
 }
 
+/* 列表态 KR 标题：纯文本；长标题按词换行而不是撑破卡片。 */
+.okr-kr-title--readonly {
+  display: block;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 .okr-kr-badges {
   display: flex;
   align-items: center;
@@ -516,6 +534,20 @@
   flex-direction: column;
   gap: 6px;
   padding-left: 24px;
+}
+
+/* 只读明细行：pace 文案 + 执行项摘要，横向排列并允许换行，无输入控件。 */
+.okr-kr-detail--readonly {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.okr-kr-exec-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .okr-kr-empty {
@@ -592,6 +624,55 @@ html[data-theme='dark'] .okr-conf-btn--mid.is-active {
 
 html[data-theme='dark'] .okr-conf-btn--high.is-active {
   background: color-mix(in srgb, var(--ok) 55%, var(--bg));
+}
+
+/* ---------- 信心刻度（列表只读） ---------- */
+/* 非交互：10 段 span 刻度。段高 22px 与编辑态按钮一致，卡片高度不因切换态跳动。 */
+.okr-conf--readonly {
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.okr-conf--readonly .okr-conf-seg {
+  width: 11px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.okr-conf--readonly .okr-conf-seg.is-filled {
+  box-shadow: none;
+}
+
+.okr-conf--readonly .okr-conf-seg--low.is-filled {
+  background: var(--danger-strong);
+}
+
+.okr-conf--readonly .okr-conf-seg--mid.is-filled {
+  background: var(--warn-ink);
+}
+
+.okr-conf--readonly .okr-conf-seg--high.is-filled {
+  background: var(--ok-ink);
+}
+
+/* 深色主题下 --warn-ink / --ok-ink 是高亮文字色，与编辑态一致改用加深的语义实心底 */
+html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--mid.is-filled {
+  background: color-mix(in srgb, var(--warn) 55%, var(--bg));
+}
+
+html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
+  background: color-mix(in srgb, var(--ok) 55%, var(--bg));
+}
+
+.okr-conf--md.okr-conf--readonly .okr-conf-seg {
+  width: 16px;
+  height: 26px;
 }
 
 /* ---------- 指标编辑器 ---------- */
@@ -811,6 +892,13 @@ html[data-theme='dark'] .okr-conf-btn--high.is-active {
 }
 
 /* ---------- 新增 KR ---------- */
+/* 列表态不再提供输入框，只留一行纯文本指引。 */
+.okr-kr-add-hint {
+  margin: 2px var(--space-4) 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
 .okr-add-kr {
   display: flex;
   align-items: center;

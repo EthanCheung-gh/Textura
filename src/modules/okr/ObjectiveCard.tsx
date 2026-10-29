@@ -11,7 +11,6 @@ import { IconButton } from '../../ui/IconButton';
 import { Progress } from '../../ui/Progress';
 import { ConfidenceScale } from './ConfidenceScale';
 import { ConfirmDialog } from './ConfirmDialog';
-import { EditableTitle } from './EditableTitle';
 import { KrRow } from './KrRow';
 import { QuarterDialog } from './QuarterDialog';
 import { nextQuarter, quarterLabel } from './okrMath';
@@ -29,6 +28,12 @@ interface ObjectiveCardProps {
   onEdit: (id: string) => void;
 }
 
+/**
+ * 列表卡片：纯展示，不渲染任何输入控件。
+ *
+ * 标题、信心、KR 全部只读；新增 / 调整 KR、改标题等编辑能力只在
+ * `ObjectiveEditor` 独立编辑视图里提供，避免列表态挂载成百上千个输入控件。
+ */
 export function ObjectiveCard({
   workspace,
   objective,
@@ -37,7 +42,6 @@ export function ObjectiveCard({
   density,
   onEdit,
 }: ObjectiveCardProps) {
-  const updateItem = useWorkspace((state) => state.updateItem);
   const updateItems = useWorkspace((state) => state.updateItems);
   const createItem = useWorkspace((state) => state.createItem);
   const deleteItems = useWorkspace((state) => state.deleteItems);
@@ -48,10 +52,7 @@ export function ObjectiveCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [quarterMode, setQuarterMode] = useState<'move' | 'copy' | null>(null);
   const [deleteObjectiveOpen, setDeleteObjectiveOpen] = useState(false);
-  const [pendingDeleteKr, setPendingDeleteKr] = useState<Item | null>(null);
-  const [newKr, setNewKr] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
-  const krInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -77,21 +78,6 @@ export function ObjectiveCard({
   const confidence = objective.okr?.confidence ?? 5;
   const period = objective.okr?.period ?? currentQuarter();
   const hiddenKrs = allKeyResults.length - keyResults.length;
-
-  const addKeyResult = () => {
-    const title = newKr.trim();
-    if (!title) return;
-    createItem({
-      kind: 'keyresult',
-      title,
-      parentId: objective.id,
-      status: 'active',
-      areaId: objective.areaId,
-      okr: { period, confidence: 5 },
-    });
-    setNewKr('');
-    krInputRef.current?.focus();
-  };
 
   const moveObjective = (target: string) => {
     // 目标 + 全部 KR 一次提交：只产生一条历史，一次撤销即可整体回退。
@@ -163,12 +149,7 @@ export function ObjectiveCard({
             ) : null}
           </div>
 
-          <EditableTitle
-            value={objective.title}
-            ariaLabel={`编辑目标标题：${objective.title}`}
-            className="okr-objective-title"
-            onCommit={(next) => updateItem(objective.id, { title: next })}
-          />
+          <h2 className="okr-objective-title okr-objective-title--readonly">{objective.title}</h2>
 
           {density === 'detailed' && objective.notes ? (
             <p className="okr-objective-notes">{objective.notes}</p>
@@ -184,23 +165,21 @@ export function ObjectiveCard({
             <span className="okr-objective-pct mono">{progress}%</span>
             <span className="okr-objective-spacer" />
             <span className="okr-confidence-prefix">信心</span>
-            <ConfidenceScale
-              value={confidence}
-              ariaLabel={`${objective.title} 信心指数`}
-              onChange={(next) => updateItem(objective.id, { okr: { confidence: next } })}
-            />
+            <ConfidenceScale value={confidence} readOnly ariaLabel={`${objective.title} 信心指数`} />
           </div>
         </div>
 
         <div className="okr-objective-tools" ref={menuRef}>
-          <IconButton
-            label={`编辑目标：${objective.title}`}
+          <Button
+            variant="ghost"
             size="sm"
+            aria-label={`编辑目标：${objective.title}`}
             data-edit-objective={objective.id}
+            iconLeft={<Icon name="edit" size={14} />}
             onClick={() => onEdit(objective.id)}
           >
-            <Icon name="edit" size={15} />
-          </IconButton>
+            编辑
+          </Button>
           <IconButton
             label={`「${objective.title}」更多操作`}
             size="sm"
@@ -272,7 +251,7 @@ export function ObjectiveCard({
                   count={allKeyResults.length}
                   elapsedPercent={elapsedPercent}
                   density={density}
-                  onDelete={setPendingDeleteKr}
+                  readOnly
                 />
               );
             })}
@@ -283,27 +262,7 @@ export function ObjectiveCard({
           <p className="okr-kr-filtered">搜索隐藏了 {hiddenKrs} 条关键结果。</p>
         ) : null}
 
-        <div className="okr-add-kr">
-          <Icon name="plus" size={14} />
-          <input
-            ref={krInputRef}
-            className="okr-add-kr-input"
-            value={newKr}
-            placeholder="新增关键结果，回车创建（默认信心 5）…"
-            aria-label={`为「${objective.title}」新增关键结果`}
-            onChange={(event) => setNewKr(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                addKeyResult();
-              }
-            }}
-          />
-          <Button size="sm" variant="ghost" disabled={!newKr.trim()} onClick={addKeyResult}>
-            添加
-          </Button>
-        </div>
+        <p className="okr-kr-add-hint">在编辑视图新增或调整关键结果</p>
       </div>
 
       <QuarterDialog
@@ -331,24 +290,6 @@ export function ObjectiveCard({
           notify('目标已删除', 'info');
         }}
         onClose={() => setDeleteObjectiveOpen(false)}
-      />
-
-      <ConfirmDialog
-        open={pendingDeleteKr !== null}
-        title="删除关键结果？"
-        description={
-          pendingDeleteKr
-            ? `「${pendingDeleteKr.title}」及其下挂的子项会被删除；通过边关联的执行项只会解除关联。`
-            : ''
-        }
-        confirmLabel="删除 KR"
-        onConfirm={() => {
-          const target = pendingDeleteKr;
-          setPendingDeleteKr(null);
-          if (target) deleteItems([target.id]);
-          notify('关键结果已删除', 'info');
-        }}
-        onClose={() => setPendingDeleteKr(null)}
       />
     </article>
   );

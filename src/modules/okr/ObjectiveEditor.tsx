@@ -369,6 +369,7 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
                 count={keyResults.length}
                 elapsedPercent={elapsedPercent}
                 density="detailed"
+                readOnly={false}
                 onDelete={setPendingDeleteKr}
               />
             ))}
