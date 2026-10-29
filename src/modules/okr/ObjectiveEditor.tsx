@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import clsx from 'clsx';
 import type { Item, ItemStatus } from '../../core/model';
 import { STATUS_LABELS } from '../../core/model';
-import { childrenOf, itemById, rollupProgress } from '../../core/selectors';
+import { areaById, childrenOf, itemById, rollupProgress } from '../../core/selectors';
 import { getWorkspace, useWorkspace } from '../../core/store';
 import { currentQuarter, formatDateTime } from '../../core/utils';
+import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
-import { Field, Select, TextArea } from '../../ui/Field';
+import { Select, TextArea, TextInput } from '../../ui/Field';
 import { Icon } from '../../ui/icons';
 import { Progress } from '../../ui/Progress';
 import type { SaveState } from '../../core/store';
 import { ConfidenceScale } from './ConfidenceScale';
 import { ConfirmDialog } from './ConfirmDialog';
-import { EditableTitle } from './EditableTitle';
+import { EditPencil } from './EditPencil';
 import { KrRow } from './KrRow';
 import { QuarterDialog } from './QuarterDialog';
 import { nextQuarter, quarterElapsedPercent, quarterLabel } from './okrMath';
-import { progressTone } from './okrDisplay';
+import { progressTone, statusTone } from './okrDisplay';
 import { resolveEditorObjective, summarizeEditor } from './okrEditor';
+import { editTargetKey, isEditingKr, nextEditTarget } from './editTarget';
+import type { EditTarget } from './editTarget';
 
-/** notes 停止输入后多久写入 store（失焦 / 卸载会提前 flush）。 */
+/** notes 停止输入后多久写入 store（失焦 / 结束编辑 / 卸载会提前 flush）。 */
 const NOTES_COMMIT_DELAY_MS = 600;
 
 const OBJECTIVE_STATUS_OPTIONS = (
@@ -48,7 +52,9 @@ interface ObjectiveEditorProps {
 /**
  * 独立页面式的目标编辑视图：顶部返回 / 面包屑 / 保存状态，
  * 下方 Hero（标题 + 元信息 + notes）、KR 明细、执行项概览与目标操作。
- * 目标不存在（已删除 / 非 objective）时渲染空态，不白屏。
+ *
+ * 视图默认只读（只渲染文本），点铅笔才挂载输入控件；Esc 先收起编辑目标，
+ * 再按一次才返回列表。目标不存在（已删除 / 非 objective）时渲染空态，不白屏。
  */
 export function ObjectiveEditor({ objectiveId, onBack }: ObjectiveEditorProps) {
   const workspace = useWorkspace((state) => state.workspace);
@@ -67,22 +73,19 @@ export function ObjectiveEditor({ objectiveId, onBack }: ObjectiveEditorProps) {
     backRef.current?.focus();
   }, [objectiveId]);
 
-  // Esc 返回：输入控件内（编辑器自己的 Esc 语义）与弹窗内不触发。
+  // 空态没有编辑主体，Esc 直接返回列表；有目标时由 ObjectiveEditorBody 处理
+  //（它知道当前编辑目标，先收起编辑态再退出）。
   useEffect(() => {
+    if (objective) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
-      if (target) {
-        if (target.isContentEditable) return;
-        const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        if (target.closest('[role="dialog"]')) return;
-      }
+      if (target?.closest('[role="dialog"]')) return;
       onBack();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onBack]);
+  }, [objective, onBack]);
 
   return (
     <section
@@ -134,6 +137,12 @@ interface ObjectiveEditorBodyProps {
   onBack: () => void;
 }
 
+/**
+ * 编辑主体：持有唯一的 `editTarget`。
+ *
+ * 任何时刻最多一个编辑目标；`startEdit` 切换目标、`endEdit` 收起，
+ * 收起后焦点回到该字段的铅笔（`data-edit-target`）。
+ */
 function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBodyProps) {
   const workspace = useWorkspace((state) => state.workspace);
   const updateItem = useWorkspace((state) => state.updateItem);
@@ -148,7 +157,10 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pendingDeleteKr, setPendingDeleteKr] = useState<Item | null>(null);
   const [newKr, setNewKr] = useState('');
-  const krInputRef = useRef<HTMLInputElement>(null);
+  /** 唯一编辑目标：null = 全部只读。 */
+  const [editTarget, setEditTarget] = useState<EditTarget>(null);
+  const previousTargetRef = useRef<EditTarget>(null);
+  const confidenceRef = useRef<HTMLSpanElement>(null);
 
   const keyResults = useMemo(
     () => childrenOf(workspace, objective.id).filter((item) => item.kind === 'keyresult'),
@@ -158,14 +170,86 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
   const progress = rollupProgress(workspace, objective.id);
   const period = objective.okr?.period ?? currentQuarter();
   const confidence = objective.okr?.confidence ?? 5;
+  const area = objective.areaId ? areaById(workspace, objective.areaId) : undefined;
   const elapsedPercent = quarterElapsedPercent(period);
+
+  const editingTitle = editTarget?.kind === 'title';
+  const editingArea = editTarget?.kind === 'area';
+  const editingStatus = editTarget?.kind === 'status';
+  const editingConfidence = editTarget?.kind === 'confidence';
+  const editingNotes = editTarget?.kind === 'notes';
+  const addingKr = editTarget?.kind === 'add-kr';
 
   const areaOptions = [
     { value: '', label: '未归属 Area' },
-    ...workspace.areas.map((area) => ({ value: area.id, label: area.name })),
+    ...workspace.areas.map((entry) => ({ value: entry.id, label: entry.name })),
   ];
 
-  /* ---------- notes：本地草稿 + 600ms 防抖 + 失焦/卸载 flush ---------- */
+  /** 开始 / 切换 / 收起编辑目标（点同一支铅笔相当于收起）。 */
+  const startEdit = useCallback((next: EditTarget) => {
+    setEditTarget((current) => nextEditTarget(current, next));
+  }, []);
+  const endEdit = useCallback(() => setEditTarget(null), []);
+
+  // 结束编辑后把焦点还给刚才那支铅笔：键盘用户不会掉到 body 上。
+  useEffect(() => {
+    const previous = previousTargetRef.current;
+    previousTargetRef.current = editTarget;
+    if (editTarget !== null || previous === null) return;
+    const key = editTargetKey(previous);
+    const frame = requestAnimationFrame(() => {
+      const node = document.querySelector<HTMLElement>(`[data-edit-target="${key}"]`);
+      node?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editTarget]);
+
+  // 信心刻度是按钮组，没有 autoFocus：进入编辑态后聚焦当前分值的 radio。
+  useEffect(() => {
+    if (!editingConfidence) return;
+    confidenceRef.current
+      ?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')
+      ?.focus();
+  }, [editingConfidence]);
+
+  // 有编辑目标时 Esc 只收起它；没有时才返回列表。字段自身的 Esc 会 stopPropagation。
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest('[role="dialog"]')) return;
+      if (editTarget !== null) {
+        setEditTarget(null);
+        return;
+      }
+      onBack();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [editTarget, onBack]);
+
+  // 新增 KR 输入框只在 `add-kr` 目标下存在；切走时丢掉未提交草稿，不留孤儿输入。
+  useEffect(() => {
+    if (editTarget?.kind === 'add-kr') return;
+    setNewKr((current) => (current ? '' : current));
+  }, [editTarget]);
+
+  /* ---------- 标题 ---------- */
+  const [titleDraft, setTitleDraft] = useState(objective.title);
+
+  const startTitleEdit = () => {
+    setTitleDraft(objective.title);
+    startEdit({ kind: 'title' });
+  };
+
+  const commitTitle = () => {
+    const next = titleDraft.trim();
+    if (next && next !== objective.title) updateItem(objective.id, { title: next });
+    else setTitleDraft(objective.title);
+    endEdit();
+  };
+
+  /* ---------- notes：本地草稿 + 600ms 防抖 + 失焦/结束/卸载 flush ---------- */
   const [notesDraft, setNotesDraft] = useState(objective.notes);
   const notesDraftRef = useRef(objective.notes);
   const notesCommittedRef = useRef(objective.notes);
@@ -209,6 +293,29 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
     }, NOTES_COMMIT_DELAY_MS);
   };
 
+  const startNotesEdit = () => {
+    notesDraftRef.current = notesCommittedRef.current;
+    setNotesDraft(notesCommittedRef.current);
+    startEdit({ kind: 'notes' });
+  };
+
+  const commitNotes = () => {
+    flushNotes();
+    endEdit();
+  };
+
+  /** Esc：回退到上次提交值再结束编辑，不写 store。 */
+  const cancelNotes = () => {
+    if (notesTimer.current !== null) {
+      clearTimeout(notesTimer.current);
+      notesTimer.current = null;
+    }
+    notesDraftRef.current = notesCommittedRef.current;
+    setNotesDraft(notesCommittedRef.current);
+    endEdit();
+  };
+
+  /* ---------- 新增 KR ---------- */
   const addKeyResult = () => {
     const title = newKr.trim();
     if (!title) return;
@@ -221,7 +328,7 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
       okr: { period, confidence: 5 },
     });
     setNewKr('');
-    krInputRef.current?.focus();
+    endEdit();
   };
 
   const moveObjective = (target: string) => {
@@ -278,43 +385,132 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
   return (
     <>
       <div className="okr-editor-hero">
-        <h2 id={titleId} className="okr-editor-heading">
-          <span className="okr-editor-sr">目标编辑：</span>
-          <EditableTitle
-            value={objective.title}
-            ariaLabel={`编辑目标标题：${objective.title}`}
-            className="okr-editor-title"
-            onCommit={(next) => updateItem(objective.id, { title: next })}
-          />
-        </h2>
+        <div className="okr-editor-title-row">
+          <h2 id={titleId} className="okr-editor-heading">
+            <span className="okr-editor-sr">目标编辑：</span>
+            {editingTitle ? (
+              <TextInput
+                autoFocus
+                className="okr-editor-title"
+                value={titleDraft}
+                aria-label="目标标题"
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={commitTitle}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setTitleDraft(objective.title);
+                    endEdit();
+                  }
+                }}
+              />
+            ) : (
+              <span className="okr-editor-title">{objective.title}</span>
+            )}
+          </h2>
+          {editingTitle ? null : (
+            <EditPencil target="title" label="编辑目标标题" onClick={startTitleEdit} />
+          )}
+        </div>
 
         <div className="okr-editor-fields">
-          <label className="okr-editor-field">
+          <div className="okr-editor-field">
             <span className="okr-editor-field-label">领域</span>
-            <Select
-              options={areaOptions}
-              value={objective.areaId ?? ''}
-              aria-label="目标归属 Area"
-              onChange={(event) => updateItem(objective.id, { areaId: event.target.value || null })}
-            />
-          </label>
-          <label className="okr-editor-field">
+            {editingArea ? (
+              <Select
+                autoFocus
+                options={areaOptions}
+                value={objective.areaId ?? ''}
+                aria-label="目标归属 Area"
+                onChange={(event) => {
+                  updateItem(objective.id, { areaId: event.target.value || null });
+                  endEdit();
+                }}
+                onBlur={endEdit}
+              />
+            ) : (
+              <span className="okr-editor-field-value">
+                {area ? (
+                  <span className="okr-area">
+                    <span
+                      className="okr-area-dot"
+                      style={{ backgroundColor: area.color }}
+                      aria-hidden="true"
+                    />
+                    {area.name}
+                  </span>
+                ) : (
+                  <span className="okr-area okr-area--none">未归属 Area</span>
+                )}
+                <EditPencil
+                  target="area"
+                  label="编辑目标领域"
+                  onClick={() => startEdit({ kind: 'area' })}
+                />
+              </span>
+            )}
+          </div>
+
+          <div className="okr-editor-field">
             <span className="okr-editor-field-label">状态</span>
-            <Select
-              options={OBJECTIVE_STATUS_OPTIONS}
-              value={objective.status}
-              aria-label="目标状态"
-              onChange={(event) => setStatus(objective.id, event.target.value as ItemStatus)}
-            />
-          </label>
+            {editingStatus ? (
+              <Select
+                autoFocus
+                options={OBJECTIVE_STATUS_OPTIONS}
+                value={objective.status}
+                aria-label="目标状态"
+                onChange={(event) => {
+                  setStatus(objective.id, event.target.value as ItemStatus);
+                  endEdit();
+                }}
+                onBlur={endEdit}
+              />
+            ) : (
+              <span className="okr-editor-field-value">
+                <Badge tone={statusTone(objective.status)}>{STATUS_LABELS[objective.status]}</Badge>
+                <EditPencil
+                  target="status"
+                  label="编辑目标状态"
+                  onClick={() => startEdit({ kind: 'status' })}
+                />
+              </span>
+            )}
+          </div>
+
           <div className="okr-editor-field okr-editor-field--confidence">
             <span className="okr-editor-field-label">信心</span>
-            <ConfidenceScale
-              value={confidence}
-              size="md"
-              ariaLabel={`${objective.title} 信心指数`}
-              onChange={(next) => updateItem(objective.id, { okr: { confidence: next } })}
-            />
+            <span className="okr-editor-field-value" ref={confidenceRef}>
+              {editingConfidence ? (
+                <ConfidenceScale
+                  value={confidence}
+                  size="md"
+                  ariaLabel={`${objective.title} 信心指数`}
+                  onChange={(next) => {
+                    updateItem(objective.id, { okr: { confidence: next } });
+                    endEdit();
+                  }}
+                />
+              ) : (
+                <>
+                  <ConfidenceScale
+                    value={confidence}
+                    size="md"
+                    readOnly
+                    ariaLabel={`${objective.title} 信心指数`}
+                  />
+                  <EditPencil
+                    target="confidence"
+                    label="编辑目标信心"
+                    onClick={() => startEdit({ kind: 'confidence' })}
+                  />
+                </>
+              )}
+            </span>
           </div>
         </div>
 
@@ -333,17 +529,43 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
           <span>更新 {formatDateTime(objective.updatedAt)}</span>
         </div>
 
-        <Field label="备注" hint="停止输入 600ms 后保存；失焦立即提交。">
-          <TextArea
-            className="okr-editor-notes"
-            rows={3}
-            value={notesDraft}
-            placeholder="为什么这是本季度最重要的事？"
-            aria-label={`${objective.title} 备注`}
-            onChange={(event) => handleNotesChange(event.target.value)}
-            onBlur={flushNotes}
-          />
-        </Field>
+        <div className="okr-editor-notes-field">
+          <div className="okr-editor-notes-head">
+            <span className="okr-editor-field-label">备注</span>
+            {editingNotes ? null : (
+              <EditPencil target="notes" label="编辑目标备注" onClick={startNotesEdit} />
+            )}
+          </div>
+          {editingNotes ? (
+            <>
+              <TextArea
+                autoFocus
+                className="okr-editor-notes"
+                rows={3}
+                value={notesDraft}
+                placeholder="为什么这是本季度最重要的事？"
+                aria-label={`${objective.title} 备注`}
+                onChange={(event) => handleNotesChange(event.target.value)}
+                onBlur={commitNotes}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    cancelNotes();
+                  }
+                }}
+              />
+              <p className="field-hint">停止输入 600ms 后保存；失焦立即提交，Esc 取消。</p>
+            </>
+          ) : (
+            <p
+              className={clsx('okr-editor-notes-text', !objective.notes && 'is-empty')}
+            >
+              {objective.notes || '添加备注'}
+            </p>
+          )}
+        </div>
       </div>
 
       <section className="okr-editor-section" aria-labelledby={`${titleId}-kr`}>
@@ -351,7 +573,9 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
           <h3 id={`${titleId}-kr`} className="okr-editor-section-title">
             关键结果 · {keyResults.length}
           </h3>
-          <span className="okr-editor-section-note">上下移调整顺序；指标、负责人与执行项在行内编辑</span>
+          <span className="okr-editor-section-note">
+            点铅笔编辑某一条；同一时刻只展开一条 KR
+          </span>
         </div>
 
         {keyResults.length === 0 ? (
@@ -370,32 +594,55 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
                 elapsedPercent={elapsedPercent}
                 density="detailed"
                 readOnly={false}
+                editing={isEditingKr(editTarget, kr.id)}
+                onStartEdit={() => startEdit({ kind: 'kr', id: kr.id })}
+                onDone={endEdit}
                 onDelete={setPendingDeleteKr}
               />
             ))}
           </ol>
         )}
 
-        <div className="okr-add-kr">
-          <Icon name="plus" size={14} />
-          <input
-            ref={krInputRef}
-            className="okr-add-kr-input"
-            value={newKr}
-            placeholder="新增关键结果，回车创建（默认信心 5）…"
-            aria-label={`为「${objective.title}」新增关键结果`}
-            onChange={(event) => setNewKr(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                addKeyResult();
-              }
-            }}
-          />
-          <Button size="sm" variant="ghost" disabled={!newKr.trim()} onClick={addKeyResult}>
-            添加
-          </Button>
+        <div className={clsx('okr-add-kr', !addingKr && 'okr-add-kr--idle')}>
+          {addingKr ? (
+            <>
+              <Icon name="plus" size={14} />
+              <input
+                autoFocus
+                className="okr-add-kr-input"
+                value={newKr}
+                placeholder="新增关键结果，回车创建（默认信心 5）…"
+                aria-label={`为「${objective.title}」新增关键结果`}
+                onChange={(event) => setNewKr(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addKeyResult();
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setNewKr('');
+                    endEdit();
+                  }
+                }}
+              />
+              <Button size="sm" variant="ghost" disabled={!newKr.trim()} onClick={addKeyResult}>
+                添加
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="okr-add-kr-trigger"
+              data-edit-target="add-kr"
+              iconLeft={<Icon name="plus" size={14} />}
+              onClick={() => startEdit({ kind: 'add-kr' })}
+            >
+              新增关键结果
+            </Button>
+          )}
         </div>
       </section>
 
@@ -406,10 +653,10 @@ function ObjectiveEditorBody({ objective, titleId, onBack }: ObjectiveEditorBody
         </span>
         {summary.executionItems === 0 ? (
           <p className="okr-editor-hint">
-            还没有关联执行项。在上方关键结果点击「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。
+            还没有关联执行项。展开某条关键结果后点「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。
           </p>
         ) : (
-          <p className="okr-editor-hint">明细在每条关键结果下；勾选可直接标记完成。</p>
+          <p className="okr-editor-hint">明细在每条关键结果下；展开后可勾选完成。</p>
         )}
       </section>
 

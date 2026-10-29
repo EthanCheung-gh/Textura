@@ -317,29 +317,6 @@
   color: var(--text-muted);
 }
 
-/* 行内标题编辑 */
-.okr-editable-title {
-  display: block;
-  max-width: 100%;
-  padding: 1px 3px;
-  margin-left: -3px;
-  border-radius: var(--radius-sm);
-  text-align: left;
-  color: var(--text);
-  transition: color 0.12s ease, background 0.12s ease;
-}
-
-.okr-editable-title:hover {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-}
-
-.input.okr-editable-input {
-  width: 100%;
-  min-height: 30px;
-  padding: 3px 8px;
-}
-
 /* ---------- Area ---------- */
 .okr-area {
   display: inline-flex;
@@ -472,6 +449,29 @@
   display: block;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+/* 编辑视图 KR 标题输入：占满 heading 宽度，字号与文本态一致。 */
+.input.okr-kr-title-input {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* display 态（可编辑但未展开）与 editing 态（唯一展开的行）。 */
+.okr-kr--display .okr-kr-actions {
+  opacity: 0.8;
+}
+
+.okr-kr--editing {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.okr-kr--editing .okr-kr-actions {
+  opacity: 1;
 }
 
 .okr-kr-badges {
@@ -913,6 +913,17 @@ html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
 .okr-add-kr:focus-within {
   border-color: var(--accent);
   background: var(--surface-2);
+}
+
+/* 默认态只有一个「新增关键结果」按钮：去掉虚线框，点开才出现输入框。 */
+.okr-add-kr--idle {
+  padding: 0;
+  border: 0;
+  color: var(--text-muted);
+}
+
+.okr-add-kr-trigger {
+  color: var(--text-muted);
 }
 
 .okr-add-kr-input {
@@ -1553,18 +1564,45 @@ html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
   font-weight: inherit;
 }
 
-/* 同时作用于 EditableTitle 的按钮与输入态 */
+/* 标题行：默认「h2 文本 + 铅笔」，编辑时只有一个输入框。 */
+.okr-editor-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.okr-editor-title-row .okr-editor-heading {
+  /* 铅笔紧跟在标题文本后面，而不是飘到 hero 的另一端。 */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 .okr-editor-title {
+  display: block;
   font-size: 21px;
   font-weight: 650;
   line-height: 1.3;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 
 .input.okr-editor-title {
   width: 100%;
   min-height: 36px;
   padding: 4px 8px;
+}
+
+/* 渐进式编辑入口：默认态的小铅笔，弱化到不抢文本，hover / 聚焦才显形。 */
+.okr-edit-pencil {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.okr-edit-pencil:hover:not(:disabled),
+.okr-edit-pencil:focus-visible {
+  color: var(--accent-ink);
+  opacity: 1;
 }
 
 .okr-editor-sr {
@@ -1597,6 +1635,15 @@ html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
 .okr-editor-field .select {
   min-width: 168px;
   height: 32px;
+}
+
+/* 默认态：文本 / Badge / 只读刻度 + 铅笔；行高与编辑态的 32px 控件对齐，避免跳动。 */
+.okr-editor-field-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  min-width: 0;
 }
 
 .okr-editor-field-label {
@@ -1633,6 +1680,35 @@ html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
   font-size: 11.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* 备注：默认纯文本（空则占位文案）+ 铅笔，点开才是 textarea。 */
+.okr-editor-notes-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.okr-editor-notes-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+}
+
+.okr-editor-notes-text {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.okr-editor-notes-text.is-empty {
+  color: var(--text-faint);
 }
 
 .textarea.okr-editor-notes {
@@ -1764,7 +1840,7 @@ html[data-theme='dark'] .okr-conf--readonly .okr-conf-seg--high.is-filled {
 @media (prefers-reduced-motion: reduce) {
   .okr-table-toggle svg,
   .okr-kr-actions,
-  .okr-editable-title,
+  .okr-edit-pencil,
   .okr-conf-btn {
     transition: none;
   }

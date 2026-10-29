@@ -34,8 +34,11 @@ function readLatestMetric(krId: string): OkrMetric | null {
  * 输入只更新本地草稿；blur / Enter / 停止输入 600ms 后才提交一次 updateItem。
  * 每次提交都基于 store 里的最新 metric 合并单个字段，四个字段互不覆盖。
  * 数值字段为空或非法时不写 store，失焦/Esc 后回退到上一个有效值。
+ *
+ * `onEscape`：字段内 Esc 先回退本字段，再交给父组件收起这一行的编辑态
+ *（保持「Esc = 取消当前字段并结束该编辑目标」的统一语义）。
  */
-export function MetricEditor({ kr }: { kr: Item }) {
+export function MetricEditor({ kr, onEscape }: { kr: Item; onEscape?: () => void }) {
   const updateItem = useWorkspace((state) => state.updateItem);
   const metric = kr.okr?.metric ?? EMPTY_METRIC;
   // 仅用于指标口径提示；KR 行的进度条统一取自 rollupProgress，避免两套进度来源。
@@ -207,8 +210,11 @@ export function MetricEditor({ kr }: { kr: Item }) {
       revertField(field);
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      // 字段级取消：不让 Esc 继续冒泡到编辑视图（第一下只回退，不返回列表）。
+      event.stopPropagation();
       cancelTimer(field);
       revertField(field);
+      onEscape?.();
     }
   };
 
