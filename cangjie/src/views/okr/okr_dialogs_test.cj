@@ -49,7 +49,7 @@ private class DialogScene {
                 created
         }
         let page = OkrPage(ctx, current)
-        okrDialogs(ctx, current, page)
+        okrDialogs(ctx, current, okrDialogScopeOf(page))
     }
 
     func open(mutate: (OkrUiState) -> Unit): Unit {

@@ -52,38 +52,45 @@ class OkrUiState {
     let confirmObjective: State<String>
     let confirmKr: State<String>
     let statusKr: State<String>
-    let focusTrack: State<String>
     let menuObjective: State<String>
     let menuOpen: State<Bool>
     let statusOpen: State<Bool>
     let confirmOpen: State<Bool>
     let collapsed: State<Array<String>>
     let expanded: State<Array<String>>
-    let editTitle: State<String>
-    let editFocus: State<Bool>
-    /*
-     * The inline editor used by the card canvas. A canvas declares its controls during layout,
-     * where CUI registers no focus stop, so every text edit opens the shared `Ui.prompt`
-     * instead of an inline `TextField` (docs/DEVICE-NOTES.md §16).
-     */
-    let promptOpen: State<Bool>
-    let promptText: State<String>
-    let promptKind: State<String>
-    let promptTarget: State<String>
-    let promptField: State<String>
-    let promptError: State<String>
     /**
-     * 焦点请求也必须跨帧：本页状态壳每帧重建，普通字段会连同「已武装」的请求一起丢掉，
-     * 真机表现就是编辑器打开了却拿不到焦点——没有插入符、打不进字，提交时值还是空的。
+     * 列表 / 独立编辑页的二选一开关（`okr.cj` 的 `render` 读它）：`""` = 列表态，
+     * 非空 = 正在编辑该目标（`docs/OKR-EDIT-PLAN.md` §4.1）。
      */
-    let promptFocus: FocusRequest
+    let editId: State<String>
     /**
-     * 被点字段的**窗口绝对矩形**（卡片画布 layout 时记录），原位编辑器的摆放位置。
+     * 编辑页里**唯一**的编辑目标，同一时刻只允许一个：`""`（纯展示）| `title` | `notes` |
+     * `area` | `status` | `confidence` | `kr:<id>` | `add-kr`。
      *
-     * 必须跨帧：本页的状态壳每帧重建（`OkrUiState()`，只有 `State` 被 `rememberState` 复用），
-     * 普通字段下一帧就回到 `Rect.zero()`，编辑器会画到窗口左上角（docs/DEVICE-NOTES.md §25.1）。
+     * 对齐 React 的「渐进式」编辑器：默认全是只读文本，点哪一处的小铅笔才出现输入；
+     * 切换目标时上一处先提交再收起（`okr_editor.cj` 的 `okrEditorSetTarget`）。
      */
-    let promptAnchor: InlineAnchor
+    let editTarget: State<String>
+    /**
+     * 编辑页的焦点请求：进入编辑页 → 「返回目标列表」；返回列表 → 卡片上的铅笔
+     * `okr-edit-<id>`。跨帧保留（`OkrUiState` 每帧重建，普通字段会连同请求一起丢掉）。
+     */
+    let editorFocus: FocusRequest
+    /** 编辑页上一帧拥有焦点的控件 id；失焦提交用它做「上一帧 → 本帧」的比较。 */
+    let editorFocusTrack: State<String>
+    /** notes 防抖：草稿最后一次变化时的 `FrameInfo.elapsedMs`（视图不读系统时钟）。 */
+    let notesTick: State<Int64>
+    /** notes 防抖：上一帧看到的草稿（用来判断「这一帧有没有新输入」）。 */
+    let notesSeen: State<String>
+    /** notes 防抖：已经写进 store 的值（外部改动 = store ≠ 这个值）。 */
+    let notesCommitted: State<String>
+    /**
+     * 每次「展开某个编辑目标」递增。`okrEditorInput` 靠它实现「打开时全选一次」
+     * （React `EditableTitle` 的 `inputRef.select()`）：每次打开都是新会话，同一会话里只选一次。
+     */
+    let editSession: State<Int64>
+    /** 「全选已做过」的令牌（`<控件 id>#<会话号>`）。普通对象，不参与 State 版本号。 */
+    let selection: OkrEditorSelection
     let fields: HashMap<String, State<String>>
 
     init() {
@@ -109,27 +116,25 @@ class OkrUiState {
         this.confirmObjective = rememberState<String>("okr-confirm-objective") {""}
         this.confirmKr = rememberState<String>("okr-confirm-kr") {""}
         this.statusKr = rememberState<String>("okr-status-kr") {""}
-        this.focusTrack = rememberState<String>("okr-focus-track") {""}
         this.menuObjective = rememberState<String>("okr-menu-objective") {""}
         this.menuOpen = rememberState<Bool>("okr-menu-open") {false}
         this.statusOpen = rememberState<Bool>("okr-status-open") {false}
         this.confirmOpen = rememberState<Bool>("okr-confirm-open") {false}
         this.collapsed = rememberState<Array<String>>("okr-collapsed") {[]}
         this.expanded = rememberState<Array<String>>("okr-expanded") {[]}
-        this.editTitle = rememberState<String>("okr-edit-title") {""}
-        this.editFocus = rememberState<Bool>("okr-edit-focus") {false}
-        this.promptOpen = rememberState<Bool>("okr-prompt-open") {false}
-        this.promptText = rememberState<String>("okr-prompt-text") {""}
-        this.promptKind = rememberState<String>("okr-prompt-kind") {""}
-        this.promptTarget = rememberState<String>("okr-prompt-target") {""}
-        this.promptField = rememberState<String>("okr-prompt-field") {""}
-        this.promptError = rememberState<String>("okr-prompt-error") {""}
-        this.promptFocus = remember<FocusRequest>("okr-prompt-focus") {FocusRequest()}
-        this.promptAnchor = inlineAnchor("okr-prompt-anchor")
+        this.editId = rememberState<String>("okr-edit-id") {""}
+        this.editTarget = rememberState<String>("okr-edit-target") {""}
+        this.editorFocus = remember<FocusRequest>("okr-editor-focus") {FocusRequest()}
+        this.editorFocusTrack = rememberState<String>("okr-editor-focus-track") {""}
+        this.notesTick = rememberState<Int64>("okr-editor-notes-tick") {0}
+        this.notesSeen = rememberState<String>("okr-editor-notes-seen") {""}
+        this.notesCommitted = rememberState<String>("okr-editor-notes-committed") {""}
+        this.editSession = rememberState<Int64>("okr-editor-session") {0}
+        this.selection = remember<OkrEditorSelection>("okr-editor-selection") {OkrEditorSelection()}
         this.fields = HashMap<String, State<String>>()
     }
 
-    /** 文本草稿（首次创建时使用 store 的当前值）。 */
+    /** 文本草稿（首次创建时使用 store 的当前值）。只在构建阶段调用（内部会 `rememberState`）。 */
     func field(key: String, initial: String): State<String> {
         match (fields.get(key)) {
             case Some(state) => state
@@ -138,6 +143,16 @@ class OkrUiState {
                 fields[key] = created
                 created
         }
+    }
+
+    /**
+     * 已登记的草稿（不新建）：事件、布局、帧回调阶段只能读/写它。
+     *
+     * `fields` 只覆盖**本帧构建期登记过**的 key，所以帧回调（在 build 之前）用上一帧的壳读它时，
+     * 拿到的仍是同一批 `State` 实例；没登记的 key 返回 `None`，调用方跳过即可。
+     */
+    func peekField(key: String): ?State<String> {
+        fields.get(key)
     }
 
     func isDetailed(): Bool {
@@ -247,42 +262,8 @@ class OkrPage <: Widget {
         let uiState = ctx.store.ui.value()
         this.data = buildOkrPageData(workspace, uiState.okrPeriod, uiState.search, ctx.today)
         this.ui = ui
-        primeFieldStates()
         registerFocusOrder()
         emit(this)
-    }
-
-    /**
-     * 构造期（构建阶段）预建所有文本草稿 State：`rememberState` 只能在构建阶段调用，
-     * 而输入框在 layout 阶段构造，因此先把 key 全部登记到 `OkrUiState.fields`。
-     */
-    private func primeFieldStates(): Unit {
-        for (entry in data.entries) {
-            let objectiveId = entry.item.id
-            let _ = ui.field("title-${objectiveId}", entry.item.title)
-            let _ = ui.field("addkr-${objectiveId}", "")
-            for (kr in entry.krs) {
-                primeKrFields(kr)
-            }
-        }
-    }
-
-    private func primeKrFields(kr: OkrKrEntry): Unit {
-        let krId = kr.item.id
-        let _ = ui.field("title-${krId}", kr.item.title)
-        let _ = ui.field("owner-${krId}", kr.owner)
-        let base = match (kr.metric) {
-            case Some(value) => value
-            case None => EMPTY_METRIC
-        }
-        for (field in METRIC_FIELDS) {
-            let text = if (field == MetricField.UnitField) {
-                base.unit
-            } else {
-                metricToText(metricFieldValue(field, base))
-            }
-            let _ = ui.field("metric-${krId}-${metricFieldText(field)}", text)
-        }
     }
 
     // ---------------------------------------------------------------- 焦点环
@@ -337,34 +318,20 @@ class OkrPage <: Widget {
         }
     }
 
+    /**
+     * 卡片态（P2 只读化之后）的焦点环：右上角「铅笔」与「更多」、页底「新增关键结果」，
+     * 以及每条 KR 的执行项勾选框。文本字段全部搬到独立编辑页（`okr_editor.cj`），
+     * 因此这里不再有 `okr-title-` / `okr-field-` / `okr-owner-` / `okr-addkr-` 焦点项。
+     */
     private func registerCardFocus(entry: OkrObjEntry): Unit {
         let objectiveId = entry.item.id
+        mark("okr-edit-${objectiveId}")
         mark("okr-more-${objectiveId}")
-        mark("okr-title-${objectiveId}")
-        mark("okr-conf-${objectiveId}")
-        mark("okr-addkr-${objectiveId}")
         mark("okr-add-${objectiveId}")
         for (kr in entry.krs) {
-            registerKrFocus(kr)
-        }
-    }
-
-    private func registerKrFocus(kr: OkrKrEntry): Unit {
-        let krId = kr.item.id
-        for (field in METRIC_FIELDS) {
-            mark("okr-field-${krId}-${metricFieldText(field)}")
-        }
-        mark("okr-title-${krId}")
-        mark("okr-conf-${krId}")
-        mark("okr-owner-${krId}")
-        mark("okr-status-${krId}")
-        mark("okr-link-${krId}")
-        mark("okr-up-${krId}")
-        mark("okr-down-${krId}")
-        mark("okr-del-${krId}")
-        for (exec in kr.execs) {
-            mark("okr-exec-${exec.item.id}")
-            mark("okr-unlink-${exec.item.id}")
+            for (exec in kr.execs) {
+                mark("okr-exec-${exec.item.id}")
+            }
         }
     }
 
@@ -388,8 +355,8 @@ class OkrPage <: Widget {
     /**
      * 本帧画布登记的命中区，与点击走同一条路径（`handle` 的 `hotspots`）。
      *
-     * 包内可见、只给测试用：`okr_inline_editor_test.cj` 需要像用户一样点中画上去的字段，
-     * 而不是自己编一个矩形再喂给 `openOkr…Prompt`（那样就测不到「视图记录的矩形对不对」）。
+     * 包内可见、只给测试用：`okr_inline_editor_test.cj` 需要像用户一样点中画上去的铅笔 /
+     * 新增入口 / 执行项勾选框，而不是自己调动作函数（那样测不到「画上去的矩形对不对」）。
      */
     func hotspots(): Array<OkrHotspot> {
         match (canvas) {
@@ -515,9 +482,6 @@ class OkrPage <: Widget {
     private func layoutPage(ctx: UiContext, cv: PageCanvas, rect: Rect): Unit {
         let pageW = min(OKR_PAGE_MAX_W, max(0.0, rect.w))
         let x0 = rect.x + (rect.w - pageW) / 2.0
-        if (!cv.measureOnly) {
-            commitPendingEdits(ctx)
-        }
         var y = rect.y
         y = layoutHeader(ctx, cv, x0, pageW, y)
         y += OKR_S4
@@ -541,9 +505,6 @@ class OkrPage <: Widget {
             }
         }
         contentHeight = y - rect.y
-        if (!cv.measureOnly) {
-            ui.focusTrack.value = focusedField(ctx)
-        }
     }
 
     // ---------------------------------------------------------------- 页头
@@ -962,12 +923,18 @@ class OkrPage <: Widget {
         cv.focusRingFor(id, rect, OKR_R_MD)
     }
 
-    /** `.okr-conf`（okr.css:534-595）：10 格单选。 */
+    /**
+     * `.okr-conf`（okr.css:534-595）：10 格单选。
+     *
+     * `onChange` 为空 = **只读**（P2 之后列表页就是这样：信心只显示，改信心进编辑页）：
+     * 不画悬停、不注册热区、不画焦点环，未选中的格子用 `textFaint` 而不是 `textMuted`。
+     */
     func paintConfidenceScale(ctx: UiContext, cv: PageCanvas, itemId: String, rect: Rect, value: Int64,
-        onChange: (Int64) -> Unit): Unit {
+        onChange!: ?(Int64) -> Unit = None): Unit {
         let c = tokens.color
         let id = "okr-conf-${itemId}"
         let active = clampConfidence(value)
+        let interactive = onChange.isSome()
         cv.fill(rect, OKR_R_MD, c.surface2)
         cv.stroke(rect, OKR_R_MD, c.border)
         let cellW: Float32 = 19.0
@@ -978,7 +945,7 @@ class OkrPage <: Widget {
         while (score <= 10) {
             let cellRect = Rect(x, cellY, cellW, cellH)
             let cellId = "${id}-${score}"
-            let hovered = ctx.isHovered(cellId)
+            let hovered = interactive && ctx.isHovered(cellId)
             if (score == active) {
                 cv.fill(cellRect, 3.0, confidenceFill(score))
                 cv.stroke(cellRect, 3.0, c.textOnStrong)
@@ -989,16 +956,23 @@ class OkrPage <: Widget {
                 }
                 cv.textCenter(ctx, cellRect.centerX(), cellRect.centerY(), "${score}", 10.5, 400, if (hovered) {
                     c.text
-                } else {
+                } else if (interactive) {
                     c.textMuted
+                } else {
+                    c.textFaint
                 })
             }
             let picked = score
-            cv.addHotspot(cellId, cellRect, {=> onChange(picked)})
+            match (onChange) {
+                case Some(handler) => cv.addHotspot(cellId, cellRect, {=> handler(picked)})
+                case None => ()
+            }
             x += cellW + 1.0
             score += 1
         }
-        cv.focusRingFor(id, rect, OKR_R_MD)
+        if (interactive) {
+            cv.focusRingFor(id, rect, OKR_R_MD)
+        }
     }
 
     func confidenceFill(score: Int64): Color {
@@ -1048,301 +1022,148 @@ class OkrPage <: Widget {
                 }
             }
         }
-        for (entry in data.entries) {
-            if (confidenceKey(ctx, key, entry.item.id, entry.confidence)) {
-                return true
-            }
-            for (kr in entry.krs) {
-                if (confidenceKey(ctx, key, kr.item.id, kr.confidence)) {
-                    return true
-                }
-            }
-        }
         false
-    }
-
-    private func confidenceKey(ctx: UiContext, key: Key, itemId: String, value: Int64): Bool {
-        if (!ctx.hasFocus("okr-conf-${itemId}")) {
-            return false
-        }
-        var next = value
-        match (key) {
-            case Key.Left | Key.Down => next = value - 1
-            case Key.Right | Key.Up => next = value + 1
-            case Key.Home => next = 1
-            case Key.End => next = 10
-            case _ => return false
-        }
-        store.setConfidence(itemId, clampConfidence(next))
-        true
-    }
-
-    // ---------------------------------------------------------------- 编辑落库
-
-    private func focusedField(ctx: UiContext): String {
-        for (entry in data.entries) {
-            if (ctx.hasFocus("okr-title-${entry.item.id}")) {
-                return "okr-title-${entry.item.id}"
-            }
-            if (ctx.hasFocus("okr-addkr-${entry.item.id}")) {
-                return "okr-addkr-${entry.item.id}"
-            }
-            for (kr in entry.krs) {
-                let krId = kr.item.id
-                if (ctx.hasFocus("okr-title-${krId}") || ctx.hasFocus("okr-owner-${krId}")) {
-                    return if (ctx.hasFocus("okr-title-${krId}")) {
-                        "okr-title-${krId}"
-                    } else {
-                        "okr-owner-${krId}"
-                    }
-                }
-                for (field in METRIC_FIELDS) {
-                    let id = "okr-field-${krId}-${metricFieldText(field)}"
-                    if (ctx.hasFocus(id)) {
-                        return id
-                    }
-                }
-            }
-        }
-        ""
-    }
-
-    /**
-     * 草稿 → store。失焦（上一帧还聚焦、本帧已失焦）时提交；聚焦期间保留用户输入；
-     * 其余情况把 store 的值同步回草稿，撤销或其它视图的修改因此能反映进来。
-     */
-    private func commitPendingEdits(ctx: UiContext): Unit {
-        let previous = ui.focusTrack.value
-        for (entry in data.entries) {
-            for (kr in entry.krs) {
-                commitKrEdits(ctx, kr, previous)
-            }
-        }
-        if (!ui.editTitle.value.isEmpty()) {
-            let editing = ui.editTitle.value
-            if (ctx.hasFocus(editing)) {
-                ui.editFocus.value = true
-            } else if (ui.editFocus.value) {
-                commitTitle(editing, previous)
-                ui.editTitle.value = ""
-                ui.editFocus.value = false
-            }
-        }
-    }
-
-    /** 行内标题（`EditableTitle.tsx`）：只有处于编辑态时才存在输入框。 */
-    private func commitTitle(id: String, previous: String): Unit {
-        _ = previous
-        let state = ui.field("title-${id}", "")
-        let draft = state.value.trim()
-        if (draft.isEmpty()) {
-            return
-        }
-        store.updateItem(id, ItemPatch().withTitle(draft))
-    }
-
-    private func commitKrEdits(ctx: UiContext, kr: OkrKrEntry, previous: String): Unit {
-        let krId = kr.item.id
-        let ownerId = "okr-owner-${krId}"
-        let ownerState = ui.field("owner-${krId}", kr.owner)
-        if (ctx.hasFocus(ownerId)) {
-            // 聚焦时不覆盖草稿
-        } else if (previous == ownerId) {
-            let draft = ownerState.value.trim()
-            if (draft != kr.owner) {
-                commitOwner(krId, draft)
-            }
-            ownerState.value = draft
-        } else if (ownerState.value != kr.owner) {
-            ownerState.value = kr.owner
-        }
-        let base = match (kr.metric) {
-            case Some(value) => value
-            case None => EMPTY_METRIC
-        }
-        var editing = false
-        for (field in METRIC_FIELDS) {
-            if (ctx.hasFocus("okr-field-${krId}-${metricFieldText(field)}")) {
-                editing = true
-            }
-        }
-        if (editing) {
-            return
-        }
-        let draft = MetricDraft(
-            start: ui.field("metric-${krId}-start", metricToText(base.start)).value,
-            current: ui.field("metric-${krId}-current", metricToText(base.current)).value,
-            target: ui.field("metric-${krId}-target", metricToText(base.target)).value,
-            unit: ui.field("metric-${krId}-unit", base.unit).value
-        )
-        if (previous.startsWith("okr-field-${krId}-")) {
-            match (pendingMetricPatch(kr.metric, draft, metricToDraft(base))) {
-                case Some(decision) =>
-                    store.setMetric(krId, decision.metric.start, decision.metric.target, decision.metric.current,
-                        decision.metric.unit)
-                    syncMetricDrafts(krId, decision.metric)
-                case None => syncMetricDrafts(krId, base)
-            }
-        } else {
-            syncMetricDrafts(krId, base)
-        }
-    }
-
-    private func syncMetricDrafts(krId: String, metric: OkrMetric): Unit {
-        setField("metric-${krId}-start", metricToText(metric.start))
-        setField("metric-${krId}-current", metricToText(metric.current))
-        setField("metric-${krId}-target", metricToText(metric.target))
-        setField("metric-${krId}-unit", metric.unit)
-    }
-
-    private func setField(key: String, value: String): Unit {
-        let state = ui.field(key, value)
-        if (state.value != value) {
-            state.value = value
-        }
-    }
-
-    private func commitOwner(krId: String, owner: String): Unit {
-        let patch = ItemPatch()
-        let okr = OkrPatch()
-        let ownerValue: ?String = if (owner.isEmpty()) {
-            None
-        } else {
-            Some(owner)
-        }
-        okr.krOwner = SetValue<?String>.Value(ownerValue)
-        patch.okr = Some(okr)
-        store.updateItem(krId, patch)
     }
 
     // ---------------------------------------------------------------- 动作
 
     func openObjectiveDialog(): Unit {
-        ui.objectiveTitle.value = ""
-        ui.objectiveNotes.value = ""
-        ui.objectiveArea.value = ""
-        ui.objectiveError.value = ""
-        ui.objectiveOpen.value = true
+        openOkrObjectiveDialog(ui)
     }
 
     func openQuarterDialog(mode: String, objectiveId: String): Unit {
-        let parts = parsePeriodParts(nextQuarter(data.period))
-        ui.quarterYear.value = parts[0]
-        ui.quarterIndex.value = parts[1]
-        ui.quarterMode.value = mode
-        ui.quarterTarget.value = objectiveId
-        ui.quarterOpen.value = true
+        openOkrQuarterDialog(ui, data.period, mode, objectiveId)
     }
 
     func createKeyResult(entry: OkrObjEntry, title: String): Unit {
-        let trimmed = title.trim()
-        if (trimmed.isEmpty()) {
-            return
-        }
-        let created = store.createItem(
-            NewItemInput(
-                ItemKind.KeyResult,
-                trimmed,
-                status: Some(ItemStatus.Active),
-                parentId: Some(entry.item.id),
-                areaId: entry.item.areaId,
-                okr: okrBlock(itemPeriod(entry.item, data.period), 5)
-            )
-        )
-        setField("addkr-${entry.item.id}", "")
-        store.select(created.id)
-    }
-
-    func addKeyResult(objectiveId: String, title: String): Unit {
-        if (title.trim().isEmpty()) {
-            return
-        }
-        for (entry in data.entries) {
-            if (entry.item.id == objectiveId) {
-                createKeyResult(entry, title)
-                return
-            }
-        }
+        createOkrKeyResult(store, ui, entry, title, data.period)
     }
 
     func moveObjective(entry: OkrObjEntry, period: String): Unit {
-        let patches = ArrayList<ItemPatchTarget>()
-        patches.add(ItemPatchTarget(entry.item.id, patchPeriod(period)))
-        for (kr in entry.krs) {
-            patches.add(ItemPatchTarget(kr.item.id, patchPeriod(period)))
-        }
-        store.updateItems(patches.toArray())
-        store.setOkrPeriod(period)
-        store.notify("目标已移动到 ${quarterLabel(period)}", tone: NoticeTone.Success)
+        moveOkrObjective(store, entry, period)
     }
 
     func copyObjective(entry: OkrObjEntry, period: String): Unit {
-        let copy = store.createItem(
+        copyOkrObjective(store, entry, period)
+    }
+}
+
+/*
+ * 目标动作 —— 列表页与独立编辑页共用（`okr_dialogs.cj` 的季度对话框、`okr_editor.cj` 的
+ * 目标操作行都调它们）。放在包级而不是 `OkrPage` 的方法上，是因为编辑页没有 `OkrPage` 实例：
+ * 它只需要「一条 `OkrObjEntry` + 目标周期」就能写出与列表页完全一样的一条历史。
+ */
+
+/** 新增关键结果（默认信心 5，周期跟随目标）；写入后清空新增输入并选中新条目。 */
+func createOkrKeyResult(store: AppStore, ui: OkrUiState, entry: OkrObjEntry, title: String,
+    period: String): ?Item {
+    let trimmed = title.trim()
+    if (trimmed.isEmpty()) {
+        return None
+    }
+    let created = store.createItem(
+        NewItemInput(
+            ItemKind.KeyResult,
+            trimmed,
+            status: Some(ItemStatus.Active),
+            parentId: Some(entry.item.id),
+            areaId: entry.item.areaId,
+            okr: okrBlock(itemPeriod(entry.item, period), 5)
+        )
+    )
+    okrSyncField(ui, "ed-addkr-${entry.item.id}", "")
+    store.select(created.id)
+    Some(created)
+}
+
+/** 移动到其他季度：目标 + 全部 KR 一次提交（一条历史，一次撤销整体回退）。 */
+func moveOkrObjective(store: AppStore, entry: OkrObjEntry, period: String): Unit {
+    let patches = ArrayList<ItemPatchTarget>()
+    patches.add(ItemPatchTarget(entry.item.id, patchOkrPeriod(period)))
+    for (kr in entry.krs) {
+        patches.add(ItemPatchTarget(kr.item.id, patchOkrPeriod(period)))
+    }
+    store.updateItems(patches.toArray())
+    store.setOkrPeriod(period)
+    store.notify("目标已移动到 ${quarterLabel(period)}", tone: NoticeTone.Success)
+}
+
+/** 复制为新季度目标：KR 的当前值重置为起点，执行项关联不复制（`ObjectiveEditor.tsx`）。 */
+func copyOkrObjective(store: AppStore, entry: OkrObjEntry, period: String): Unit {
+    let copy = store.createItem(
+        NewItemInput(
+            ItemKind.Objective,
+            entry.item.title,
+            notes: entry.item.notes,
+            status: Some(ItemStatus.Active),
+            tags: entry.item.tags,
+            areaId: entry.item.areaId,
+            okr: okrBlock(period, entry.confidence)
+        )
+    )
+    for (kr in entry.krs) {
+        let metric: ?Metric = match (kr.metric) {
+            case Some(value) => Some(Metric(value.start, value.target, value.start, value.unit))
+            case None => None
+        }
+        let _ = store.createItem(
             NewItemInput(
-                ItemKind.Objective,
-                entry.item.title,
-                notes: entry.item.notes,
-                status: Some(ItemStatus.Active),
-                tags: entry.item.tags,
-                areaId: entry.item.areaId,
-                okr: okrBlock(period, entry.confidence)
+                ItemKind.KeyResult,
+                kr.item.title,
+                notes: kr.item.notes,
+                status: Some(kr.item.status),
+                parentId: Some(copy.id),
+                tags: kr.item.tags,
+                areaId: kr.item.areaId,
+                okr: okrBlock(period, kr.confidence, metric: metric, owner: if (kr.owner.isEmpty()) {
+                    None
+                } else {
+                    Some(kr.owner)
+                })
             )
         )
-        for (kr in entry.krs) {
-            let metric: ?Metric = match (kr.metric) {
-                case Some(value) => Some(Metric(value.start, value.target, value.start, value.unit))
-                case None => None
-            }
-            let _ = store.createItem(
-                NewItemInput(
-                    ItemKind.KeyResult,
-                    kr.item.title,
-                    notes: kr.item.notes,
-                    status: Some(kr.item.status),
-                    parentId: Some(copy.id),
-                    tags: kr.item.tags,
-                    areaId: kr.item.areaId,
-                    okr: okrBlock(period, kr.confidence, metric: metric, owner: if (kr.owner.isEmpty()) {
-                        None
-                    } else {
-                        Some(kr.owner)
-                    })
-                )
-            )
-        }
-        store.setOkrPeriod(period)
-        store.select(copy.id)
-        store.notify("已复制为新季度目标：${quarterLabel(period)}", tone: NoticeTone.Success)
     }
+    store.setOkrPeriod(period)
+    store.select(copy.id)
+    store.notify("已复制为新季度目标：${quarterLabel(period)}", tone: NoticeTone.Success)
+}
 
-    func okrBlock(period: String, confidence: Int64, metric!: ?Metric = None,
-        owner!: ?String = None): OkrPatch {
-        let okr = OkrPatch()
-        okr.period = SetValue<String>.Value(period)
-        okr.confidence = SetValue<Int64>.Value(clampConfidence(confidence))
-        match (metric) {
-            case Some(value) =>
-                let patch = MetricPatch()
-                patch.start = SetValue<Float64>.Value(value.start)
-                patch.target = SetValue<Float64>.Value(value.target)
-                patch.current = SetValue<Float64>.Value(value.current)
-                patch.unit = SetValue<String>.Value(value.unit)
-                okr.metric = Some(patch)
-            case None => ()
-        }
-        match (owner) {
-            case Some(value) => okr.krOwner = SetValue<?String>.Value(Some(value))
-            case None => ()
-        }
-        okr
+func okrBlock(period: String, confidence: Int64, metric!: ?Metric = None, owner!: ?String = None): OkrPatch {
+    let okr = OkrPatch()
+    okr.period = SetValue<String>.Value(period)
+    okr.confidence = SetValue<Int64>.Value(clampConfidence(confidence))
+    match (metric) {
+        case Some(value) =>
+            let patch = MetricPatch()
+            patch.start = SetValue<Float64>.Value(value.start)
+            patch.target = SetValue<Float64>.Value(value.target)
+            patch.current = SetValue<Float64>.Value(value.current)
+            patch.unit = SetValue<String>.Value(value.unit)
+            okr.metric = Some(patch)
+        case None => ()
     }
+    match (owner) {
+        case Some(value) => okr.krOwner = SetValue<?String>.Value(Some(value))
+        case None => ()
+    }
+    okr
+}
 
-    func patchPeriod(period: String): ItemPatch {
-        let patch = ItemPatch()
-        let okr = OkrPatch()
-        okr.period = SetValue<String>.Value(period)
-        patch.okr = Some(okr)
-        patch
+func patchOkrPeriod(period: String): ItemPatch {
+    let patch = ItemPatch()
+    let okr = OkrPatch()
+    okr.period = SetValue<String>.Value(period)
+    patch.okr = Some(okr)
+    patch
+}
+
+/** 草稿 State 的「写值」封装：只写**已登记**的 key（事件 / 布局 / 帧回调阶段用，不新建状态）。 */
+func okrSyncField(ui: OkrUiState, key: String, value: String): Unit {
+    match (ui.peekField(key)) {
+        case Some(state) => if (state.value != value) {
+            state.value = value
+        }
+        case None => ()
     }
 }
 

@@ -52,9 +52,16 @@ private func metricsStore(): AppStore {
     store
 }
 
-/** 与 shell 同一条构建路径：页面作为普通子树被框架 build + layout（不是手工调 layout）。 */
-private func metricsBody(viewCtx: ViewContext, width!: Float32 = METRICS_PAGE_W): () -> Unit {
+/**
+ * 与 shell 同一条构建路径：页面作为普通子树被框架 build + layout（不是手工调 layout）。
+ *
+ * `revision` 由测试在两次 `frame` 之间递增，用来**强制第二帧重建**：P2 之后 `OkrPage.layout`
+ * 不再写任何 `State`（`focusTrack` 那套随卡片内联编辑器一起删掉了），所以「没有任何脏标记」
+ * 的一帧会跳过重建，`OkrPage.layout` 一次都不会跑——那样就测不到「第二帧不增长」。
+ */
+private func metricsBody(viewCtx: ViewContext, revision: State<Int64>, width!: Float32 = METRICS_PAGE_W): () -> Unit {
     {=>
+        let _ = revision.value
         VStack(spacing: vp(0.0)) {
             let _ = OkrPage(viewCtx, okrUiState())
         }
@@ -77,8 +84,10 @@ func okrFrameCountersDoNotGrowAcrossLayouts(): Unit {
     let store = metricsStore()
     let viewCtx = ViewContext(store, "light", "2026-01-01", 1440, 900, {_ => ()})
     let host = WidgetTestHost()
-    let body = metricsBody(viewCtx)
+    let revision = State<Int64>(0)
+    let body = metricsBody(viewCtx, revision)
     let first = timedFrame(host, body)
+    revision.value = revision.value + 1
     let second = timedFrame(host, body)
 
     // `frames` = `OkrPage.layout` 的调用次数（实测 1 个窗口帧 = 3 次）；两次 `host.frame`
@@ -128,8 +137,10 @@ func narrowPageReportsEllipsizeCandidates(): Unit {
     let store = metricsStore()
     let viewCtx = ViewContext(store, "light", "2026-01-01", 1440, 900, {_ => ()})
     let host = WidgetTestHost()
-    let body = metricsBody(viewCtx, width: 520.0)
+    let revision = State<Int64>(0)
+    let body = metricsBody(viewCtx, revision, width: 520.0)
     let _ = host.frame(METRICS_VIEWPORT, body: body)
+    revision.value = revision.value + 1
     let _ = host.frame(METRICS_VIEWPORT, body: body)
     let snapshot = okrMetrics.snapshot()
     @Expect(snapshot.ellipsizeCalls > 0, true)

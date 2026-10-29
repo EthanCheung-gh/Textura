@@ -75,6 +75,17 @@ public class FocusRequest {
     }
 
     /**
+     * The control id the pending request points at (`""` when idle).
+     *
+     * Exposed for probes and tests: 「返回后焦点请求指向 `okr-edit-<id>`」这样的验收需要看到
+     * 请求本身，而不是等它落地之后再去读 `focusId`（画布热点的 id 不在焦点图里，落地那一帧
+     * 之后就会被清掉）。
+     */
+    public func pendingId(): String {
+        pending
+    }
+
+    /**
      * Applies at most one attempt this frame. Stops as soon as the target owns focus; retries
      * only while nothing owns focus (the control may not be registered yet); gives up after
      * `attempts` frames so a control that never appears cannot keep stealing focus.

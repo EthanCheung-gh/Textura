@@ -321,7 +321,15 @@ func buildObjEntry(workspace: Workspace, okrWorkspace: OkrWorkspace, view: Objec
     let krs = ArrayList<OkrKrEntry>()
     for (krView in view.keyResults) {
         match (itemById(workspace, krView.id)) {
-            case Some(kr) => krs.add(buildKrEntry(okrWorkspace, kr, elapsedPercent))
+            case Some(kr) =>
+                // 执行项：`executionItemsOf`（okr 边优先、再层级子项）。`buildExecEntries` 过去
+                // 定义了却从没被调用，于是 `kr.execs` 恒为空 —— 卡片上的执行项清单与勾选框、
+                // 编辑页的「关联执行项 N」全都永远显示 0（P2 的「执行项勾选」依赖这条线）。
+                let base = buildKrEntry(okrWorkspace, kr, elapsedPercent)
+                krs.add(
+                    OkrKrEntry(base.item, base.progress, base.behind, base.confidence, base.owner, base.metric,
+                        buildExecEntries(workspace, okrWorkspace, kr.id))
+                )
             case None => ()
         }
     }

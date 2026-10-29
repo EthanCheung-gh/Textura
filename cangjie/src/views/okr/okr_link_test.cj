@@ -100,7 +100,7 @@ private class LinkScene {
                 created
         }
         let page = OkrPage(ctx, current)
-        okrDialogs(ctx, current, page)
+        okrDialogs(ctx, current, okrDialogScopeOf(page))
     }
 
     /** Builds the page once, then opens the dialog with the given query. */

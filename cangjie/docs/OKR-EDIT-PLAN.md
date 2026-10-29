@@ -230,9 +230,9 @@ P2 之后，**列表页不再承载文本编辑**。改动范围（一行 = 一�
 
 | 层 | 命令 | 现状 |
 |---|---|---|
-| 主机单测 | `cd cangjie && source scripts/env.sh && cjpm test` | **713/713**（P0 前 710，新增 3 个计数器用例），`docs/OKR-P0-BASELINE.md` §4 |
+| 主机单测 | `cd cangjie && source scripts/env.sh && cjpm test` | **712/712**（P0 是 713；P1+P2 删掉 21 条 prompt 专用用例、新增 17 条编辑页/只读列表用例），`docs/OKR-P0-BASELINE.md` §4 |
 | CUI 包 | `cd third_party/CUI && cjpm test` | 967 通过 + 1 个既有夹具 ERROR（`docs/HANDOFF.md` §2） |
-| 像素 | `scripts/parity.sh --theme both` + `scripts/diff.sh --theme both` | **14/14 PASS**（P0 改动后重跑，`docs/OKR-P0-BASELINE.md` §4） |
+| 像素 | `scripts/parity.sh --theme both` + `scripts/diff.sh --theme both` | **12/12 PASS**（除 `okr-*`；`okr-light/dark` 是本轮**有意变更**，§10.2） |
 | 预算（P3 新增） | `okr_metrics_test.cj` 里断言 `ops ≤ 350`、`textMeasure ≤ 250`/布局、`misses == 0`（第二帧）、`candidates == 0`（1152 宽） | P3 落地时按 P0 基线收紧 |
 | 稳定性浸泡 | `scripts/harmony/device_stability.sh 180`（真机，需设备） | 本轮**无设备**，未跑（`docs/OKR-P0-BASELINE.md` §1） |
 
@@ -271,11 +271,11 @@ P2 之后，**列表页不再承载文本编辑**。改动范围（一行 = 一�
 
 | 阶段 | 产出 | 验收 | 估时 |
 |---|---|---|---|
-| **P0（本提交）** | `okr_metrics.cj` + `okr_metrics_test.cj` + `docs/OKR-P0-BASELINE.md`；埋点 19 处 | `cjpm test` **713/713**；parity/diff **14/14**；基线表填好 | 已完成 |
-| **P1 编辑页骨架** | `OkrUiState.editId` + 卡片铅笔 `okr-edit-<id>` + `okr_editor.cj`（顶栏/目标/notes/操作）+ `okr_editor_test.cj`；列表页仍可编辑（旧 prompt 路径暂留） | 主机：编辑页控件都有正宽高、标题/领域/状态/信心/notes 写 store、返回后 `editId=""` 且焦点回铅笔；parity 14/14（列表页像素不变，铅笔是**新增**元素 → 需要更新参考图或把铅笔放进 `okr-more` 的溢出菜单，见 §8） | 1.5 天 |
-| **P2 KR 迁移 + 列表只读化** | 编辑页 KR 区（指标四格/负责人/状态/信心/上下移/删除）、新增 KR、执行项概览；列表页按 §4.5 只读化；删除 `okr_prompt.cj` 整条路径 | 主机：`okr_inline_editor_test.cj` 相应用例改写或删除（**要在同一提交里说明**）；真机 A/B 矩阵「编辑页 idle / 输入 / 新增 KR」5/5 存活 | 2 天 |
-| **P3 分配优化** | §3 表的前 6 项（6 → 2 → 3 → 4 → 5 → 10）；预算测试 | 计数器：`ops` 不增、`textMeasure`/`stringBuilds` 稳态下降、`misses == 0`；parity 14/14 逐字节；真机分配速率 −50% | 2.5 天 |
-| **P4 决策与文档** | `docs/OKR-VIEW.md` 增「编辑页」章节、`docs/DEVICE-NOTES.md` 记 A/B 结果、`docs/HANDOFF.md` §6/§9 更新（本方案是**可用性**措施，缺陷仍待运行时修）、`docs/STABILITY.md` §8 追加「第四条路线：换组合」的结论 | 文档里能查到：改了什么、真机矩阵结果、GC 指标前后值、还剩什么风险 | 0.5 天 |
+| **P0（已交付）** | `okr_metrics.cj` + `okr_metrics_test.cj` + `docs/OKR-P0-BASELINE.md`；埋点 19 处 | `cjpm test` **713/713**；parity/diff **14/14**；基线表填好 | 已完成 |
+| **P1 编辑页骨架（已实现·主机）** | `OkrUiState.editId/editTarget/editorFocus` + 卡片铅笔 `okr-edit-<id>` + `okr_editor.cj`（顶栏/目标/notes/KR/操作）+ `okr_editor_test.cj`；**旧 prompt 路径同批删除**（见 §4.5） | 主机：编辑页控件都有正宽高、标题/领域/状态/信心/notes 写 store、返回后 `editId=""` 且焦点请求回铅笔；`cjpm test` **712/712**；parity 其余 6 路由 **12/12**，`okr-*` 两张为**有意变更**（§10.2） | 已完成 |
+| **P2 KR 迁移 + 列表只读化（已实现·主机）** | 编辑页 KR 区（指标四格/负责人/状态/信心/上下移/删除/执行项）、新增 KR、执行项概览；列表页按 §4.5 只读化；`okr_prompt.cj` 整条路径删除 | 主机：`okr_inline_editor_test.cj` 改写为「列表只读 + 铅笔入口」用例；真机 A/B 矩阵「编辑页 idle / 输入 / 新增 KR」**未做**（本轮无设备，见 §10.4） | 已完成（主机部分） |
+| **P3 分配优化** | §3 表的前 6 项（6 → 2 → 3 → 4 → 5 → 10）；预算测试 | 计数器：`ops` 不增、`textMeasure`/`stringBuilds` 稳态下降、`misses == 0`；parity 14/14 逐字节；真机分配速率 −50% | 待做 |
+| **P4 决策与文档** | `docs/OKR-VIEW.md` §6、`docs/DEVICE-NOTES.md` 记 A/B 结果、`docs/HANDOFF.md` §6/§9 更新、`docs/STABILITY.md` §8 追加「第四条路线：换组合」 | 文档里能查到：改了什么、真机矩阵结果、GC 指标前后值、还剩什么风险 | 文档主体随 P1+P2 落地（`OKR-VIEW` §6）；真机数据待补 |
 
 依赖：P1 依赖 P0 的基线（否则无法判断 P3 是否真的降了分配）；P2 依赖 P1（编辑页要能编辑 KR 才能
 关掉旧入口）；P3 依赖 P1/P2（否则测的是要被删掉的代码）。**P0 必须先做**，见 §8。
@@ -301,10 +301,10 @@ P2 之后，**列表页不再承载文本编辑**。改动范围（一行 = 一�
 
 | # | 决定 | 状态 | 依据 |
 |---|---|---|---|
-| 1 | **列表页只读**：文本编辑全部迁到独立编辑页，列表页只保留即时动作（信心、上下移、删除、关联、勾选） | **已确认** | 已批准方案；§4.5 的范围表 |
-| 2 | **保存模型**：标题/数值/负责人失焦或 Enter 即时写；notes 600ms 防抖 + 返回 flush | **已确认** | 已批准方案；与 Web `ObjectiveEditor.tsx:21-24` 一致 |
-| 3 | **原生控件**：编辑页用 `VStack` + `TextField`/`TextArea`/`Button`，不用 `Ui.inlineEditor`/Portal/IME 锚点 | **已确认** | 已批准方案；`docs/HANDOFF.md` §6.2 第 3 条 |
-| 4 | **P0 先行**：先落计数器与基线，再动 P1 | **已确认** | 已批准方案；P0 已随本文件交付 |
+| 1 | **列表页只读**：文本编辑全部迁到独立编辑页，列表页只保留即时动作 | **已实现**（§10.1） | 已批准方案；§4.5 的范围表 |
+| 2 | **保存模型**：标题/数值/负责人失焦或 Enter 即时写；notes 600ms 防抖 + 返回 flush | **已实现**（§10.1） | 已批准方案；与 Web `ObjectiveEditor.tsx:21-24` 一致 |
+| 3 | **原生控件**：编辑页用 `VStack` + `TextField`/`TextArea`/`Button`，不用 `Ui.inlineEditor`/Portal/IME 锚点 | **已实现**（§10.1） | 已批准方案；`docs/HANDOFF.md` §6.2 第 3 条 |
+| 4 | **P0 先行**：先落计数器与基线，再动 P1 | **已完成** | 已批准方案；P0 已随本文件交付 |
 
 ### 8.2 仍需拍板（会改变像素或交互，需 owner 同意）
 
@@ -314,6 +314,10 @@ P2 之后，**列表页不再承载文本编辑**。改动范围（一行 = 一�
 | 2 | KR 行标题点击在只读化之后的行为 | **打开编辑页并聚焦该 KR 的标题格**（不是什么都不做） | 用户肌肉记忆是「点标题就能改」，直接变死区会被当成 bug |
 | 3 | notes 防抖的 600ms 是否也用于指标/标题 | **不**：即时写，只有 notes 防抖 | 指标是「槽位」语义（`okr_prompt.cj:178` 的注释），延迟写会让连续输入产生中间态历史 |
 | 4 | 旧 prompt 路径什么时候删 | **P2 同一提交删干净**（`okr_prompt.cj`、`okrPromptDialog`、`OkrUiState.prompt*`、`FocusOnceView(promptFocus)`） | 两套入口并存会让「分配速率」基线失真，也会让 A/B 无法归因 |
+
+> 上表 4 条已随 P1+P2 落地：1 采用「放卡片右上角」且本轮**不更新** `tools/parity/ref`（§10.2）；
+> 2 改为「列表只读，聚焦某条 KR 的入口在编辑页」；3 采用「只有 notes 防抖」；4 已整条删除（§4.5）。
+> 逐项偏差与理由见 §10.1。
 
 ---
 
@@ -331,3 +335,49 @@ P2 之后，**列表页不再承载文本编辑**。改动范围（一行 = 一�
 | `stringBuilds` | 13 |
 | `focusableIds` | 0（只在焦点遍历时调用；一次返回 46 个 id） |
 | 帧耗时 | 主机 `WidgetTestHost` 一帧 ≈ 0.8–1.8ms（含 build+measure+layout+draw），**不等于**真机 7.7ms/帧 的口径 |
+
+---
+
+## 10. P1+P2 落地记录（主机已实现）
+
+代码事实、只读范围、保存模型与 Esc 语义见 **`docs/OKR-VIEW.md` §6**。本节只记方案侧的偏差与例外。
+
+### 10.1 与方案的偏差（都有理由）
+
+| 项 | 方案 | 落地 | 原因 |
+|---|---|---|---|
+| 铅笔点击后的行为 | 卡片铅笔 → 编辑页 | 同左；**KR 行标题点击不再有反应** | §8.2-2 建议的是「点 KR 标题 → 编辑页并聚焦该 KR」，但用户本轮要求「只读文本 + 铅笔」，所以列表里 KR 标题是纯文本；聚焦某条 KR 的入口是编辑页内每行的铅笔 |
+| 信心刻度 | §4.5 保留（即时改） | 列表**只读**，改信心进编辑页 | 本轮用户明确「优先与 React 列表现状一致：只读文本 + 只读信心 + 铅笔 + 更多菜单」 |
+| 上下移 / 删除 / 关联执行项 | §4.5 保留在列表 | 移到编辑页 | 同上；列表只留铅笔、更多菜单、执行项勾选 |
+| 进页面焦点 | React 聚焦「返回目标列表」 | 聚焦编辑页第一支铅笔（标题） | 共享 `ButtonView` 的焦点 id 由构建序号派生，无法预先 `FocusRequest`；编辑页自己的控件才有稳定 id |
+| 标题 Enter | `commitOnFocusLoss` | Enter = 提交**并收起**；失焦只提交不收起 | 与 React `EditableTitle`（Enter → blur → 退出编辑）一致 |
+
+**顺带修复**：`okr_model.cj` 的 `buildExecEntries` 过去定义了却从未被调用，`kr.execs` 恒为空 ——
+卡片上的执行项清单/勾选框、编辑页的「关联执行项 N · 已完成 M」都永远显示 0。P2 的「执行项勾选」
+依赖这条线，已在 `buildObjEntry` 里接线（seed 数据没有 KR→执行项的 `okr` 边，所以截图不变）。
+
+### 10.2 parity 的 okr 例外（本轮有意）
+
+`tools/parity/ref` **未修改**，也不伪造 PASS。列表加铅笔 + 只读化后 `okr-*` 两张必然不一致：
+
+| 对 | diff% | meanΔ | raw≤32% | blurSSIM | edge ref/out | verdict |
+|---|---|---|---|---|---|---|
+| `okr-light` | 11.22 | 5.34 | 95.30 | 0.9182 | 75.87 / 84.47 | FAIL（有意） |
+| `okr-dark` | 11.25 | 4.53 | 95.89 | 0.9293 | 75.09 / 85.04 | FAIL（有意） |
+
+其余 6 路由 × 2 主题在本轮改动后仍 **12/12 PASS**（`scripts/diff.sh --route
+dashboard,calendar,gtd,gantt,sop,settings`）。像素对齐留给后续会话（`docs/OKR-VIEW.md` §6.7）。
+
+### 10.3 已知代价：编辑页整页出帧
+
+notes 的 600ms 防抖需要 `FrameInfo.elapsedMs`，而帧回调只有 `FrameHandler` 能拿到；`FrameHandler`
+每次回调都会 `requestFrame()`，因此**编辑页打开期间持续出帧**（每帧重建这棵小控件树）。关闭编辑页
+即停止；列表页的自绘画布不受影响。若后续要消除这点开销，需要 CUI 暴露「不主动请求续帧的逐帧钩子」，
+或把 notes 的防抖改成窗口级定时器。
+
+### 10.4 后续会话待办
+
+1. **真机 A/B**（§5.4 矩阵）：编辑页 idle / 输入 / 新增 KR，每项 5 次或 10 分钟，判据「进程存活 +
+   无 `Check failed` / `onProcessDied`」。本轮无设备（`hdc list targets` 为空）。
+2. **像素对齐** `okr-light/dark`（含是否把铅笔塞进 `okr-more` 的取舍）。
+3. P3 分配优化（§3 表）——列表页的只读化已经顺手删掉一批闭包与热区，P0 基线需要按新列表重采。

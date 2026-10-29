@@ -6,34 +6,90 @@ import cui.*
 import textura.core.data.{Area, EdgeType, Item, ItemKind, ItemStatus, Metric, NewItemInput, NoticeTone, ViewContext,
     Workspace, areaById, itemById}
 import textura.ui.*
-import textura.views.okr.logic.{OkrSchedule, executionItemsOf, formatSchedule, matchesQuery, quarterLabel}
+import textura.views.okr.logic.{executionItemsOf, matchesQuery, nextQuarter, quarterLabel}
 
 /*
  * OKR 页的浮层：新建目标 / 新建季度 / 关联执行项 / 目标更多操作 / KR 状态 / 删除确认。
  *
  * 全部用 `textura.ui` 的 `Ui.modal`（`ui.css:450-537`）：Esc 关闭、点遮罩关闭、
  * 打开期间阻断下层交互；页脚按钮与主体控件都是共享控件，因此键盘可达。
+ *
+ * 文本编辑**不在这里**：P2 之后标题 / 指标 / 负责人 / 新增 KR 全部搬到独立编辑页
+ * （`okr_editor.cj`），旧的原位编辑器 `okr_prompt.cj` 已删除（`docs/OKR-EDIT-PLAN.md` §4.5）。
  */
 
+/**
+ * 浮层需要的最小页面上下文：季度 + 该季度的目标条目。
+ *
+ * 列表页传全部条目，编辑页只传当前目标那一条 —— 两者因此共用同一套浮层，不需要各自的
+ * `OkrPage` 实例（编辑页没有画布）。
+ */
+class OkrDialogScope {
+    let period: String
+    let entries: Array<OkrObjEntry>
+
+    init(period: String, entries: Array<OkrObjEntry>) {
+        this.period = period
+        this.entries = entries
+    }
+
+    func entry(id: String): ?OkrObjEntry {
+        for (candidate in entries) {
+            if (candidate.item.id == id) {
+                return Some(candidate)
+            }
+        }
+        None
+    }
+}
+
+func okrDialogScopeOf(page: OkrPage): OkrDialogScope {
+    OkrDialogScope(page.data.period, page.data.entries)
+}
+
 /** 页面浮层的总入口（`render` 在页面之后调用，`Ui.modal` 自己注册 Overlay）。 */
-func okrDialogs(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
-    let tokens = page.tokens
+func okrDialogs(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope): Unit {
+    let theme = if (ctx.theme == "dark") {
+        ThemeTokens.dark().theme()
+    } else {
+        ThemeTokens.light().theme()
+    }
+    let tokens = tokensOf(theme)
     let c = tokens.color
-    let theme = page.theme
     let workspace = ctx.store.state.value()
-    newObjectiveDialog(ctx, ui, page, theme, tokens, c)
-    quarterDialog(ctx, ui, page, theme, tokens, c)
-    linkDialog(ctx, ui, page, theme, tokens, c, workspace)
-    menuDialog(ctx, ui, page, theme, tokens, c)
-    statusDialog(ctx, ui, page, theme, tokens, c)
-    confirmDialogs(ctx, ui, page, theme, tokens, c)
-    // 卡片画布上的行内编辑（标题 / 指标 / 负责人 / 新增 KR）。
-    okrPromptDialog(ctx, ui, page)
+    newObjectiveDialog(ctx, ui, scope, theme, tokens, c)
+    quarterDialog(ctx, ui, scope, theme, tokens, c)
+    linkDialog(ctx, ui, theme, tokens, c, workspace)
+    menuDialog(ctx, ui, scope, theme, tokens, c)
+    statusDialog(ctx, ui, theme, tokens, c)
+    confirmDialogs(ctx, ui, theme, tokens, c)
+}
+
+/** 新建目标对话框：清空三个草稿再打开（`OkrPage.tsx` 的 `openObjective`）。 */
+func openOkrObjectiveDialog(ui: OkrUiState): Unit {
+    ui.objectiveTitle.value = ""
+    ui.objectiveNotes.value = ""
+    ui.objectiveArea.value = ""
+    ui.objectiveError.value = ""
+    ui.objectiveOpen.value = true
+}
+
+/**
+ * 季度对话框：`mode` 为空 = 只切换季度；`move` / `copy` = 把某个目标移到 / 复制到别的季度。
+ * 初始季度取 `nextQuarter(period)`（与 Web 的 `initialPeriod` 一致）。
+ */
+func openOkrQuarterDialog(ui: OkrUiState, period: String, mode: String, objectiveId: String): Unit {
+    let parts = parsePeriodParts(nextQuarter(period))
+    ui.quarterYear.value = parts[0]
+    ui.quarterIndex.value = parts[1]
+    ui.quarterMode.value = mode
+    ui.quarterTarget.value = objectiveId
+    ui.quarterOpen.value = true
 }
 
 /** 新建季度目标（`OkrPage.tsx` 的 objective modal，宽 560）。 */
-func newObjectiveDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens,
-    c: TokenColors): Unit {
+func newObjectiveDialog(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope, theme: Theme,
+    tokens: ThemeTokens, c: TokenColors): Unit {
     if (!ui.objectiveOpen.value) {
         return
     }
@@ -43,11 +99,11 @@ func newObjectiveDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: 
         ui.objectiveOpen,
         {=> ui.objectiveOpen.value = false},
         title: "新建季度目标",
-        description: "周期 ${quarterLabel(page.data.period)} · 先写定性目标，随后补充可量化的 KR",
+        description: "周期 ${quarterLabel(scope.period)} · 先写定性目标，随后补充可量化的 KR",
         width: 560.0,
         footer: {=>
             Ui.button(theme, "取消", {=> ui.objectiveOpen.value = false}, variant: ButtonVariant.Ghost)
-            Ui.button(theme, "创建目标", {=> submitObjective(ctx, ui, page)}, variant: ButtonVariant.Primary)
+            Ui.button(theme, "创建目标", {=> submitObjective(ctx, ui, scope)}, variant: ButtonVariant.Primary)
         }
     ) { =>
         Ui.field(theme, label: "目标（定性描述）", required: true, error: ui.objectiveError.value) {
@@ -85,7 +141,7 @@ func areaChoice(theme: Theme, tokens: ThemeTokens, ui: OkrUiState, id: String, l
     )
 }
 
-func submitObjective(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
+func submitObjective(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope): Unit {
     let title = ui.objectiveTitle.value.trim()
     if (title.isEmpty()) {
         ui.objectiveError.value = "先写下一句定性的季度目标"
@@ -103,7 +159,7 @@ func submitObjective(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
             } else {
                 Some(area)
             },
-            okr: page.okrBlock(page.data.period, 5)
+            okr: okrBlock(scope.period, 5)
         )
     )
     ctx.store.select(created.id)
@@ -112,7 +168,7 @@ func submitObjective(ctx: ViewContext, ui: OkrUiState, page: OkrPage): Unit {
 }
 
 /** 年份 + 季度选择（`QuarterDialog.tsx`，宽 460）。 */
-func quarterDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens,
+func quarterDialog(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope, theme: Theme, tokens: ThemeTokens,
     c: TokenColors): Unit {
     if (!ui.quarterOpen.value) {
         return
@@ -155,7 +211,7 @@ func quarterDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme
                 confirmLabel,
                 {=>
                     ui.quarterOpen.value = false
-                    confirmQuarter(ctx, ui, page, periodFromParts(ui.quarterYear.value, ui.quarterIndex.value))
+                    confirmQuarter(ctx, ui, scope, periodFromParts(ui.quarterYear.value, ui.quarterIndex.value))
                 },
                 variant: ButtonVariant.Primary
             )
@@ -188,7 +244,7 @@ func ModalCaption(tokens: ThemeTokens, text: String): Unit {
     Label(text).fontSize(fp(11.0)).foregroundColor(tokens.color.textFaint)
 }
 
-func confirmQuarter(ctx: ViewContext, ui: OkrUiState, page: OkrPage, period: String): Unit {
+func confirmQuarter(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope, period: String): Unit {
     let mode = ui.quarterMode.value
     let target = ui.quarterTarget.value
     if (mode.isEmpty()) {
@@ -196,20 +252,19 @@ func confirmQuarter(ctx: ViewContext, ui: OkrUiState, page: OkrPage, period: Str
         ctx.store.notify("已切换到 ${quarterLabel(period)}", tone: NoticeTone.Info)
         return
     }
-    for (entry in page.data.entries) {
-        if (entry.item.id == target) {
+    match (scope.entry(target)) {
+        case Some(entry) =>
             if (mode == "copy") {
-                page.copyObjective(entry, period)
+                copyOkrObjective(ctx.store, entry, period)
             } else {
-                page.moveObjective(entry, period)
+                moveOkrObjective(ctx.store, entry, period)
             }
-            return
-        }
+        case None => ()
     }
 }
 
 /** 关联执行项（`LinkItemsDialog.tsx`，宽 640）。 */
-func linkDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens, c: TokenColors,
+func linkDialog(ctx: ViewContext, ui: OkrUiState, theme: Theme, tokens: ThemeTokens, c: TokenColors,
     workspace: Workspace): Unit {
     if (!ui.linkOpen.value) {
         return
@@ -407,7 +462,8 @@ func hasIn(values: ArrayList<String>, id: String): Bool {
 }
 
 /** 目标「更多操作」菜单（`ObjectiveCard.tsx` 的 okr-menu）。 */
-func menuDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens, c: TokenColors): Unit {
+func menuDialog(ctx: ViewContext, ui: OkrUiState, scope: OkrDialogScope, theme: Theme, tokens: ThemeTokens,
+    c: TokenColors): Unit {
     if (!ui.menuOpen.value) {
         return
     }
@@ -430,7 +486,7 @@ func menuDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, t
                 {=>
                     open.value = false
                     ui.menuObjective.value = ""
-                    page.openQuarterDialog("move", objectiveId)
+                    openOkrQuarterDialog(ui, scope.period, "move", objectiveId)
                 },
                 variant: ButtonVariant.Ghost,
                 iconLeft: IconGlyph.Calendar,
@@ -442,7 +498,7 @@ func menuDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, t
                 {=>
                     open.value = false
                     ui.menuObjective.value = ""
-                    page.openQuarterDialog("copy", objectiveId)
+                    openOkrQuarterDialog(ui, scope.period, "copy", objectiveId)
                 },
                 variant: ButtonVariant.Ghost,
                 iconLeft: IconGlyph.Plus,
@@ -466,8 +522,7 @@ func menuDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, t
 }
 
 /** KR 状态下拉（Web 用原生 `<select>`；CUI 无 select，改为同语义的选项浮层）。 */
-func statusDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens,
-    c: TokenColors): Unit {
+func statusDialog(ctx: ViewContext, ui: OkrUiState, theme: Theme, tokens: ThemeTokens, c: TokenColors): Unit {
     if (!ui.statusOpen.value) {
         return
     }
@@ -504,8 +559,7 @@ func statusDialog(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme,
 }
 
 /** 删除确认（`ConfirmDialog.tsx`，宽 440）。 */
-func confirmDialogs(ctx: ViewContext, ui: OkrUiState, page: OkrPage, theme: Theme, tokens: ThemeTokens,
-    c: TokenColors): Unit {
+func confirmDialogs(ctx: ViewContext, ui: OkrUiState, theme: Theme, tokens: ThemeTokens, c: TokenColors): Unit {
     let workspace = ctx.store.state.value()
     if (!ui.confirmObjective.value.isEmpty()) {
         let objectiveId = ui.confirmObjective.value
