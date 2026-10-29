@@ -126,6 +126,9 @@
 - **行为变化（性能改造）**：GTD / 今日列表按 100 条分页、OKR 表格按 200 条 KR 分页（「显示更多（剩余 N 条）」，
   筛选 / 搜索 / 季度 / 折叠变化回到第一页）；视图改为路由懒加载，首次进入显示「正在织理「视图名」…」骨架；
   `.page.gtd-page`、`.page.cal-page` 收紧页面级样式特异性，页面间距不再依赖 CSS 加载顺序。
+- **OKR 列表卡片改为只读**：卡片与子 KR 行不再渲染 `input/textarea/select/contenteditable`，
+  标题、指标、负责人、状态、信心只显示，执行项只给「执行项 N · 已完成 M」摘要；
+  所有编辑集中在目标编辑视图（卡片输入控件 19 → 0，卡片 DOM 269 → 128，−52%）。
 - 许可证由 MIT 切换为 Apache License 2.0（© 2026 EthanCheung），新增 `NOTICE`；
   `package.json` / `Cargo.toml` / `tauri.conf.json` 的 license 元数据同步为 `Apache-2.0`。
 
