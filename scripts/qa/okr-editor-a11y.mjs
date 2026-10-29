@@ -2,10 +2,13 @@
  * 独立验收：OKR 编辑视图的可访问性 / 响应式 / 深色主题对比度。
  *
  * - role=region、aria-labelledby、保存状态 role=status
- * - 1024×720（列表 + 编辑视图）无横向溢出，并扫描越界元素
- * - 深色主题下 4 处正文对比度 ≥ 4.5:1（取实际 computed style + 有效背景合成）
+ * - 1024×720（列表 + 编辑视图 + 展开一条 KR 的编辑态）无横向溢出，并扫描越界元素
+ * - 深色主题下 5 处正文对比度 ≥ 4.5:1（取实际 computed style + 有效背景合成）
  *
- * 用法：TEXTURA_BASE_URL=http://localhost:1434 node scripts/qa/okr-editor-a11y.mjs
+ * 注意：编辑视图默认零输入控件（渐进式单编辑态），`MetricEditor` 只在点开某条
+ * KR 后才挂载 —— 依赖 `.okr-metric-*` 的选择器必须先点铅笔进入编辑态再采样。
+ *
+ * 用法：TEXTURA_BASE_URL=http://localhost:1438 node scripts/qa/okr-editor-a11y.mjs
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BASE_URL, sleep, withPage } from './lib.mjs';
@@ -43,6 +46,15 @@ async function openEditor(page) {
   await page.click(`[data-edit-objective="${OBJ}"]`);
   await page.waitFor(`!!document.querySelector('.okr-editor')`, { label: 'editor visible' });
   await sleep(350);
+}
+
+/** 展开第一条 KR 的编辑态（渐进式编辑：输入控件只在该行挂载）。 */
+async function openFirstKrEditor(page) {
+  await page.click('[data-edit-target^="kr:"]');
+  await page.waitFor(`document.querySelectorAll('.okr-kr--editing').length === 1`, {
+    label: 'first KR editing',
+  });
+  await sleep(300);
 }
 
 function consoleErrors(page) {
@@ -178,6 +190,36 @@ async function flowA11y(page) {
   );
   check(flow, '保存状态 role="status"', semantics.saveRole === 'status', { saveRole: semantics.saveRole, saveText: semantics.saveText });
   check(flow, '进入编辑视图后焦点交给「返回目标列表」', semantics.backFocused === true, { active: semantics.backText });
+
+  // 渐进式编辑的键盘入口：默认零输入控件，每支铅笔都有无障碍名称。
+  const pencils = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    const nodes = [...editor.querySelectorAll('[data-edit-target]')];
+    return {
+      inputs: editor.querySelectorAll('input').length,
+      selects: editor.querySelectorAll('select').length,
+      textareas: editor.querySelectorAll('textarea').length,
+      targets: nodes.map((el) => el.getAttribute('data-edit-target')),
+      // 铅笔用 aria-label，唯一带可见文字的是「新增关键结果」按钮。
+      unnamed: nodes
+        .filter((el) => !(el.getAttribute('aria-label') || '').trim() && !(el.textContent || '').trim())
+        .map((el) => el.outerHTML.slice(0, 120)),
+      labelled: nodes.filter((el) => (el.getAttribute('aria-label') || '').trim()).length,
+      buttons: nodes.filter((el) => el.tagName === 'BUTTON').length,
+    };
+  `);
+  check(
+    flow,
+    '默认展示态零输入控件，每个编辑入口都是 button 且有可访问名（aria-label 或可见文字）',
+    pencils.inputs === 0 &&
+      pencils.selects === 0 &&
+      pencils.textareas === 0 &&
+      pencils.targets.length === 9 &&
+      pencils.buttons === 9 &&
+      pencils.labelled === 8 &&
+      pencils.unnamed.length === 0,
+    pencils,
+  );
   check(flow, '语义检查期间 console error = 0', consoleErrors(page).length === 0, { errors: consoleErrors(page).map((e) => e.text.slice(0, 160)) });
 }
 
@@ -228,6 +270,39 @@ async function flowResponsive(page) {
   check(flow, '1024 期间 console error = 0', consoleErrors(page).length === 0, { errors: consoleErrors(page).map((e) => e.text.slice(0, 160)) });
   await page.screenshot(`${OUT}/4-1024x720-editor.png`);
 
+  // 展开一条 KR（指标 / 负责人 / 状态 / 执行项都挂上）后仍然不溢出。
+  await openFirstKrEditor(page);
+  const expandedOverflow = await scanOverflow(page);
+  const expandedBox = await page.eval(`
+    const row = document.querySelector('.okr-kr--editing');
+    return {
+      editingRows: document.querySelectorAll('.okr-kr--editing').length,
+      metricInputs: document.querySelectorAll('.okr-metric-input').length,
+      metricInputsInRow: row ? row.querySelectorAll('.okr-metric-input').length : -1,
+      rowWidth: row ? Math.round(row.getBoundingClientRect().width) : null,
+      rowScrollWidth: row?.scrollWidth ?? null,
+      viewport: window.innerWidth,
+    };
+  `);
+  check(
+    flow,
+    '1024 展开一条 KR 的编辑态：4 个指标输入且无横向溢出',
+    expandedBox.editingRows === 1 &&
+      expandedBox.metricInputs === 4 &&
+      expandedBox.metricInputsInRow === 4 &&
+      expandedBox.rowScrollWidth <= expandedBox.rowWidth + 1 &&
+      expandedOverflow.scrollWidth <= expandedOverflow.clientWidth + 1 &&
+      expandedOverflow.offenders.length === 0,
+    { expandedBox, offenders: expandedOverflow.offenders, scrollWidth: expandedOverflow.scrollWidth },
+  );
+  check(
+    flow,
+    '1024 展开态 console error = 0',
+    consoleErrors(page).length === 0,
+    { errors: consoleErrors(page).map((e) => e.text.slice(0, 160)) },
+  );
+  await page.screenshot(`${OUT}/4-1024x720-editor-expanded.png`);
+
   // 恢复 1440，避免影响后续
   await page.setViewport(1440, 900);
 }
@@ -251,6 +326,8 @@ async function flowDarkContrast(page) {
   `);
   check(flow, '深色主题已生效（html[data-theme=dark]）', theme.dataTheme === 'dark', theme);
 
+  // 指标字段标签只在该行编辑态里存在：先点开第一条 KR 再采样对比度。
+  await openFirstKrEditor(page);
   const samples = await page.eval(`
     const probe = (() => { ${CONTRAST_PROBE} })();
     return [
@@ -271,6 +348,24 @@ async function flowDarkContrast(page) {
     );
   }
   check(flow, '深色主题检查期间 console error = 0', consoleErrors(page).length === 0, { errors: consoleErrors(page).map((e) => e.text.slice(0, 160)) });
+
+  // 收起编辑态再截图：证据图对应默认展示态。
+  await page.pressKey('Escape', { code: 'Escape', vk: 27 });
+  await sleep(300);
+  const darkCollapsed = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      inEditor: Boolean(editor),
+      editingRows: editor ? editor.querySelectorAll('.okr-kr--editing').length : -1,
+      inputs: editor ? editor.querySelectorAll('input').length : -1,
+    };
+  `);
+  check(
+    flow,
+    '深色下 Esc 收起 KR 编辑态（仍留在编辑视图、零输入控件）',
+    darkCollapsed.inEditor === true && darkCollapsed.editingRows === 0 && darkCollapsed.inputs === 0,
+    darkCollapsed,
+  );
   await page.screenshot(`${OUT}/4-dark-editor.png`);
   writeFileSync(`${OUT}/contrast-samples.json`, JSON.stringify(samples, null, 2));
 }

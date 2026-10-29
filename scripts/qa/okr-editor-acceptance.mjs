@@ -2,7 +2,12 @@
  * 独立验收：OKR 卡片编辑按钮 + 独立编辑视图（前端 / React 版）。
  *
  * 覆盖 2a–2e + 可访问性属性；全部通过 CDP 真实交互 + DOM / localStorage 断言。
- * 用法：TEXTURA_BASE_URL=http://localhost:1434 node scripts/qa/okr-editor-acceptance.mjs
+ * 用法：TEXTURA_BASE_URL=http://localhost:1438 node scripts/qa/okr-editor-acceptance.mjs
+ *
+ * 编辑视图是**渐进式单编辑态**（`main@011c518` 起）：打开时全只读（0 个
+ * input/select/textarea），每个字段一支铅笔（`[data-edit-target]`），任何时刻只有
+ * 一个编辑目标（目标级字段互斥、同级 KR 互斥），Esc 两段语义（先收编辑、再返回列表）。
+ * 2b 覆盖默认态与单编辑态，2c 覆盖逐字段持久化，2d 覆盖 Esc 两段语义与焦点归还。
  *
  * 2f（不存在的目标 id 空态）无法从 UI 触发，按验收说明跳过；单测
  * `src/modules/okr/okrEditor.test.ts` 已覆盖 resolveEditorObjective 的缺失 id。
@@ -15,6 +20,13 @@ const OUT = 'docs/screenshots/okr-editor-acceptance';
 const ORIGIN = new URL(BASE_URL).origin;
 const OBJ = 'obj_activation';
 const OBJ_TITLE = '让新用户在第一周就爱上织理';
+const KR_NPS = 'kr_nps';
+const KR_WAU = 'kr_wau';
+const KR_WAU_TITLE = '周活跃用户 1200 → 2000';
+/** 默认展示态的铅笔入口：标题 / 领域 / 状态 / 信心 / 备注（`.okr-edit-pencil`）5 支 + 3 条 KR。 */
+const DISPLAY_PENCILS = 8;
+/** 铅笔 + 「新增关键结果」按钮（同为 `[data-edit-target]`）。 */
+const DISPLAY_TARGETS = DISPLAY_PENCILS + 1;
 
 const results = [];
 let failures = 0;
@@ -69,6 +81,50 @@ async function openEditor(page, id = OBJ) {
   await page.click(`[data-edit-objective="${id}"]`);
   await page.waitFor(`!!document.querySelector('.okr-editor')`, { label: 'okr editor visible' });
   await sleep(350);
+}
+
+/** 点某个编辑目标的铅笔 / 触发按钮（`title` / `notes` / `kr:<id>` / `add-kr` …）。 */
+async function clickEditTarget(page, target) {
+  await page.click(`[data-edit-target="${target}"]`);
+  await sleep(300);
+}
+
+/** 只读展示态探针：编辑视图里挂载了多少输入控件、多少支铅笔。 */
+async function progressiveSnapshot(page) {
+  return page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    const count = (selector) => editor.querySelectorAll(selector).length;
+    return {
+      inputs: count('input'),
+      selects: count('select'),
+      textareas: count('textarea'),
+      pencils: count('.okr-edit-pencil'),
+      targets: [...editor.querySelectorAll('[data-edit-target]')].map((el) => el.getAttribute('data-edit-target')),
+      displayRows: count('.okr-kr--display'),
+      editingRows: count('.okr-kr--editing'),
+      metricInputs: count('.okr-metric-input'),
+    };
+  `);
+}
+
+/** 当前编辑态探针：哪一行在编辑、输入控件落在哪里。 */
+async function editingSnapshot(page) {
+  return page.eval(`
+    const editing = [...document.querySelectorAll('.okr-kr--editing')];
+    const active = document.activeElement;
+    const editingInput = active instanceof HTMLElement ? active.closest('.okr-kr--editing') : null;
+    return {
+      editingRows: editing.length,
+      editingTitleInputs: document.querySelectorAll('.okr-kr--editing .okr-kr-title-input').length,
+      editingTitles: editing.map((el) => el.querySelector('.okr-kr-title-input')?.value ?? null),
+      metricInputs: document.querySelectorAll('.okr-metric-input').length,
+      metricInputsInEditing: document.querySelectorAll('.okr-kr--editing .okr-metric-input').length,
+      ownerInputsInEditing: document.querySelectorAll('.okr-kr--editing input[aria-label$="负责人"]').length,
+      statusSelectsInEditing: document.querySelectorAll('.okr-kr--editing select').length,
+      displayRows: document.querySelectorAll('.okr-kr--display').length,
+      focusInEditing: Boolean(editingInput),
+    };
+  `);
 }
 
 async function backToList(page) {
@@ -136,7 +192,7 @@ async function flowA(page) {
       edit: edit
         ? {
             ariaLabel: edit.getAttribute('aria-label'),
-            title: edit.getAttribute('title'),
+            text: edit.textContent.replace(/\\s+/g, ' ').trim(),
             dataEditObjective: edit.getAttribute('data-edit-objective'),
             rect: rect(edit),
             svg: Boolean(edit.querySelector('svg')),
@@ -157,11 +213,13 @@ async function flowA(page) {
   `);
 
   check(flow, '卡片存在编辑按钮（data-edit-objective 指向目标 id）', info.edit?.dataEditObjective === OBJ, info.edit);
+  // 卡片按钮从「图标 + title 提示」改成「图标 + 可见文字」（`main@c80b107`），
+  // 无障碍名称仍以 aria-label 为准，可见文字是「编辑」。
   check(
     flow,
-    '编辑按钮 aria-label = 「编辑目标：…」',
-    info.edit?.ariaLabel === `编辑目标：${OBJ_TITLE}` && info.edit?.title === `编辑目标：${OBJ_TITLE}`,
-    { ariaLabel: info.edit?.ariaLabel },
+    '编辑按钮 aria-label = 「编辑目标：…」且可见文字为「编辑」',
+    info.edit?.ariaLabel === `编辑目标：${OBJ_TITLE}` && info.edit?.text === '编辑',
+    { ariaLabel: info.edit?.ariaLabel, text: info.edit?.text },
   );
   check(
     flow,
@@ -244,7 +302,9 @@ async function flowB(page) {
     editor.krRows === 3 && editor.krTitles.length === 3,
     { krRows: editor.krRows, krTitles: editor.krTitles },
   );
-  check(flow, '显示指标输入（3 KR × 4 字段 = 12）', editor.metricInputs === 12, { metricInputs: editor.metricInputs });
+  check(flow, '默认展示态：指标输入 0 个（3 KR × 4 字段只在点铅笔后挂载）', editor.metricInputs === 0, {
+    metricInputs: editor.metricInputs,
+  });
   check(
     flow,
     '执行项概览文案「关联执行项 N · 已完成 M」',
@@ -265,7 +325,186 @@ async function flowB(page) {
     { labelledby: editor.labelledby, headingId: editor.headingId },
   );
 
+  /* ---------- 渐进式单编辑态：默认全只读，一次只展开一处 ---------- */
+  const idle = await progressiveSnapshot(page);
+  check(
+    flow,
+    '默认展示态：编辑视图内 input / select / textarea = 0',
+    idle.inputs === 0 && idle.selects === 0 && idle.textareas === 0,
+    idle,
+  );
+  check(
+    flow,
+    `默认展示态：${DISPLAY_PENCILS} 支铅笔 + 「新增关键结果」按钮（data-edit-target 共 ${DISPLAY_TARGETS} 个）`,
+    idle.pencils === DISPLAY_PENCILS &&
+      idle.targets.length === DISPLAY_TARGETS &&
+      idle.targets.includes('add-kr') &&
+      idle.targets.includes(`kr:${KR_NPS}`),
+    { pencils: idle.pencils, targets: idle.targets },
+  );
+  check(
+    flow,
+    '默认展示态：3 条 KR 都是 display 态（无 .okr-kr--editing）',
+    idle.displayRows === 3 && idle.editingRows === 0,
+    { displayRows: idle.displayRows, editingRows: idle.editingRows },
+  );
+
+  // 点第 1 条 KR 的铅笔：只有该行挂载输入控件（标题 / 指标 ×4 / 负责人 / 状态）。
+  await clickEditTarget(page, `kr:${KR_NPS}`);
+  const firstEdit = await editingSnapshot(page);
+  check(
+    flow,
+    '点 KR 铅笔：只该行进入编辑态，指标输入 4 个全在该行',
+    firstEdit.editingRows === 1 &&
+      firstEdit.metricInputs === 4 &&
+      firstEdit.metricInputsInEditing === 4 &&
+      firstEdit.displayRows === 2,
+    firstEdit,
+  );
+  check(
+    flow,
+    '该行编辑态包含标题输入 / 负责人 / 状态 / 完成按钮',
+    firstEdit.editingTitleInputs === 1 &&
+      firstEdit.ownerInputsInEditing === 1 &&
+      firstEdit.statusSelectsInEditing === 1 &&
+      firstEdit.focusInEditing === true,
+    firstEdit,
+  );
+
+  // 点第 2 条 KR 的铅笔：上一行自动结束（失焦提交），仍然只有 1 行编辑态。
+  await clickEditTarget(page, `kr:${KR_WAU}`);
+  const switched = await editingSnapshot(page);
+  check(
+    flow,
+    '切到另一条 KR：同级 KR 互斥，仍然只有 1 个 .okr-kr--editing',
+    switched.editingRows === 1 &&
+      switched.editingTitles.length === 1 &&
+      switched.editingTitles[0] === KR_WAU_TITLE &&
+      switched.metricInputs === 4 &&
+      switched.displayRows === 2,
+    switched,
+  );
+
+  // 点标题铅笔：收起 KR 编辑态，只剩标题输入。
+  await clickEditTarget(page, 'title');
+  const titleOnly = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      titleInputs: editor.querySelectorAll('input.okr-editor-title').length,
+      inputs: editor.querySelectorAll('input').length,
+      selects: editor.querySelectorAll('select').length,
+      textareas: editor.querySelectorAll('textarea').length,
+      editingRows: editor.querySelectorAll('.okr-kr--editing').length,
+      titlePencil: editor.querySelectorAll('[data-edit-target="title"]').length,
+    };
+  `);
+  check(
+    flow,
+    '点标题铅笔：只出现标题输入，KR 编辑态与其余控件全部收起',
+    titleOnly.titleInputs === 1 &&
+      titleOnly.inputs === 1 &&
+      titleOnly.selects === 0 &&
+      titleOnly.textareas === 0 &&
+      titleOnly.editingRows === 0 &&
+      titleOnly.titlePencil === 0,
+    titleOnly,
+  );
+
+  // 反过来再点 KR 铅笔：标题输入收起，仍然只有一处编辑目标（跨类型也互斥）。
+  await clickEditTarget(page, `kr:${KR_WAU}`);
+  const backToKr = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      titleInputs: editor.querySelectorAll('input.okr-editor-title').length,
+      editingRows: editor.querySelectorAll('.okr-kr--editing').length,
+      editingTitle: document.querySelector('.okr-kr--editing .okr-kr-title-input')?.value ?? null,
+      metricInputs: editor.querySelectorAll('.okr-metric-input').length,
+    };
+  `);
+  check(
+    flow,
+    '再点 KR 铅笔：标题输入收起，目标级字段与 KR 共用同一个编辑目标',
+    backToKr.titleInputs === 0 &&
+      backToKr.editingRows === 1 &&
+      backToKr.editingTitle === KR_WAU_TITLE &&
+      backToKr.metricInputs === 4,
+    backToKr,
+  );
+
+  // 行内「完成」按钮收起编辑态，回到纯展示。
+  await page.eval(`
+    const row = document.querySelector('.okr-kr--editing');
+    const button = [...row.querySelectorAll('button')].find((el) => el.textContent.trim() === '完成');
+    if (!button) throw new Error('done button missing');
+    button.click();
+    return true;
+  `);
+  await sleep(300);
+  const afterDone = await progressiveSnapshot(page);
+  check(
+    flow,
+    '行内「完成」收起编辑态，回到 0 输入控件',
+    afterDone.inputs === 0 &&
+      afterDone.selects === 0 &&
+      afterDone.textareas === 0 &&
+      afterDone.editingRows === 0 &&
+      afterDone.pencils === DISPLAY_PENCILS,
+    afterDone,
+  );
+
+  // 「新增关键结果」是一个按钮点开输入，不是常驻输入框。
+  await clickEditTarget(page, 'add-kr');
+  const addKrOpen = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      addInput: editor.querySelectorAll('.okr-add-kr-input').length,
+      inputs: editor.querySelectorAll('input').length,
+      trigger: editor.querySelectorAll('[data-edit-target="add-kr"]').length,
+      focused: document.activeElement?.classList.contains('okr-add-kr-input') ?? false,
+    };
+  `);
+  check(
+    flow,
+    '「新增关键结果」按钮点开才出现输入框（触发器同时消失）',
+    addKrOpen.addInput === 1 && addKrOpen.inputs === 1 && addKrOpen.trigger === 0 && addKrOpen.focused === true,
+    addKrOpen,
+  );
+  await page.insertText('新增一条验收 KR');
+  await pressEnter(page);
+  await page.waitFor(
+    `document.querySelectorAll('.okr-kr').length === 4 && !document.querySelector('.okr-add-kr-input')`,
+    { label: 'new KR created' },
+  );
+  await sleep(300);
+  await waitSaved(page);
+  const addedKr = await page.eval(`
+    const ws = JSON.parse(localStorage.getItem(${JSON.stringify(KEY)}));
+    const kr = ws.items.find((item) => item.kind === 'keyresult' && item.title === '新增一条验收 KR');
+    const editor = document.querySelector('.okr-editor');
+    return {
+      stored: kr ? { parentId: kr.parentId, status: kr.status, confidence: kr.okr?.confidence ?? null } : null,
+      krRows: editor.querySelectorAll('.okr-kr').length,
+      inputs: editor.querySelectorAll('input').length,
+      pencils: editor.querySelectorAll('.okr-edit-pencil').length,
+      trigger: editor.querySelectorAll('[data-edit-target="add-kr"]').length,
+    };
+  `);
+  check(
+    flow,
+    '回车创建 KR（挂在该目标下、默认信心 5）并回到展示态',
+    addedKr.stored?.parentId === OBJ &&
+      addedKr.stored?.status === 'active' &&
+      addedKr.stored?.confidence === 5 &&
+      addedKr.krRows === 4 &&
+      addedKr.inputs === 0 &&
+      addedKr.pencils === DISPLAY_PENCILS + 1 &&
+      addedKr.trigger === 1,
+    addedKr,
+  );
+
   // 执行项 N>0：通过 KR 行「关联执行项」真实关联一条已完成行动。
+  // 新行为下这条按钮只在 KR 编辑态里出现，所以先点开该行铅笔。
+  await clickEditTarget(page, `kr:${KR_NPS}`);
   // 先把全局搜索清空：LinkItemsDialog 会用 ui.search 预填筛选词（此处为 NPS）。
   await page.click('input[aria-label="搜索工作区"]');
   await page.selectAll();
@@ -276,13 +515,13 @@ async function flowB(page) {
   );
   await sleep(250);
   const linked = await page.eval(`
-    const row = document.querySelector('.okr-kr');
+    const row = document.querySelector('.okr-kr--editing');
     const button = [...row.querySelectorAll('button')].find((el) => el.textContent.trim().startsWith('关联执行项'));
     if (!button) return false;
     button.click();
     return true;
   `);
-  check(flow, '打开 KR「关联执行项」弹窗', linked === true);
+  check(flow, '打开 KR「关联执行项」弹窗（编辑态内）', linked === true);
   await page.waitFor(`!!document.querySelector('[role="dialog"][aria-label="关联执行项"]')`, { label: 'link dialog' });
   await sleep(300);
   await page.click('input[aria-label="关联「需求梳理与竞品盘点」"]');
@@ -320,9 +559,9 @@ async function flowC(page) {
   await clearAndReset(page, 'okr');
   await openEditor(page);
 
-  // 1) 标题：点击标题 → 输入 → Enter
-  await page.click('.okr-editor-title');
-  await page.waitFor(`!!document.querySelector('input.okr-editable-input')`, { label: 'title input' });
+  // 1) 标题：点标题铅笔 → 输入 → Enter（失焦提交）
+  await clickEditTarget(page, 'title');
+  await page.waitFor(`!!document.querySelector('input.okr-editor-title')`, { label: 'title input' });
   await page.selectAll();
   await page.insertText(NEW_TITLE);
   await pressEnter(page);
@@ -333,11 +572,23 @@ async function flowC(page) {
   await waitSaved(page);
   const titleState = await page.eval(`
     const ws = JSON.parse(localStorage.getItem(${JSON.stringify(KEY)}));
-    return ws.items.find((item) => item.id === ${JSON.stringify(OBJ)})?.title ?? null;
+    return {
+      title: ws.items.find((item) => item.id === ${JSON.stringify(OBJ)})?.title ?? null,
+      inputs: document.querySelector('.okr-editor').querySelectorAll('input').length,
+    };
   `);
-  check(flow, '标题修改写入 localStorage', titleState === NEW_TITLE, { title: titleState });
+  check(
+    flow,
+    '标题修改写入 localStorage，回车后收起标题输入',
+    titleState.title === NEW_TITLE && titleState.inputs === 0,
+    titleState,
+  );
 
-  // 2) KR 当前值：600ms 防抖提交
+  // 2) KR 当前值：点 KR 铅笔 → 600ms 防抖提交
+  await clickEditTarget(page, `kr:${KR_NPS}`);
+  await page.waitFor(`!!document.querySelector('input[aria-label="NPS 从 42 提升到 60 指标当前值"]')`, {
+    label: 'metric input present',
+  });
   await page.typeInto('input[aria-label="NPS 从 42 提升到 60 指标当前值"]', '55');
   await page.waitFor(
     `(() => { const ws = JSON.parse(localStorage.getItem(${JSON.stringify(KEY)})); return ws.items.find((i) => i.id === 'kr_nps')?.okr?.metric?.current === 55; })()`,
@@ -351,8 +602,22 @@ async function flowC(page) {
   `);
   check(flow, 'KR 当前值 47 → 55 写入 localStorage', metricState.current === 55 && metricState.start === 42 && metricState.target === 60, metricState);
 
-  // 3) notes：输入后 600ms 内立刻返回列表
-  await page.click('textarea.okr-editor-notes');
+  // 3) notes：点备注铅笔（自动结束上面的 KR 编辑态）→ 输入后 600ms 内立刻返回列表
+  await clickEditTarget(page, 'notes');
+  const notesMutual = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      textareas: editor.querySelectorAll('textarea').length,
+      editingRows: editor.querySelectorAll('.okr-kr--editing').length,
+      focused: document.activeElement?.classList.contains('okr-editor-notes') ?? false,
+    };
+  `);
+  check(
+    flow,
+    '点备注铅笔：自动结束 KR 编辑态，只剩备注文本域',
+    notesMutual.textareas === 1 && notesMutual.editingRows === 0 && notesMutual.focused === true,
+    notesMutual,
+  );
   await page.selectAll();
   const typedAt = Date.now();
   await page.insertText(NEW_NOTES);
@@ -366,21 +631,53 @@ async function flowC(page) {
   `);
   check(flow, 'notes 在 600ms 内切走仍写入 localStorage（未丢字）', notesState === NEW_NOTES, { notes: notesState });
 
-  // 4) 重新进入编辑视图，三项都还在
+  // 4) 重新进入编辑视图：默认仍然是零输入控件，逐字段点开才看到新值
   await openEditor(page);
-  const reopened = await page.eval(`
+  const reopenedIdle = await progressiveSnapshot(page);
+  check(
+    flow,
+    '重新进入编辑视图：仍是零输入控件的展示态',
+    reopenedIdle.inputs === 0 && reopenedIdle.selects === 0 && reopenedIdle.textareas === 0,
+    reopenedIdle,
+  );
+  const reopenedTitle = await page.eval(`return document.querySelector('.okr-editor-title')?.textContent.trim() ?? null;`);
+  await clickEditTarget(page, 'notes');
+  const reopenedNotes = await page.eval(`
     return {
-      title: document.querySelector('.okr-editor-title')?.textContent.trim() ?? null,
-      notes: document.querySelector('textarea.okr-editor-notes')?.value ?? null,
-      metric: document.querySelector('input[aria-label="NPS 从 42 提升到 60 指标当前值"]')?.value ?? null,
-      exec: document.querySelector('.okr-editor-exec-line')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
+      value: document.querySelector('textarea.okr-editor-notes')?.value ?? null,
+      display: document.querySelector('.okr-editor-notes-text')?.textContent.trim() ?? null,
     };
+  `);
+  await page.pressKey('Escape', { code: 'Escape', vk: 27 });
+  await sleep(250);
+  const notesAfterEscape = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    return {
+      inEditor: Boolean(editor),
+      textareas: editor ? editor.querySelectorAll('textarea').length : -1,
+      display: document.querySelector('.okr-editor-notes-text')?.textContent.trim() ?? null,
+    };
+  `);
+  await clickEditTarget(page, `kr:${KR_NPS}`);
+  const reopenedMetric = await page.eval(`
+    return document.querySelector('input[aria-label="NPS 从 42 提升到 60 指标当前值"]')?.value ?? null;
+  `);
+  const reopenedExec = await page.eval(`
+    return document.querySelector('.okr-editor-exec-line')?.textContent.replace(/\\s+/g, ' ').trim() ?? null;
   `);
   check(
     flow,
     '重新进入编辑视图：标题 / notes / KR 当前值都正确',
-    reopened.title === NEW_TITLE && reopened.notes === NEW_NOTES && reopened.metric === '55',
-    reopened,
+    reopenedTitle === NEW_TITLE && reopenedNotes.value === NEW_NOTES && reopenedMetric === '55',
+    { reopenedTitle, reopenedNotes, reopenedMetric, reopenedExec },
+  );
+  check(
+    flow,
+    '备注 Esc 取消只收起编辑态（值已提交、仍留在编辑视图）',
+    notesAfterEscape.inEditor === true &&
+      notesAfterEscape.textareas === 0 &&
+      notesAfterEscape.display === NEW_NOTES,
+    notesAfterEscape,
   );
 
   // 5) 刷新后仍然保留
@@ -388,13 +685,17 @@ async function flowC(page) {
   await page.waitFor(`!!document.querySelector('.okr-objectives')`, { label: 'list after reload' });
   await sleep(500);
   await openEditor(page);
+  const afterReloadTitle = await page.eval(`return document.querySelector('.okr-editor-title')?.textContent.trim() ?? null;`);
+  await clickEditTarget(page, 'notes');
+  const afterReloadNotes = await page.eval(`return document.querySelector('textarea.okr-editor-notes')?.value ?? null;`);
+  await page.pressKey('Escape', { code: 'Escape', vk: 27 });
+  await sleep(250);
+  await clickEditTarget(page, `kr:${KR_NPS}`);
   const afterReload = await page.eval(`
     const ws = JSON.parse(localStorage.getItem(${JSON.stringify(KEY)}));
     const obj = ws.items.find((item) => item.id === ${JSON.stringify(OBJ)});
     const kr = ws.items.find((item) => item.id === 'kr_nps');
     return {
-      title: document.querySelector('.okr-editor-title')?.textContent.trim() ?? null,
-      notes: document.querySelector('textarea.okr-editor-notes')?.value ?? null,
       metric: document.querySelector('input[aria-label="NPS 从 42 提升到 60 指标当前值"]')?.value ?? null,
       storedTitle: obj?.title ?? null,
       storedNotes: obj?.notes ?? null,
@@ -404,13 +705,13 @@ async function flowC(page) {
   check(
     flow,
     '刷新后标题 / notes / KR 当前值保留（DOM + 存储）',
-    afterReload.title === NEW_TITLE &&
-      afterReload.notes === NEW_NOTES &&
+    afterReloadTitle === NEW_TITLE &&
+      afterReloadNotes === NEW_NOTES &&
       afterReload.metric === '55' &&
       afterReload.storedTitle === NEW_TITLE &&
       afterReload.storedNotes === NEW_NOTES &&
       afterReload.storedCurrent === 55,
-    afterReload,
+    { afterReloadTitle, afterReloadNotes, ...afterReload },
   );
   check(flow, '2c 期间 console error = 0', consoleErrors(page).length === 0, { errors: consoleErrors(page).map((e) => e.text.slice(0, 160)) });
   await page.screenshot(`${OUT}/2c-persistence.png`);
@@ -431,6 +732,44 @@ async function flowD(page) {
   `);
   check(flow, '进入编辑视图后焦点落在「返回目标列表」', focusInEditor.isBack === true, focusInEditor);
 
+  /* ---------- Esc 两段语义：先收起编辑目标（并回退草稿），再返回列表 ---------- */
+  await clickEditTarget(page, 'title');
+  const titleBeforeEsc = await page.eval(`
+    const input = document.querySelector('input.okr-editor-title');
+    return { value: input?.value ?? null, focused: document.activeElement === input };
+  `);
+  await page.selectAll();
+  await page.insertText('这段标题不应该被提交');
+  await page.pressKey('Escape', { code: 'Escape', vk: 27 });
+  await sleep(300);
+  const firstEsc = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    const ws = JSON.parse(localStorage.getItem(${JSON.stringify(KEY)}));
+    return {
+      inEditor: Boolean(editor),
+      inputs: editor ? editor.querySelectorAll('input').length : -1,
+      title: document.querySelector('.okr-editor-title')?.textContent.trim() ?? null,
+      storedTitle: ws.items.find((item) => item.id === ${JSON.stringify(OBJ)})?.title ?? null,
+      focusTarget: document.activeElement?.getAttribute('data-edit-target') ?? null,
+    };
+  `);
+  check(
+    flow,
+    '第一下 Esc：字段内取消（回退草稿）并收起编辑态，仍留在编辑视图',
+    firstEsc.inEditor === true &&
+      firstEsc.inputs === 0 &&
+      firstEsc.title === OBJ_TITLE &&
+      firstEsc.storedTitle === OBJ_TITLE,
+    { titleBeforeEsc, ...firstEsc },
+  );
+  check(
+    flow,
+    '收起编辑态后焦点回到该字段的铅笔（data-edit-target=title）',
+    firstEsc.focusTarget === 'title',
+    { focusTarget: firstEsc.focusTarget },
+  );
+
+  // 第二下 Esc 才返回列表。
   await page.pressKey('Escape', { code: 'Escape', vk: 27 });
   await page.waitFor(`!document.querySelector('.okr-editor')`, { label: 'escape back to list' });
   await page.waitFor(`!!document.querySelector('.okr-objectives')`, { label: 'list restored' });

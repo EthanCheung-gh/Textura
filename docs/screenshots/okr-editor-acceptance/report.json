@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:1434",
+  "baseUrl": "http://localhost:1438",
   "results": [
     {
       "flow": "2a-card-edit-button",
@@ -7,13 +7,13 @@
       "ok": true,
       "detail": {
         "ariaLabel": "编辑目标：让新用户在第一周就爱上织理",
-        "title": "编辑目标：让新用户在第一周就爱上织理",
+        "text": "编辑",
         "dataEditObjective": "obj_activation",
         "rect": {
-          "x": 1311,
-          "y": 304.09375,
-          "w": 26,
-          "h": 26
+          "x": 1265.984375,
+          "y": 303.59375,
+          "w": 69.015625,
+          "h": 28
         },
         "svg": true,
         "index": 0,
@@ -22,10 +22,11 @@
     },
     {
       "flow": "2a-card-edit-button",
-      "label": "编辑按钮 aria-label = 「编辑目标：…」",
+      "label": "编辑按钮 aria-label = 「编辑目标：…」且可见文字为「编辑」",
       "ok": true,
       "detail": {
-        "ariaLabel": "编辑目标：让新用户在第一周就爱上织理"
+        "ariaLabel": "编辑目标：让新用户在第一周就爱上织理",
+        "text": "编辑"
       }
     },
     {
@@ -37,8 +38,8 @@
           "编辑目标：让新用户在第一周就爱上织理",
           "「让新用户在第一周就爱上织理」更多操作"
         ],
-        "editX": 1311,
-        "editRight": 1337,
+        "editX": 1265.984375,
+        "editRight": 1335,
         "moreX": 1337
       }
     },
@@ -124,10 +125,10 @@
     },
     {
       "flow": "2b-editor-view",
-      "label": "显示指标输入（3 KR × 4 字段 = 12）",
+      "label": "默认展示态：指标输入 0 个（3 KR × 4 字段只在点铅笔后挂载）",
       "ok": true,
       "detail": {
-        "metricInputs": 12
+        "metricInputs": 0
       }
     },
     {
@@ -179,7 +180,190 @@
     },
     {
       "flow": "2b-editor-view",
-      "label": "打开 KR「关联执行项」弹窗",
+      "label": "默认展示态：编辑视图内 input / select / textarea = 0",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": [
+          "title",
+          "area",
+          "status",
+          "confidence",
+          "notes",
+          "kr:kr_nps",
+          "kr:kr_wau",
+          "kr:kr_conversion",
+          "add-kr"
+        ],
+        "displayRows": 3,
+        "editingRows": 0,
+        "metricInputs": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "默认展示态：8 支铅笔 + 「新增关键结果」按钮（data-edit-target 共 9 个）",
+      "ok": true,
+      "detail": {
+        "pencils": 8,
+        "targets": [
+          "title",
+          "area",
+          "status",
+          "confidence",
+          "notes",
+          "kr:kr_nps",
+          "kr:kr_wau",
+          "kr:kr_conversion",
+          "add-kr"
+        ]
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "默认展示态：3 条 KR 都是 display 态（无 .okr-kr--editing）",
+      "ok": true,
+      "detail": {
+        "displayRows": 3,
+        "editingRows": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "点 KR 铅笔：只该行进入编辑态，指标输入 4 个全在该行",
+      "ok": true,
+      "detail": {
+        "editingRows": 1,
+        "editingTitleInputs": 1,
+        "editingTitles": [
+          "NPS 从 42 提升到 60"
+        ],
+        "metricInputs": 4,
+        "metricInputsInEditing": 4,
+        "ownerInputsInEditing": 1,
+        "statusSelectsInEditing": 1,
+        "displayRows": 2,
+        "focusInEditing": true
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "该行编辑态包含标题输入 / 负责人 / 状态 / 完成按钮",
+      "ok": true,
+      "detail": {
+        "editingRows": 1,
+        "editingTitleInputs": 1,
+        "editingTitles": [
+          "NPS 从 42 提升到 60"
+        ],
+        "metricInputs": 4,
+        "metricInputsInEditing": 4,
+        "ownerInputsInEditing": 1,
+        "statusSelectsInEditing": 1,
+        "displayRows": 2,
+        "focusInEditing": true
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "切到另一条 KR：同级 KR 互斥，仍然只有 1 个 .okr-kr--editing",
+      "ok": true,
+      "detail": {
+        "editingRows": 1,
+        "editingTitleInputs": 1,
+        "editingTitles": [
+          "周活跃用户 1200 → 2000"
+        ],
+        "metricInputs": 4,
+        "metricInputsInEditing": 4,
+        "ownerInputsInEditing": 1,
+        "statusSelectsInEditing": 1,
+        "displayRows": 2,
+        "focusInEditing": true
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "点标题铅笔：只出现标题输入，KR 编辑态与其余控件全部收起",
+      "ok": true,
+      "detail": {
+        "titleInputs": 1,
+        "inputs": 1,
+        "selects": 0,
+        "textareas": 0,
+        "editingRows": 0,
+        "titlePencil": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "再点 KR 铅笔：标题输入收起，目标级字段与 KR 共用同一个编辑目标",
+      "ok": true,
+      "detail": {
+        "titleInputs": 0,
+        "editingRows": 1,
+        "editingTitle": "周活跃用户 1200 → 2000",
+        "metricInputs": 4
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "行内「完成」收起编辑态，回到 0 输入控件",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": [
+          "title",
+          "area",
+          "status",
+          "confidence",
+          "notes",
+          "kr:kr_nps",
+          "kr:kr_wau",
+          "kr:kr_conversion",
+          "add-kr"
+        ],
+        "displayRows": 3,
+        "editingRows": 0,
+        "metricInputs": 0
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "「新增关键结果」按钮点开才出现输入框（触发器同时消失）",
+      "ok": true,
+      "detail": {
+        "addInput": 1,
+        "inputs": 1,
+        "trigger": 0,
+        "focused": true
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "回车创建 KR（挂在该目标下、默认信心 5）并回到展示态",
+      "ok": true,
+      "detail": {
+        "stored": {
+          "parentId": "obj_activation",
+          "status": "active",
+          "confidence": 5
+        },
+        "krRows": 4,
+        "inputs": 0,
+        "pencils": 9,
+        "trigger": 1
+      }
+    },
+    {
+      "flow": "2b-editor-view",
+      "label": "打开 KR「关联执行项」弹窗（编辑态内）",
       "ok": true
     },
     {
@@ -201,10 +385,11 @@
     },
     {
       "flow": "2c-persistence",
-      "label": "标题修改写入 localStorage",
+      "label": "标题修改写入 localStorage，回车后收起标题输入",
       "ok": true,
       "detail": {
-        "title": "让新用户在第一周就爱上织理（编辑验收）"
+        "title": "让新用户在第一周就爱上织理（编辑验收）",
+        "inputs": 0
       }
     },
     {
@@ -219,11 +404,21 @@
     },
     {
       "flow": "2c-persistence",
+      "label": "点备注铅笔：自动结束 KR 编辑态，只剩备注文本域",
+      "ok": true,
+      "detail": {
+        "textareas": 1,
+        "editingRows": 0,
+        "focused": true
+      }
+    },
+    {
+      "flow": "2c-persistence",
       "label": "在 600ms 内切回列表（实测切换耗时 < 600ms）",
       "ok": true,
       "detail": {
-        "switchMs": 287,
-        "backAtFrame": 2757.5999999996275
+        "switchMs": 274,
+        "backAtFrame": 3701
       }
     },
     {
@@ -236,13 +431,51 @@
     },
     {
       "flow": "2c-persistence",
+      "label": "重新进入编辑视图：仍是零输入控件的展示态",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": [
+          "title",
+          "area",
+          "status",
+          "confidence",
+          "notes",
+          "kr:kr_nps",
+          "kr:kr_wau",
+          "kr:kr_conversion",
+          "add-kr"
+        ],
+        "displayRows": 3,
+        "editingRows": 0,
+        "metricInputs": 0
+      }
+    },
+    {
+      "flow": "2c-persistence",
       "label": "重新进入编辑视图：标题 / notes / KR 当前值都正确",
       "ok": true,
       "detail": {
-        "title": "让新用户在第一周就爱上织理（编辑验收）",
-        "notes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
-        "metric": "55",
-        "exec": "关联执行项 0 · 已完成 0"
+        "reopenedTitle": "让新用户在第一周就爱上织理（编辑验收）",
+        "reopenedNotes": {
+          "value": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
+          "display": null
+        },
+        "reopenedMetric": "55",
+        "reopenedExec": "关联执行项 0 · 已完成 0"
+      }
+    },
+    {
+      "flow": "2c-persistence",
+      "label": "备注 Esc 取消只收起编辑态（值已提交、仍留在编辑视图）",
+      "ok": true,
+      "detail": {
+        "inEditor": true,
+        "textareas": 0,
+        "display": "验收备注：这条 notes 在停止输入 600ms 内切回列表。"
       }
     },
     {
@@ -250,8 +483,8 @@
       "label": "刷新后标题 / notes / KR 当前值保留（DOM + 存储）",
       "ok": true,
       "detail": {
-        "title": "让新用户在第一周就爱上织理（编辑验收）",
-        "notes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
+        "afterReloadTitle": "让新用户在第一周就爱上织理（编辑验收）",
+        "afterReloadNotes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
         "metric": "55",
         "storedTitle": "让新用户在第一周就爱上织理（编辑验收）",
         "storedNotes": "验收备注：这条 notes 在停止输入 600ms 内切回列表。",
@@ -277,6 +510,30 @@
     },
     {
       "flow": "2d-escape-focus-other",
+      "label": "第一下 Esc：字段内取消（回退草稿）并收起编辑态，仍留在编辑视图",
+      "ok": true,
+      "detail": {
+        "titleBeforeEsc": {
+          "value": "让新用户在第一周就爱上织理",
+          "focused": true
+        },
+        "inEditor": true,
+        "inputs": 0,
+        "title": "让新用户在第一周就爱上织理",
+        "storedTitle": "让新用户在第一周就爱上织理",
+        "focusTarget": "title"
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
+      "label": "收起编辑态后焦点回到该字段的铅笔（data-edit-target=title）",
+      "ok": true,
+      "detail": {
+        "focusTarget": "title"
+      }
+    },
+    {
+      "flow": "2d-escape-focus-other",
       "label": "Esc 返回列表，焦点回到该卡片的编辑按钮",
       "ok": true,
       "detail": {
@@ -290,7 +547,7 @@
       "label": "新建第二个目标（同季度）",
       "ok": true,
       "detail": {
-        "id": "obj_eecad56bc2",
+        "id": "obj_990589adc6",
         "title": "第二个目标：把激活率做成可复用的增长手册",
         "period": "2026-Q4"
       }

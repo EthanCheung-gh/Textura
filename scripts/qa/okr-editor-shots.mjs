@@ -1,10 +1,14 @@
 /**
- * 独立验收截图：okr-editor.png（1440×900 浅色）、okr-editor-dark.png（深色），
+ * 独立验收截图：okr-editor.png（1440×900 浅色，默认展示态）、
+ * okr-editor-editing.png（同一视图展开一条 KR 的编辑态）、okr-editor-dark.png（深色），
  * 以及 1024×720 有代表性布局差异时的 okr-editor-1024.png。
+ *
+ * 编辑视图默认零输入控件（渐进式单编辑态），所以「展示态」截图前断言
+ * input/select/textarea = 0；编辑态截图断言同级只有一个 `.okr-kr--editing`。
  *
  * 截图前统一「清 localStorage + 刷新」回到演示数据；每张截图前断言 console error = 0。
  *
- * 用法：TEXTURA_BASE_URL=http://localhost:1434 node scripts/qa/okr-editor-shots.mjs
+ * 用法：TEXTURA_BASE_URL=http://localhost:1438 node scripts/qa/okr-editor-shots.mjs
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BASE_URL, sleep, withPage } from './lib.mjs';
@@ -76,19 +80,50 @@ async function layoutSignature(page) {
     };
     const hero = document.querySelector('.okr-editor-hero');
     const fields = document.querySelector('.okr-editor-fields');
-    const notes = document.querySelector('.okr-editor-notes');
+    const notes = document.querySelector('.okr-editor-notes-text');
     return {
       viewport: { w: window.innerWidth, h: window.innerHeight },
       editorWidth: Math.round(document.querySelector('.okr-editor').getBoundingClientRect().width),
       fieldRows: rowsOf('.okr-editor-field'),
       fieldGroupHeight: Math.round(fields.getBoundingClientRect().height),
       heroHeight: Math.round(hero.getBoundingClientRect().height),
-      notesWidth: Math.round(notes.getBoundingClientRect().width),
-      krMetaRows: rowsOf('.okr-kr-meta'),
+      notesWidth: notes ? Math.round(notes.getBoundingClientRect().width) : null,
+      krActionRows: rowsOf('.okr-kr-actions'),
       firstKrHeight: Math.round(document.querySelector('.okr-kr').getBoundingClientRect().height),
       overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   `);
+}
+
+/** 展示态断言：编辑视图里既没有输入控件，也能数到每支铅笔。 */
+async function assertDisplayState(page, label) {
+  const state = await page.eval(`
+    const editor = document.querySelector('.okr-editor');
+    const count = (selector) => editor.querySelectorAll(selector).length;
+    return {
+      inputs: count('input'),
+      selects: count('select'),
+      textareas: count('textarea'),
+      pencils: count('.okr-edit-pencil'),
+      targets: count('[data-edit-target]'),
+      displayRows: count('.okr-kr--display'),
+      editingRows: count('.okr-kr--editing'),
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  `);
+  check(
+    `${label}：默认展示态（0 输入控件、8 支铅笔、无编辑态）`,
+    state.inputs === 0 &&
+      state.selects === 0 &&
+      state.textareas === 0 &&
+      state.pencils === 8 &&
+      state.targets === 9 &&
+      state.displayRows === 3 &&
+      state.editingRows === 0 &&
+      state.overflowX === 0,
+    state,
+  );
+  return state;
 }
 
 async function main() {
@@ -108,10 +143,75 @@ async function main() {
     const beforeLight = errors(page);
     check('浅色编辑视图 console error = 0', beforeLight.length === 0, { errors: beforeLight });
     const lightSig = await layoutSignature(page);
+    await assertDisplayState(page, 'okr-editor.png');
     await page.eval(`document.querySelector('.okr-page')?.scrollIntoView({ block: 'start' }); window.scrollTo(0, 0); return true;`);
     await sleep(250);
     await page.screenshot(`${SHOTS}/okr-editor.png`);
-    check('已生成 docs/screenshots/okr-editor.png（1440×900）', true, lightSig);
+    check('已生成 docs/screenshots/okr-editor.png（1440×900 展示态）', true, lightSig);
+
+    /* ---------------- 1440×900 浅色 · 展开一条 KR 的编辑态 ---------------- */
+    await page.click('[data-edit-target^="kr:"]');
+    await page.waitFor(`document.querySelectorAll('.okr-kr--editing').length === 1`, {
+      label: 'first KR editing',
+    });
+    await sleep(350);
+    const editingState = await page.eval(`
+      const row = document.querySelector('.okr-kr--editing');
+      row.scrollIntoView({ block: 'center' });
+      const inViewport = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight;
+      };
+      const inputs = [...row.querySelectorAll('.okr-metric-input')];
+      return {
+        editingRows: document.querySelectorAll('.okr-kr--editing').length,
+        displayRows: document.querySelectorAll('.okr-kr--display').length,
+        metricInputs: inputs.length,
+        metricInputsInViewport: inputs.filter(inViewport).length,
+        ownerVisible: inViewport(row.querySelector('input[aria-label$="负责人"]')),
+        statusVisible: inViewport(row.querySelector('select')),
+        doneVisible: [...row.querySelectorAll('button')].some(
+          (el) => el.textContent.trim() === '完成' && inViewport(el),
+        ),
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    `);
+    await sleep(300);
+    const editingErrors = errors(page);
+    check('okr-editor-editing.png：编辑态 console error = 0', editingErrors.length === 0, { errors: editingErrors });
+    check(
+      '编辑态只有一个 .okr-kr--editing，指标 / 负责人 / 状态 / 完成都在视口内',
+      editingState.editingRows === 1 &&
+        editingState.displayRows === 2 &&
+        editingState.metricInputs === 4 &&
+        editingState.metricInputsInViewport === 4 &&
+        editingState.ownerVisible === true &&
+        editingState.statusVisible === true &&
+        editingState.doneVisible === true &&
+        editingState.overflowX === 0,
+      editingState,
+    );
+    await page.screenshot(`${SHOTS}/okr-editor-editing.png`);
+    check('已生成 docs/screenshots/okr-editor-editing.png（1440×900 单 KR 编辑态）', true, editingState);
+
+    // 收起到展示态，避免影响后续的 1024 布局对比与深色截图。
+    await page.pressKey('Escape', { code: 'Escape', vk: 27 });
+    await sleep(400);
+    const collapsed = await page.eval(`
+      const editor = document.querySelector('.okr-editor');
+      return {
+        inEditor: Boolean(editor),
+        editingRows: editor ? editor.querySelectorAll('.okr-kr--editing').length : -1,
+        inputs: editor ? editor.querySelectorAll('input').length : -1,
+      };
+    `);
+    check(
+      'Esc 收起编辑态（仍在编辑视图，回到零输入控件）',
+      collapsed.inEditor === true && collapsed.editingRows === 0 && collapsed.inputs === 0,
+      collapsed,
+    );
+    await page.eval(`window.scrollTo(0, 0); return true;`);
+    await sleep(250);
 
     /* ---------------- 1024×720（浅色，布局差异判定） ---------------- */
     await page.setViewport(1024, 720);
@@ -120,23 +220,22 @@ async function main() {
     const representative =
       narrowSig.fieldRows !== lightSig.fieldRows ||
       Math.abs(narrowSig.heroHeight - lightSig.heroHeight) > 24 ||
-      narrowSig.krMetaRows !== lightSig.krMetaRows ||
+      narrowSig.krActionRows !== lightSig.krActionRows ||
       Math.abs(narrowSig.firstKrHeight - lightSig.firstKrHeight) > 20;
-    check('1024×720 布局与 1440 对比（判断是否有代表性差异）', true, {
+    check('1024×720 布局与 1440 对比（诊断信息，决定是否值得单独说明）', true, {
       representative,
       wide: lightSig,
       narrow: narrowSig,
     });
-    if (representative) {
-      const narrowErrors = errors(page);
-      check('1024 编辑视图 console error = 0（截图前）', narrowErrors.length === 0, { errors: narrowErrors });
-      await page.eval(`window.scrollTo(0, 0); return true;`);
-      await sleep(250);
-      await page.screenshot(`${SHOTS}/okr-editor-1024.png`);
-      check('已生成 docs/screenshots/okr-editor-1024.png（1024×720）', true);
-    } else {
-      check('1024 无代表性差异，跳过 okr-editor-1024.png', true, { wide: lightSig, narrow: narrowSig });
-    }
+    // 无论是否「有代表性差异」都重新生成这张图：编辑视图改版后仓库里的旧图会
+    // 停留在已移除的常驻输入控件上，比缺图更容易误导。
+    const narrowErrors = errors(page);
+    check('1024 编辑视图 console error = 0（截图前）', narrowErrors.length === 0, { errors: narrowErrors });
+    await assertDisplayState(page, 'okr-editor-1024.png');
+    await page.eval(`window.scrollTo(0, 0); return true;`);
+    await sleep(250);
+    await page.screenshot(`${SHOTS}/okr-editor-1024.png`);
+    check('已生成 docs/screenshots/okr-editor-1024.png（1024×720 展示态）', true, { representative });
     await page.setViewport(1440, 900);
     await sleep(500);
 
@@ -154,10 +253,11 @@ async function main() {
     });
     const darkErrors = errors(page);
     check('深色编辑视图 console error = 0', darkErrors.length === 0, { errors: darkErrors });
+    await assertDisplayState(page, 'okr-editor-dark.png');
     await page.eval(`window.scrollTo(0, 0); return true;`);
     await sleep(250);
     await page.screenshot(`${SHOTS}/okr-editor-dark.png`);
-    check('已生成 docs/screenshots/okr-editor-dark.png', true);
+    check('已生成 docs/screenshots/okr-editor-dark.png（展示态）', true);
   });
 
   writeFileSync(`${SHOTS}/okr-editor-shots-report.json`, JSON.stringify({ baseUrl: BASE_URL, results }, null, 2));

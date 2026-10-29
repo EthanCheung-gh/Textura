@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:1434",
+  "baseUrl": "http://localhost:1438",
   "results": [
     {
       "label": "截图前工作区为演示数据（清 localStorage 后重新播种）",
@@ -27,7 +27,21 @@
       }
     },
     {
-      "label": "已生成 docs/screenshots/okr-editor.png（1440×900）",
+      "label": "okr-editor.png：默认展示态（0 输入控件、8 支铅笔、无编辑态）",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": 9,
+        "displayRows": 3,
+        "editingRows": 0,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor.png（1440×900 展示态）",
       "ok": true,
       "detail": {
         "viewport": {
@@ -35,32 +49,76 @@
           "h": 900
         },
         "editorWidth": 1080,
-        "fieldRows": 2,
-        "fieldGroupHeight": 55,
-        "heroHeight": 326,
+        "fieldRows": 1,
+        "fieldGroupHeight": 53,
+        "heroHeight": 250,
         "notesWidth": 1030,
-        "krMetaRows": 3,
-        "firstKrHeight": 121,
+        "krActionRows": 3,
+        "firstKrHeight": 92,
         "overflowX": 0
       }
     },
     {
-      "label": "1024×720 布局与 1440 对比（判断是否有代表性差异）",
+      "label": "okr-editor-editing.png：编辑态 console error = 0",
       "ok": true,
       "detail": {
-        "representative": true,
+        "errors": []
+      }
+    },
+    {
+      "label": "编辑态只有一个 .okr-kr--editing，指标 / 负责人 / 状态 / 完成都在视口内",
+      "ok": true,
+      "detail": {
+        "editingRows": 1,
+        "displayRows": 2,
+        "metricInputs": 4,
+        "metricInputsInViewport": 4,
+        "ownerVisible": true,
+        "statusVisible": true,
+        "doneVisible": true,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor-editing.png（1440×900 单 KR 编辑态）",
+      "ok": true,
+      "detail": {
+        "editingRows": 1,
+        "displayRows": 2,
+        "metricInputs": 4,
+        "metricInputsInViewport": 4,
+        "ownerVisible": true,
+        "statusVisible": true,
+        "doneVisible": true,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "Esc 收起编辑态（仍在编辑视图，回到零输入控件）",
+      "ok": true,
+      "detail": {
+        "inEditor": true,
+        "editingRows": 0,
+        "inputs": 0
+      }
+    },
+    {
+      "label": "1024×720 布局与 1440 对比（诊断信息，决定是否值得单独说明）",
+      "ok": true,
+      "detail": {
+        "representative": false,
         "wide": {
           "viewport": {
             "w": 1440,
             "h": 900
           },
           "editorWidth": 1080,
-          "fieldRows": 2,
-          "fieldGroupHeight": 55,
-          "heroHeight": 326,
+          "fieldRows": 1,
+          "fieldGroupHeight": 53,
+          "heroHeight": 250,
           "notesWidth": 1030,
-          "krMetaRows": 3,
-          "firstKrHeight": 121,
+          "krActionRows": 3,
+          "firstKrHeight": 92,
           "overflowX": 0
         },
         "narrow": {
@@ -69,12 +127,12 @@
             "h": 720
           },
           "editorWidth": 736,
-          "fieldRows": 2,
-          "fieldGroupHeight": 55,
-          "heroHeight": 326,
+          "fieldRows": 1,
+          "fieldGroupHeight": 53,
+          "heroHeight": 250,
           "notesWidth": 686,
-          "krMetaRows": 3,
-          "firstKrHeight": 155,
+          "krActionRows": 3,
+          "firstKrHeight": 92,
           "overflowX": 0
         }
       }
@@ -87,8 +145,25 @@
       }
     },
     {
-      "label": "已生成 docs/screenshots/okr-editor-1024.png（1024×720）",
-      "ok": true
+      "label": "okr-editor-1024.png：默认展示态（0 输入控件、8 支铅笔、无编辑态）",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": 9,
+        "displayRows": 3,
+        "editingRows": 0,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor-1024.png（1024×720 展示态）",
+      "ok": true,
+      "detail": {
+        "representative": false
+      }
     },
     {
       "label": "深色主题重载后工作区仍是演示数据",
@@ -110,7 +185,21 @@
       }
     },
     {
-      "label": "已生成 docs/screenshots/okr-editor-dark.png",
+      "label": "okr-editor-dark.png：默认展示态（0 输入控件、8 支铅笔、无编辑态）",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "pencils": 8,
+        "targets": 9,
+        "displayRows": 3,
+        "editingRows": 0,
+        "overflowX": 0
+      }
+    },
+    {
+      "label": "已生成 docs/screenshots/okr-editor-dark.png（展示态）",
       "ok": true
     }
   ]

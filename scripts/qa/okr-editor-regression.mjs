@@ -2,7 +2,11 @@
  * 独立验收回归：7 条路由 + OKR 列表态控件 / 表格 / 对齐视图
  * + 快速收集 / 甘特拖拽 / 日历添加各抽测 1 条。
  *
- * 用法：TEXTURA_BASE_URL=http://localhost:1434 node scripts/qa/okr-editor-regression.mjs
+ * 列表卡片自 `main@c80b107` 起只读，编辑视图自 `main@011c518` 起渐进式单编辑态：
+ * 这里的密度断言改为「两种密度都不挂载输入控件」，并把「指标就地编辑」收到
+ * 仍然保留该能力的表格视图（展开 KR 行）上验证。
+ *
+ * 用法：TEXTURA_BASE_URL=http://localhost:1438 node scripts/qa/okr-editor-regression.mjs
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { BASE_URL, sleep, withPage } from './lib.mjs';
@@ -201,23 +205,39 @@ async function flowOkrList(page) {
     editButtons: controls.editButtons,
   });
 
-  // 密度切换：紧凑隐藏指标编辑器
+  // 密度切换：卡片只读（`main@c80b107` 起），两种密度都不挂载输入控件。
   await clickText(page, '紧凑');
   const compact = await page.eval(`
+    const cards = document.querySelector('.okr-objectives');
     return {
       rows: document.querySelectorAll('.okr-kr--compact').length,
+      readOnlyRows: document.querySelectorAll('.okr-kr--readonly').length,
       metricInputs: document.querySelectorAll('.okr-metric-input').length,
+      cardInputs: cards ? cards.querySelectorAll('input, select, textarea, [contenteditable="true"]').length : -1,
     };
   `);
-  check(flow, '密度「紧凑」隐藏指标输入', compact.rows === 3 && compact.metricInputs === 0, compact);
+  check(
+    flow,
+    '密度「紧凑」：KR 行只读，卡片内 0 个输入控件',
+    compact.rows === 3 && compact.readOnlyRows === 3 && compact.metricInputs === 0 && compact.cardInputs === 0,
+    compact,
+  );
   await clickText(page, '详细');
   const detailed = await page.eval(`
+    const cards = document.querySelector('.okr-objectives');
     return {
       rows: document.querySelectorAll('.okr-kr--detailed').length,
+      readOnlyRows: document.querySelectorAll('.okr-kr--readonly').length,
       metricInputs: document.querySelectorAll('.okr-metric-input').length,
+      cardInputs: cards ? cards.querySelectorAll('input, select, textarea, [contenteditable="true"]').length : -1,
     };
   `);
-  check(flow, '密度「详细」恢复指标输入（12 个）', detailed.rows === 3 && detailed.metricInputs === 12, detailed);
+  check(
+    flow,
+    '密度「详细」仍保持只读（列表卡片 0 个指标输入）',
+    detailed.rows === 3 && detailed.readOnlyRows === 3 && detailed.metricInputs === 0 && detailed.cardInputs === 0,
+    detailed,
+  );
 
   // 表格视图
   await clickText(page, '表格');
@@ -237,6 +257,35 @@ async function flowOkrList(page) {
     '表格视图渲染目标与 3 条 KR，无横向溢出',
     table.exists && table.objectiveRows === 1 && table.text.includes('NPS 从 42 提升到 60') && table.overflowX === 0,
     table,
+  );
+
+  // 表格视图仍保留指标就地编辑：展开一条 KR 才挂载 4 个指标输入。
+  await page.eval(`
+    const button = document.querySelector('.okr-table-kr-btn');
+    if (!button) throw new Error('table KR expand button missing');
+    button.click();
+    return true;
+  `);
+  await sleep(350);
+  const tableExpanded = await page.eval(`
+    const detail = document.querySelector('.okr-table-detail');
+    return {
+      expanded: Boolean(detail),
+      metricInputs: document.querySelectorAll('.okr-metric-input').length,
+      metricInputsInDetail: detail ? detail.querySelectorAll('.okr-metric-input').length : -1,
+      ariaExpanded: document.querySelector('.okr-table-kr-btn')?.getAttribute('aria-expanded') ?? null,
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  `);
+  check(
+    flow,
+    '表格视图展开 KR 后仍有指标就地编辑（4 个指标输入）',
+    tableExpanded.expanded === true &&
+      tableExpanded.metricInputs === 4 &&
+      tableExpanded.metricInputsInDetail === 4 &&
+      tableExpanded.ariaExpanded === 'true' &&
+      tableExpanded.overflowX === 0,
+    tableExpanded,
   );
   await page.screenshot(`${OUT}/3-okr-table.png`);
 

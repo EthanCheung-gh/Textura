@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:1434",
+  "baseUrl": "http://localhost:1438",
   "results": [
     {
       "flow": "4-a11y-semantics",
@@ -35,6 +35,30 @@
       "ok": true,
       "detail": {
         "active": "返回目标列表"
+      }
+    },
+    {
+      "flow": "4-a11y-semantics",
+      "label": "默认展示态零输入控件，每个编辑入口都是 button 且有可访问名（aria-label 或可见文字）",
+      "ok": true,
+      "detail": {
+        "inputs": 0,
+        "selects": 0,
+        "textareas": 0,
+        "targets": [
+          "title",
+          "area",
+          "status",
+          "confidence",
+          "notes",
+          "kr:kr_nps",
+          "kr:kr_wau",
+          "kr:kr_conversion",
+          "add-kr"
+        ],
+        "unnamed": [],
+        "labelled": 8,
+        "buttons": 9
       }
     },
     {
@@ -109,6 +133,31 @@
       }
     },
     {
+      "flow": "4-1024x720",
+      "label": "1024 展开一条 KR 的编辑态：4 个指标输入且无横向溢出",
+      "ok": true,
+      "detail": {
+        "expandedBox": {
+          "editingRows": 1,
+          "metricInputs": 4,
+          "metricInputsInRow": 4,
+          "rowWidth": 734,
+          "rowScrollWidth": 734,
+          "viewport": 1024
+        },
+        "offenders": [],
+        "scrollWidth": 1024
+      }
+    },
+    {
+      "flow": "4-1024x720",
+      "label": "1024 展开态 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
       "flow": "4-dark-contrast",
       "label": "深色主题已生效（html[data-theme=dark]）",
       "ok": true,
@@ -141,7 +190,7 @@
       "detail": {
         "label": "KR 标题",
         "selector": ".okr-kr-title",
-        "text": "NPS 从 42 提升到 60",
+        "text": "周活跃用户 1200 → 2000",
         "fontSize": "13.5px",
         "fontWeight": "600",
         "color": "rgb(236, 228, 218)",
@@ -161,9 +210,9 @@
         "fontSize": "11px",
         "fontWeight": "400",
         "color": "rgb(179, 168, 155)",
-        "bg": "#26221e",
+        "bg": "#2f2a25",
         "fgHex": "#b3a89b",
-        "ratio": 6.76
+        "ratio": 6.08
       }
     },
     {
@@ -173,7 +222,7 @@
       "detail": {
         "label": "执行项概览提示（11.5px muted）",
         "selector": ".okr-editor-hint",
-        "text": "还没有关联执行项。在上方关键结果点击「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。",
+        "text": "还没有关联执行项。展开某条关键结果后点「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。",
         "fontSize": "11.5px",
         "fontWeight": "400",
         "color": "rgb(179, 168, 155)",
@@ -204,6 +253,16 @@
       "ok": true,
       "detail": {
         "errors": []
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色下 Esc 收起 KR 编辑态（仍留在编辑视图、零输入控件）",
+      "ok": true,
+      "detail": {
+        "inEditor": true,
+        "editingRows": 0,
+        "inputs": 0
       }
     }
   ]

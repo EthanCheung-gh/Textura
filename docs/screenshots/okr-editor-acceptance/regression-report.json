@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:1434",
+  "baseUrl": "http://localhost:1438",
   "results": [
     {
       "flow": "3-routes",
@@ -35,7 +35,7 @@
         "route": "okr",
         "rootPresent": true,
         "overflowX": 0,
-        "mainTextLength": 701,
+        "mainTextLength": 450,
         "boundary": false,
         "errors": []
       }
@@ -172,20 +172,24 @@
     },
     {
       "flow": "3-okr-list-controls",
-      "label": "密度「紧凑」隐藏指标输入",
+      "label": "密度「紧凑」：KR 行只读，卡片内 0 个输入控件",
       "ok": true,
       "detail": {
         "rows": 3,
-        "metricInputs": 0
+        "readOnlyRows": 3,
+        "metricInputs": 0,
+        "cardInputs": 0
       }
     },
     {
       "flow": "3-okr-list-controls",
-      "label": "密度「详细」恢复指标输入（12 个）",
+      "label": "密度「详细」仍保持只读（列表卡片 0 个指标输入）",
       "ok": true,
       "detail": {
         "rows": 3,
-        "metricInputs": 12
+        "readOnlyRows": 3,
+        "metricInputs": 0,
+        "cardInputs": 0
       }
     },
     {
@@ -198,6 +202,18 @@
         "objectiveRows": 1,
         "krRows": 4,
         "text": "季度 OKR 复盘表\n目标\t关键结果\t指标\t当前进度\t信心\t执行项\n\n让新用户在第一周就爱上织理\n进行中\n3 KR · 信心 6\n29%\n\n让新用户在第一周就爱上织理\t\nNPS 从 42 提升到 60\n\t42 → 60 分\t\n28%\n\t\n4 · 中\t0\n让新用户在第一周就爱上织理\t\n周活跃用户 1200 → 2000\n",
+        "overflowX": 0
+      }
+    },
+    {
+      "flow": "3-okr-list-controls",
+      "label": "表格视图展开 KR 后仍有指标就地编辑（4 个指标输入）",
+      "ok": true,
+      "detail": {
+        "expanded": true,
+        "metricInputs": 4,
+        "metricInputsInDetail": 4,
+        "ariaExpanded": "true",
         "overflowX": 0
       }
     },
@@ -231,7 +247,7 @@
       "label": "快速收集 1 条：action + inbox + 标签/场景解析",
       "ok": true,
       "detail": {
-        "id": "act_f969caab09",
+        "id": "act_0d643245fb",
         "kind": "action",
         "status": "inbox",
         "tags": [
@@ -320,7 +336,7 @@
       "label": "日历添加 1 条：action + next + start=end=今天",
       "ok": true,
       "detail": {
-        "id": "act_04ffc535ee",
+        "id": "act_c5e8286b7e",
         "kind": "action",
         "status": "next",
         "start": "2026-10-29",

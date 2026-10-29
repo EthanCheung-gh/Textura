@@ -129,6 +129,10 @@
 - **OKR 列表卡片改为只读**：卡片与子 KR 行不再渲染 `input/textarea/select/contenteditable`，
   标题、指标、负责人、状态、信心只显示，执行项只给「执行项 N · 已完成 M」摘要；
   所有编辑集中在目标编辑视图（卡片输入控件 19 → 0，卡片 DOM 269 → 128，−52%）。
+- **OKR 编辑视图改为渐进式单编辑态**：打开编辑视图时不再挂载任何 `input/select/textarea`（实测 0 个，
+  只有 8 支铅笔 + 「新增关键结果」按钮），标题 / 领域 / 状态 / 信心 / 备注 / 每条 KR 各自点开才渲染输入；
+  任何时刻只有一个编辑目标，同级 KR 互斥（DOM 里最多一个 `.okr-kr--editing`），点另一处会先提交并收起上一处；
+  `Esc` 两段语义（先取消当前字段并收起编辑态，再按才返回列表），收起后焦点回到该字段的铅笔。
 - 许可证由 MIT 切换为 Apache License 2.0（© 2026 EthanCheung），新增 `NOTICE`；
   `package.json` / `Cargo.toml` / `tauri.conf.json` 的 license 元数据同步为 `Apache-2.0`。
 
