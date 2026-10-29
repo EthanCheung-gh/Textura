@@ -25,6 +25,8 @@ interface ObjectiveCardProps {
   keyResults: Item[];
   elapsedPercent: number;
   density: OkrDensity;
+  /** 打开独立页面式的目标编辑视图。 */
+  onEdit: (id: string) => void;
 }
 
 export function ObjectiveCard({
@@ -33,6 +35,7 @@ export function ObjectiveCard({
   keyResults,
   elapsedPercent,
   density,
+  onEdit,
 }: ObjectiveCardProps) {
   const updateItem = useWorkspace((state) => state.updateItem);
   const updateItems = useWorkspace((state) => state.updateItems);
@@ -190,6 +193,14 @@ export function ObjectiveCard({
         </div>
 
         <div className="okr-objective-tools" ref={menuRef}>
+          <IconButton
+            label={`编辑目标：${objective.title}`}
+            size="sm"
+            data-edit-objective={objective.id}
+            onClick={() => onEdit(objective.id)}
+          >
+            <Icon name="edit" size={15} />
+          </IconButton>
           <IconButton
             label={`「${objective.title}」更多操作`}
             size="sm"

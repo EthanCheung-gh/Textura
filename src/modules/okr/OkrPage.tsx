@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useWorkspace } from '../../core/store';
 import { objectivesOfPeriod, okrPeriods } from '../../core/selectors';
@@ -14,6 +14,7 @@ import { Segmented } from '../../ui/Segmented';
 import { filterObjectives, nextQuarter, quarterLabel, summarize } from './okrMath';
 import type { OkrDensity, OkrView } from './okrMath';
 import { ObjectiveCard } from './ObjectiveCard';
+import { ObjectiveEditor } from './ObjectiveEditor';
 import { OkrTable } from './OkrTable';
 import { OkrAlignment } from './OkrAlignment';
 import { QuarterDialog } from './QuarterDialog';
@@ -47,6 +48,35 @@ export function OkrPage() {
   const [objectiveNotes, setObjectiveNotes] = useState('');
   const [objectiveAreaId, setObjectiveAreaId] = useState('');
   const [titleError, setTitleError] = useState('');
+  // 独立页面式编辑视图：null = 列表态。
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const restoreFocusId = useRef<string | null>(null);
+
+  const openEditor = useCallback(
+    (id: string) => {
+      setEditingId(id);
+      select(id);
+    },
+    [select],
+  );
+
+  const closeEditor = useCallback((id: string | null) => {
+    restoreFocusId.current = id;
+    setEditingId(null);
+  }, []);
+
+  // 返回列表后把焦点还给对应卡片的编辑按钮（目标已删除时没有可聚焦元素，跳过）。
+  useEffect(() => {
+    if (editingId !== null) return;
+    const id = restoreFocusId.current;
+    if (!id) return;
+    restoreFocusId.current = null;
+    const frame = requestAnimationFrame(() => {
+      const target = document.querySelector(`[data-edit-objective="${id}"]`);
+      if (target instanceof HTMLElement) target.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [editingId]);
 
   const summary = useMemo(() => summarize(workspace, period), [workspace, period]);
   const filtered = useMemo(
@@ -103,195 +133,210 @@ export function OkrPage() {
           </p>
         </div>
         <div className="page-actions okr-header-actions">
-          {view === 'cards' ? (
-            <Segmented<OkrDensity>
-              options={DENSITY_OPTIONS}
-              value={density}
-              onChange={setDensity}
-              size="sm"
-              ariaLabel="切换卡片密度"
-            />
+          {editingId === null ? (
+            <>
+              {view === 'cards' ? (
+                <Segmented<OkrDensity>
+                  options={DENSITY_OPTIONS}
+                  value={density}
+                  onChange={setDensity}
+                  size="sm"
+                  ariaLabel="切换卡片密度"
+                />
+              ) : null}
+              <Segmented<OkrView>
+                options={VIEW_OPTIONS}
+                value={view}
+                onChange={setView}
+                size="sm"
+                ariaLabel="切换 OKR 视图"
+              />
+              <Button
+                variant="primary"
+                iconLeft={<Icon name="plus" size={14} />}
+                onClick={openNewObjective}
+              >
+                新建目标
+              </Button>
+            </>
           ) : null}
-          <Segmented<OkrView>
-            options={VIEW_OPTIONS}
-            value={view}
-            onChange={setView}
-            size="sm"
-            ariaLabel="切换 OKR 视图"
-          />
-          <Button
-            variant="primary"
-            iconLeft={<Icon name="plus" size={14} />}
-            onClick={openNewObjective}
-          >
-            新建目标
-          </Button>
         </div>
       </div>
 
-      <section className="okr-periodbar" aria-label="季度切换">
-        <div className="okr-periods" role="group" aria-label="选择季度">
-          {periodOptions.map((option) => {
-            const active = option === period;
-            const count = objectivesOfPeriod(workspace, option).length;
-            const isCurrent = option === currentQuarter();
-            return (
-              <button
-                key={option}
-                type="button"
-                className={clsx('okr-period-chip', active && 'is-active')}
-                aria-pressed={active}
-                onClick={() => setUi({ okrPeriod: option })}
-              >
-                <span>{quarterLabel(option)}</span>
-                <span className="okr-period-count" aria-label={`${count} 个目标`}>
-                  {count}
-                </span>
-                {isCurrent ? <span className="okr-period-now">本季</span> : null}
-              </button>
-            );
-          })}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconLeft={<Icon name="plus" size={13} />}
-          onClick={() => setNewQuarterOpen(true)}
-        >
-          新建季度
-        </Button>
-      </section>
-
-      <section className="okr-health" aria-label="季度健康度">
-        <div className="okr-health-stats">
-          <div className="okr-stat">
-            <span className="okr-stat-value mono">{summary.objectives}</span>
-            <span className="okr-stat-label">目标</span>
-          </div>
-          <div className="okr-stat">
-            <span className="okr-stat-value mono">{summary.keyResults}</span>
-            <span className="okr-stat-label">关键结果</span>
-          </div>
-          <div className="okr-stat">
-            <span className="okr-stat-value mono">{summary.averageProgress}%</span>
-            <span className="okr-stat-label">平均进度</span>
-          </div>
-          <div className="okr-stat" data-tone={summary.behind > 0 ? 'danger' : 'ok'}>
-            <span className="okr-stat-value mono">{summary.behind}</span>
-            <span className="okr-stat-label">落后 KR</span>
-          </div>
-        </div>
-        <div className="okr-health-side">
-          <div className="okr-conf-summary">
-            <span className="okr-conf-summary-label">信心分布</span>
-            <Badge tone="danger" dot>
-              低 1–3 · {summary.confidence.low}
-            </Badge>
-            <Badge tone="warn" dot>
-              中 4–6 · {summary.confidence.mid}
-            </Badge>
-            <Badge tone="ok" dot>
-              高 7–10 · {summary.confidence.high}
-            </Badge>
-          </div>
-          <div className="okr-time">
-            <span className="okr-time-label">季度时间进度</span>
-            <Progress
-              value={summary.elapsedPercent}
-              size="sm"
-              tone="info"
-              ariaLabel="季度时间进度"
-            />
-            <span className="mono">{summary.elapsedPercent}%</span>
-          </div>
-        </div>
-      </section>
-
-      {hasQuery ? (
-        <div className="okr-filter-note">
-          <Icon name="search" size={14} />
-          <span>
-            筛选「{search.trim()}」· {filtered.length} 个目标
-          </span>
-          <Button variant="ghost" size="sm" onClick={() => setUi({ search: '' })}>
-            清除筛选
-          </Button>
-        </div>
-      ) : null}
-
-      {filtered.length === 0 ? (
-        hasQuery ? (
-          <div className="okr-empty">
-            <EmptyState
-              icon={<Icon name="search" size={20} />}
-              title="没有匹配的目标或 KR"
-              description={`「${search.trim()}」没有命中 ${quarterLabel(period)} 的目标、关键结果、负责人或 Area。`}
-              action={
-                <Button variant="secondary" onClick={() => setUi({ search: '' })}>
-                  清除筛选
-                </Button>
-              }
-            />
-          </div>
-        ) : (
-          <div className="okr-empty">
-            <EmptyState
-              icon={<Icon name="target" size={20} />}
-              title="本季度还没有目标"
-              description="先写一个定性的目标（O），再用 2–4 个可量化的关键结果（KR）定义「做到了」。例如：目标「让新用户第一周就爱上织理」，KR「NPS 从 42 提升到 60」。"
-              action={
-                <Button
-                  variant="primary"
-                  iconLeft={<Icon name="plus" size={14} />}
-                  onClick={openNewObjective}
-                >
-                  新建本季度目标
-                </Button>
-              }
-            />
-            <div className="okr-empty-tips">
-              <div>
-                <strong>目标（O）</strong>
-                <span>一句定性描述，方向明确、鼓舞人心，不堆数字。</span>
-              </div>
-              <div>
-                <strong>关键结果（KR）</strong>
-                <span>可量化、可验证，带起点与目标值，2–4 个即可。</span>
-              </div>
-              <div>
-                <strong>执行项</strong>
-                <span>把甘特 / GTD 里的项目与行动关联到 KR，形成抓手。</span>
-              </div>
-            </div>
-          </div>
-        )
-      ) : view === 'table' ? (
-        <OkrTable
-          workspace={workspace}
-          entries={filtered}
-          elapsedPercent={summary.elapsedPercent}
-          resetKey={`${period}|${search}`}
-        />
-      ) : view === 'alignment' ? (
-        <OkrAlignment
-          workspace={workspace}
-          entries={filtered}
-          elapsedPercent={summary.elapsedPercent}
-          period={period}
+      {editingId !== null ? (
+        <ObjectiveEditor
+          key={editingId}
+          objectiveId={editingId}
+          onBack={() => closeEditor(editingId)}
         />
       ) : (
-        <div className="okr-objectives">
-          {filtered.map(({ objective, keyResults }) => (
-            <ObjectiveCard
-              key={objective.id}
+        <>
+          <section className="okr-periodbar" aria-label="季度切换">
+            <div className="okr-periods" role="group" aria-label="选择季度">
+              {periodOptions.map((option) => {
+                const active = option === period;
+                const count = objectivesOfPeriod(workspace, option).length;
+                const isCurrent = option === currentQuarter();
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={clsx('okr-period-chip', active && 'is-active')}
+                    aria-pressed={active}
+                    onClick={() => setUi({ okrPeriod: option })}
+                  >
+                    <span>{quarterLabel(option)}</span>
+                    <span className="okr-period-count" aria-label={`${count} 个目标`}>
+                      {count}
+                    </span>
+                    {isCurrent ? <span className="okr-period-now">本季</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconLeft={<Icon name="plus" size={13} />}
+              onClick={() => setNewQuarterOpen(true)}
+            >
+              新建季度
+            </Button>
+          </section>
+
+          <section className="okr-health" aria-label="季度健康度">
+            <div className="okr-health-stats">
+              <div className="okr-stat">
+                <span className="okr-stat-value mono">{summary.objectives}</span>
+                <span className="okr-stat-label">目标</span>
+              </div>
+              <div className="okr-stat">
+                <span className="okr-stat-value mono">{summary.keyResults}</span>
+                <span className="okr-stat-label">关键结果</span>
+              </div>
+              <div className="okr-stat">
+                <span className="okr-stat-value mono">{summary.averageProgress}%</span>
+                <span className="okr-stat-label">平均进度</span>
+              </div>
+              <div className="okr-stat" data-tone={summary.behind > 0 ? 'danger' : 'ok'}>
+                <span className="okr-stat-value mono">{summary.behind}</span>
+                <span className="okr-stat-label">落后 KR</span>
+              </div>
+            </div>
+            <div className="okr-health-side">
+              <div className="okr-conf-summary">
+                <span className="okr-conf-summary-label">信心分布</span>
+                <Badge tone="danger" dot>
+                  低 1–3 · {summary.confidence.low}
+                </Badge>
+                <Badge tone="warn" dot>
+                  中 4–6 · {summary.confidence.mid}
+                </Badge>
+                <Badge tone="ok" dot>
+                  高 7–10 · {summary.confidence.high}
+                </Badge>
+              </div>
+              <div className="okr-time">
+                <span className="okr-time-label">季度时间进度</span>
+                <Progress
+                  value={summary.elapsedPercent}
+                  size="sm"
+                  tone="info"
+                  ariaLabel="季度时间进度"
+                />
+                <span className="mono">{summary.elapsedPercent}%</span>
+              </div>
+            </div>
+          </section>
+
+          {hasQuery ? (
+            <div className="okr-filter-note">
+              <Icon name="search" size={14} />
+              <span>
+                筛选「{search.trim()}」· {filtered.length} 个目标
+              </span>
+              <Button variant="ghost" size="sm" onClick={() => setUi({ search: '' })}>
+                清除筛选
+              </Button>
+            </div>
+          ) : null}
+
+          {filtered.length === 0 ? (
+            hasQuery ? (
+              <div className="okr-empty">
+                <EmptyState
+                  icon={<Icon name="search" size={20} />}
+                  title="没有匹配的目标或 KR"
+                  description={`「${search.trim()}」没有命中 ${quarterLabel(period)} 的目标、关键结果、负责人或 Area。`}
+                  action={
+                    <Button variant="secondary" onClick={() => setUi({ search: '' })}>
+                      清除筛选
+                    </Button>
+                  }
+                />
+              </div>
+            ) : (
+              <div className="okr-empty">
+                <EmptyState
+                  icon={<Icon name="target" size={20} />}
+                  title="本季度还没有目标"
+                  description="先写一个定性的目标（O），再用 2–4 个可量化的关键结果（KR）定义「做到了」。例如：目标「让新用户第一周就爱上织理」，KR「NPS 从 42 提升到 60」。"
+                  action={
+                    <Button
+                      variant="primary"
+                      iconLeft={<Icon name="plus" size={14} />}
+                      onClick={openNewObjective}
+                    >
+                      新建本季度目标
+                    </Button>
+                  }
+                />
+                <div className="okr-empty-tips">
+                  <div>
+                    <strong>目标（O）</strong>
+                    <span>一句定性描述，方向明确、鼓舞人心，不堆数字。</span>
+                  </div>
+                  <div>
+                    <strong>关键结果（KR）</strong>
+                    <span>可量化、可验证，带起点与目标值，2–4 个即可。</span>
+                  </div>
+                  <div>
+                    <strong>执行项</strong>
+                    <span>把甘特 / GTD 里的项目与行动关联到 KR，形成抓手。</span>
+                  </div>
+                </div>
+              </div>
+            )
+          ) : view === 'table' ? (
+            <OkrTable
               workspace={workspace}
-              objective={objective}
-              keyResults={keyResults}
+              entries={filtered}
               elapsedPercent={summary.elapsedPercent}
-              density={density}
+              resetKey={`${period}|${search}`}
             />
-          ))}
-        </div>
+          ) : view === 'alignment' ? (
+            <OkrAlignment
+              workspace={workspace}
+              entries={filtered}
+              elapsedPercent={summary.elapsedPercent}
+              period={period}
+            />
+          ) : (
+            <div className="okr-objectives">
+              {filtered.map(({ objective, keyResults }) => (
+                <ObjectiveCard
+                  key={objective.id}
+                  workspace={workspace}
+                  objective={objective}
+                  keyResults={keyResults}
+                  elapsedPercent={summary.elapsedPercent}
+                  density={density}
+                  onEdit={openEditor}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <QuarterDialog

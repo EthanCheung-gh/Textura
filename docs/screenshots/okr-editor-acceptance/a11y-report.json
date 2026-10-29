@@ -1,0 +1,210 @@
+{
+  "baseUrl": "http://localhost:1434",
+  "results": [
+    {
+      "flow": "4-a11y-semantics",
+      "label": "编辑视图 role=\"region\"",
+      "ok": true,
+      "detail": {
+        "role": "region",
+        "ariaLabel": "目标编辑"
+      }
+    },
+    {
+      "flow": "4-a11y-semantics",
+      "label": "aria-labelledby 指向存在的标题节点（h2）",
+      "ok": true,
+      "detail": {
+        "labelledby": "okr-editor-heading-obj_activation",
+        "headingTag": "H2",
+        "headingText": "目标编辑：让新用户在第一周就爱上织理"
+      }
+    },
+    {
+      "flow": "4-a11y-semantics",
+      "label": "保存状态 role=\"status\"",
+      "ok": true,
+      "detail": {
+        "saveRole": "status",
+        "saveText": "已保存"
+      }
+    },
+    {
+      "flow": "4-a11y-semantics",
+      "label": "进入编辑视图后焦点交给「返回目标列表」",
+      "ok": true,
+      "detail": {
+        "active": "返回目标列表"
+      }
+    },
+    {
+      "flow": "4-a11y-semantics",
+      "label": "语义检查期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "4-1024x720",
+      "label": "1024 列表态无横向溢出",
+      "ok": true,
+      "detail": {
+        "viewportWidth": 1024,
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "bodyScrollWidth": 1024,
+        "offenders": []
+      }
+    },
+    {
+      "flow": "4-1024x720",
+      "label": "1024 编辑视图无横向溢出",
+      "ok": true,
+      "detail": {
+        "viewportWidth": 1024,
+        "scrollWidth": 1024,
+        "clientWidth": 1024,
+        "bodyScrollWidth": 1024,
+        "offenders": []
+      }
+    },
+    {
+      "flow": "4-1024x720",
+      "label": "编辑视图容器与各分区宽度不超过可视区",
+      "ok": true,
+      "detail": {
+        "editorWidth": 736,
+        "viewport": 1024,
+        "scrollWidth": 736,
+        "clientWidth": 736,
+        "sections": [
+          {
+            "cls": "okr-editor-hero",
+            "width": 736,
+            "scrollWidth": 734,
+            "clientWidth": 734
+          },
+          {
+            "cls": "okr-editor-section",
+            "width": 736,
+            "scrollWidth": 734,
+            "clientWidth": 734
+          },
+          {
+            "cls": "okr-editor-exec-summary",
+            "width": 736,
+            "scrollWidth": 734,
+            "clientWidth": 734
+          }
+        ]
+      }
+    },
+    {
+      "flow": "4-1024x720",
+      "label": "1024 期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题已生效（html[data-theme=dark]）",
+      "ok": true,
+      "detail": {
+        "dataTheme": "dark",
+        "bodyBg": "rgb(27, 24, 21)",
+        "bodyColor": "rgb(236, 228, 218)"
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题对比度 ≥ 4.5:1 · 编辑视图目标标题",
+      "ok": true,
+      "detail": {
+        "label": "编辑视图目标标题",
+        "selector": ".okr-editor-title",
+        "text": "让新用户在第一周就爱上织理",
+        "fontSize": "21px",
+        "fontWeight": "650",
+        "color": "rgb(236, 228, 218)",
+        "bg": "#26221e",
+        "fgHex": "#ece4da",
+        "ratio": 12.54
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题对比度 ≥ 4.5:1 · KR 标题",
+      "ok": true,
+      "detail": {
+        "label": "KR 标题",
+        "selector": ".okr-kr-title",
+        "text": "NPS 从 42 提升到 60",
+        "fontSize": "13.5px",
+        "fontWeight": "600",
+        "color": "rgb(236, 228, 218)",
+        "bg": "#26221e",
+        "fgHex": "#ece4da",
+        "ratio": 12.54
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题对比度 ≥ 4.5:1 · 指标字段标签（11px muted）",
+      "ok": true,
+      "detail": {
+        "label": "指标字段标签（11px muted）",
+        "selector": ".okr-editor-section .okr-metric-label",
+        "text": "起点",
+        "fontSize": "11px",
+        "fontWeight": "400",
+        "color": "rgb(179, 168, 155)",
+        "bg": "#26221e",
+        "fgHex": "#b3a89b",
+        "ratio": 6.76
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题对比度 ≥ 4.5:1 · 执行项概览提示（11.5px muted）",
+      "ok": true,
+      "detail": {
+        "label": "执行项概览提示（11.5px muted）",
+        "selector": ".okr-editor-hint",
+        "text": "还没有关联执行项。在上方关键结果点击「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。",
+        "fontSize": "11.5px",
+        "fontWeight": "400",
+        "color": "rgb(179, 168, 155)",
+        "bg": "#26221e",
+        "fgHex": "#b3a89b",
+        "ratio": 6.76
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题对比度 ≥ 4.5:1 · 面包屑（12px muted）",
+      "ok": true,
+      "detail": {
+        "label": "面包屑（12px muted）",
+        "selector": ".okr-editor-crumb",
+        "text": "2026 Q4 · 目标编辑",
+        "fontSize": "12px",
+        "fontWeight": "550",
+        "color": "rgb(179, 168, 155)",
+        "bg": "#1b1815",
+        "fgHex": "#b3a89b",
+        "ratio": 7.57
+      }
+    },
+    {
+      "flow": "4-dark-contrast",
+      "label": "深色主题检查期间 console error = 0",
+      "ok": true,
+      "detail": {
+        "errors": []
+      }
+    }
+  ]
+}

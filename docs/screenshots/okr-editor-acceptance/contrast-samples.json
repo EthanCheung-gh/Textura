@@ -1,0 +1,57 @@
+[
+  {
+    "label": "编辑视图目标标题",
+    "selector": ".okr-editor-title",
+    "text": "让新用户在第一周就爱上织理",
+    "fontSize": "21px",
+    "fontWeight": "650",
+    "color": "rgb(236, 228, 218)",
+    "bg": "#26221e",
+    "fgHex": "#ece4da",
+    "ratio": 12.54
+  },
+  {
+    "label": "KR 标题",
+    "selector": ".okr-kr-title",
+    "text": "NPS 从 42 提升到 60",
+    "fontSize": "13.5px",
+    "fontWeight": "600",
+    "color": "rgb(236, 228, 218)",
+    "bg": "#26221e",
+    "fgHex": "#ece4da",
+    "ratio": 12.54
+  },
+  {
+    "label": "指标字段标签（11px muted）",
+    "selector": ".okr-editor-section .okr-metric-label",
+    "text": "起点",
+    "fontSize": "11px",
+    "fontWeight": "400",
+    "color": "rgb(179, 168, 155)",
+    "bg": "#26221e",
+    "fgHex": "#b3a89b",
+    "ratio": 6.76
+  },
+  {
+    "label": "执行项概览提示（11.5px muted）",
+    "selector": ".okr-editor-hint",
+    "text": "还没有关联执行项。在上方关键结果点击「关联执行项」，把甘特 / GTD 里的项目与行动挂上来。",
+    "fontSize": "11.5px",
+    "fontWeight": "400",
+    "color": "rgb(179, 168, 155)",
+    "bg": "#26221e",
+    "fgHex": "#b3a89b",
+    "ratio": 6.76
+  },
+  {
+    "label": "面包屑（12px muted）",
+    "selector": ".okr-editor-crumb",
+    "text": "2026 Q4 · 目标编辑",
+    "fontSize": "12px",
+    "fontWeight": "550",
+    "color": "rgb(179, 168, 155)",
+    "bg": "#1b1815",
+    "fgHex": "#b3a89b",
+    "ratio": 7.57
+  }
+]
