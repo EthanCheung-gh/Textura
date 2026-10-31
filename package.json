@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "Textura · 织理 — 结构化执行工作台",
   "license": "Apache-2.0",
   "author": "EthanCheung",
@@ -18,6 +21,7 @@
     "@dagrejs/dagre": "^1.1.5",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@textura/mcp": "0.1.0",
     "@xyflow/react": "^12.8.6",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

@@ -72,6 +72,7 @@ export function AppShell() {
     if (bootstrapped) return;
     bootstrapped = true;
     void load();
+    void import('../modules/ai/mcpHost').then((module) => module.installBuiltinMcpOnWindow());
   }, [load]);
 
   useEffect(() => {

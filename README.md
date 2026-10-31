@@ -153,6 +153,9 @@ export interface Item {
   外加全局快捷键 `Ctrl/Cmd + N` 与命令面板命令；`#标签`、`@场景`、`!高能 / !低能`、
   `/今天 /明天 /本周` 语法，连续录入与单条撤销。
 - 设置页：主题切换、存储路径与备份列表（恢复备份）、导入 / 导出 JSON、撤销 / 重做、重置为演示数据。
+- 大模型配置：服务商预设、Base URL、模型、API Key、温度、最大输出 token 与系统提示词；
+  密钥只保存在本机 localStorage，不写入工作区、导出或备份。内置 MCP 独立库（`packages/textura-mcp`）
+  暴露 7 个工具，可让模型直接新增事项、更新状态、搜索与建立关联。
 - 快捷键帮助（`?`）、深色主题、视图深链（`?route=calendar`、`?route=okr&item=<id>`）与视图记忆。
 - 数据保护：导入时拒绝父子环并给出环路径；加载时自动切断环、另存修复副本且不覆盖原文件；
   工作区版本高于当前应用时拒绝加载并保留副本；非法字段自动归一化，失效枚举回落并提示「已修正 N 处非法数据」。
@@ -162,11 +165,14 @@ export interface Item {
 
 ![设置页：存储、备份、导入导出与维护](docs/screenshots/settings.png)
 
+![设置页 · 大模型：服务商、模型、密钥与内置 MCP 工具](docs/screenshots/settings-ai.png)
+
 ## 技术栈与架构
 
 Tauri v2（Rust 侧负责单文档原子写 + 30 份轮换备份）+ React 18.3 + TypeScript strict + Zustand 5 + Vite 7；
 SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，日历的农历 / 节气引擎零依赖自研，
-其余日期计算统一走 `date-fns` 4。
+其余日期计算统一走 `date-fns` 4。内置 MCP 独立为 npm workspace 包 `@textura/mcp`（`packages/textura-mcp`），
+通过 `TexturaBridge` 端口复用统一任务内核，服务本身不依赖 React 与具体运行时。
 没有路由库、没有 UI 组件库、没有 CSS 框架。生产构建启用 CSP（`script-src 'self'`，主题预置外置为
 `public/theme-init.js`），视图层有错误边界兜底；路由级 `React.lazy` + `manualChunks`（react / flow / date）
 把首屏 JS 压到 84.4 KiB gzip。

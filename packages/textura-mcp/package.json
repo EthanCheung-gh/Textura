@@ -1,0 +1,20 @@
+{
+  "name": "@textura/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Textura 的独立 MCP 工具库：通过桥接端口操作工作区，不依赖 React 与具体运行时",
+  "license": "Apache-2.0",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

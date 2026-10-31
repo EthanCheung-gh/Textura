@@ -10,6 +10,7 @@ import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/icons';
 import { Modal } from '../../ui/Modal';
 import { Segmented } from '../../ui/Segmented';
+import { AiSettingsCard } from '../ai/AiSettingsCard';
 import { parseImportText, summarizeImport } from './importValidation';
 import { exportWorkspaceToFile, pickWorkspaceFile } from './workspaceIO';
 import './appshell.css';
@@ -204,7 +205,7 @@ export function SettingsPage() {
       <div className="page-header">
         <div className="page-header-titles">
           <h1>设置</h1>
-          <p>存储、备份与工作区。</p>
+          <p>存储、备份、大模型与工具。</p>
         </div>
         <div className="page-actions">
           <Badge tone={tauri ? 'ok' : 'warn'} dot>
@@ -405,6 +406,8 @@ export function SettingsPage() {
         </div>
 
         <div className="settings-stack">
+          <AiSettingsCard />
+
           <section className="settings-card" aria-labelledby="settings-maintenance">
             <header className="settings-card-head">
               <div>
