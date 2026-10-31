@@ -57,7 +57,7 @@ export const ROUTES: RouteMeta[] = [
     id: 'settings',
     label: '设置',
     title: '设置',
-    subtitle: '存储、备份与工作区',
+    subtitle: '存储、备份、模型与 MCP',
     icon: 'settings',
   },
 ];
