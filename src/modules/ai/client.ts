@@ -16,8 +16,16 @@
  * - **取消 / 超时的判定优先于其它一切失败**：即使已经拿到响应头、正在读 body，
  *   底层只抛出 `AbortError` / `TypeError: terminated` / 空 body，也一律报
  *   `aborted` / `timeout`（`mapFailure` 是唯一判定点，不做异常消息匹配）；
- * - `fetch` 从调用方注入（测试）或 `globalThis.fetch` 取，不引入任何 HTTP 依赖。
+ * - **传输层可替换**（见 `AiTransport`）：浏览器走 `fetch`（CORS / CSP 由浏览器判），
+ *   桌面端（Tauri）走 IPC 命令 `ai_proxy`，由 Rust 侧发请求，绕开 webview 的
+ *   CSP `connect-src` 与浏览器 CORS。两条通道只共享「怎么发请求」之外的**全部**
+ *   语义：错误映射、脱敏、超时、取消判定都在本文件里，只有一份；
+ *   通道差异（例如 Rust 先超时、地址配置错误）只以 `TransportFailure.hint`
+ *   的形式带进来，`mapFailure` 仍是唯一的 kind 判定点；
+ * - `fetch` 从调用方注入（测试）或 `globalThis.fetch` 取，不引入任何 HTTP 依赖；
+ *   `@tauri-apps/api/core` 只在真正需要 IPC 时**动态**引入。
  */
+import { isTauri } from '../../core/repo';
 import { maskSecret, validateAiConfig } from './config';
 import type { AiConfig, AiProvider } from './config';
 
@@ -71,6 +79,151 @@ export interface AiCallOptions {
 
 /** 默认超时（毫秒）。 */
 export const DEFAULT_TIMEOUT_MS = 60_000;
+
+/* ------------------------------------------------------------------ */
+/* 传输层                                                              */
+/* ------------------------------------------------------------------ */
+
+/** 传输层入参：只有「怎么发」，不含任何错误映射语义。 */
+export interface AiTransportRequest {
+  url: string;
+  /** 已含密钥（`authorization` / `x-api-key`），绝不允许打印或写进错误串。 */
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+  /**
+   * 取消信号。`fetch` 通道会真正中断请求；
+   * IPC 通道无法中断 Rust 侧请求，由调用方的 `Promise.race` 保证立即返回。
+   */
+  signal?: AbortSignal;
+}
+
+/** 传输层结果：非 2xx 也走这条路径，状态码与 body 原样带回。 */
+export interface AiTransportResponse {
+  status: number;
+  body: string;
+}
+
+export type AiTransport = (request: AiTransportRequest) => Promise<AiTransportResponse>;
+
+/** 传输层可携带的分类提示；最终 `kind` 仍由 `mapFailure` 单点决定。 */
+type TransportHint = 'timeout' | 'config' | 'network' | null;
+
+/**
+ * 传输层内部错误包装：把「失败发生在哪一层」与「传输层给出的分类提示」
+ * 带过传输边界。真正的 kind 判定仍然只在 `mapFailure` 里发生，
+ * 且取消 / 超时优先级永远高于这里的 `hint`。
+ */
+class TransportFailure extends Error {
+  constructor(
+    readonly stage: FailureStage,
+    readonly cause: unknown,
+    /** 代理通道的结构化分类（Rust `AiProxyErrorKind` 翻译后）；`null` 表示无提示。 */
+    readonly hint: TransportHint = null,
+  ) {
+    super('transport failure', { cause });
+    this.name = 'TransportFailure';
+  }
+}
+
+/** Rust `ai_proxy` 的返回结构（camelCase）。 */
+interface AiProxyInvokeResult {
+  status: number;
+  body: string;
+}
+
+/** Rust `ai_proxy` 失败时的 wire 形状：`{ kind, message }`。 */
+interface AiProxyInvokeError {
+  kind: 'timeout' | 'url' | 'network';
+  message: string;
+}
+
+function isProxyWireError(value: unknown): value is AiProxyInvokeError {
+  return (
+    isRecord(value) && typeof value.kind === 'string' && typeof value.message === 'string'
+  );
+}
+
+/**
+ * wire `kind` → 前端提示：`url` 是地址 / 配置问题（`config`，引导去设置），
+ * `timeout` 是超时（可重试），`network` 是传输失败。
+ * 旧版后端只回纯字符串错误 → 按 `network` 兜底（向后兼容，不影响正确性）。
+ */
+function proxyHint(rejection: unknown): TransportHint {
+  if (isProxyWireError(rejection)) {
+    if (rejection.kind === 'timeout') return 'timeout';
+    if (rejection.kind === 'url') return 'config';
+  }
+  return 'network';
+}
+
+/** 取可展示的失败说明（Rust 文案已保证不含 headers / body）。 */
+function proxyDetail(rejection: unknown): unknown {
+  return isProxyWireError(rejection) ? rejection.message : rejection;
+}
+
+/**
+ * 浏览器 / webview 通道：`fetch` + `response.text()`。
+ * body 读取失败被包成 `TransportFailure('body', ...)`，以保留既有
+ * 「读 body 阶段兜底成 `response`」的语义。
+ */
+function fetchTransport(impl: typeof fetch): AiTransport {
+  return async (request) => {
+    const response = await impl(request.url, {
+      method: 'POST',
+      headers: request.headers,
+      body: request.body,
+      signal: request.signal,
+    });
+    try {
+      return { status: response.status, body: await response.text() };
+    } catch (error) {
+      throw new TransportFailure('body', error);
+    }
+  };
+}
+
+/**
+ * 桌面端通道：`invoke('ai_proxy', { request })`。
+ *
+ * - `@tauri-apps/api/core` **动态引入**：浏览器模式下这个模块根本不会被加载；
+ * - `signal` 无法中断 Rust 侧请求，因此把 `timeoutMs` 一并下传，让 Rust 自己也超时，
+ *   避免取消后连接一直挂着；前端则用 `Promise.race` 立即返回（迟到的结果被丢弃）。
+ */
+function ipcTransport(): AiTransport {
+  return async (request) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    let raw: unknown;
+    try {
+      raw = await invoke<AiProxyInvokeResult>('ai_proxy', {
+        request: {
+          url: request.url,
+          headers: request.headers,
+          body: request.body,
+          timeoutMs: request.timeoutMs,
+        },
+      });
+    } catch (rejection) {
+      // Rust 侧 `Err(AiProxyError)` → `{ kind, message }`；只带类别文案
+      // （不含 headers / body）。分类交给 `mapFailure`，这里只搬运 hint。
+      throw new TransportFailure('request', proxyDetail(rejection), proxyHint(rejection));
+    }
+    if (!isRecord(raw) || typeof raw.status !== 'number' || typeof raw.body !== 'string') {
+      throw new TransportFailure('body', new Error('AI 代理返回结构异常（缺少 status / body）'));
+    }
+    return { status: raw.status, body: raw.body };
+  };
+}
+
+/**
+ * 通道选择：`fetchImpl` 注入（测试）→ `isTauri()` 走 IPC → 否则 fetch。
+ * 注意 `fetchImpl` 优先于 `isTauri()`，这样单测在 node 环境下也能锁定浏览器通道。
+ */
+function resolveTransport(options: AiCallOptions): AiTransport {
+  if (options.fetchImpl) return fetchTransport(options.fetchImpl);
+  if (isTauri()) return ipcTransport();
+  return fetchTransport(resolveFetch(undefined));
+}
 
 const OPENAI_PATH = 'chat/completions';
 const ANTHROPIC_PATH = 'messages';
@@ -142,7 +295,9 @@ function splitSystem(messages: AiMessage[]): { system: string; rest: AiMessage[]
 
 interface PreparedRequest {
   url: string;
-  init: RequestInit;
+  /** 只进 headers，绝不打印 / 不进错误串。 */
+  headers: Record<string, string>;
+  body: string;
 }
 
 function preparedRequest(config: AiConfig, messages: AiMessage[]): PreparedRequest {
@@ -164,7 +319,8 @@ function preparedRequest(config: AiConfig, messages: AiMessage[]): PreparedReque
     if (system) body.system = system;
     return {
       url: endpointFor(config.baseUrl, 'anthropic'),
-      init: { method: 'POST', headers, body: JSON.stringify(body) },
+      headers,
+      body: JSON.stringify(body),
     };
   }
 
@@ -181,7 +337,8 @@ function preparedRequest(config: AiConfig, messages: AiMessage[]): PreparedReque
   };
   return {
     url: endpointFor(config.baseUrl, 'openai'),
-    init: { method: 'POST', headers, body: JSON.stringify(body) },
+    headers,
+    body: JSON.stringify(body),
   };
 }
 
@@ -284,13 +441,39 @@ function networkError(error: unknown, secret: string): AiRequestError {
  *    此时底层异常形态很不可靠（`AbortError`、`TypeError: terminated`，甚至
  *    `response.text()` 直接 resolve 出空串），一律按 abortReason 报 `aborted` / `timeout`，
  *    绝不退化成 `response` / `network`，也不做异常消息的字符串匹配；
- * 2. 已成型为 `AiRequestError` 的结构性错误（`response`）直通；
- * 3. 未带 reason 的 `AbortError` 归 `aborted`；
- * 4. `TypeError` → `network`；
- * 5. 其余按阶段兜底：body 读取 → `response`，请求阶段 → `unknown`。
+ * 2. 传输层包装（`TransportFailure`）：带结构化 `hint` 时按 hint 收敛
+ *    （`timeout` → 超时、`config` → 配置问题、`network` → 网络失败），
+ *    无 hint 时拆包后按原阶段继续判定（两条通道共用同一套规则）；
+ * 3. 已成型为 `AiRequestError` 的结构性错误（`response`）直通；
+ * 4. 未带 reason 的 `AbortError` 归 `aborted`；
+ * 5. `TypeError` → `network`；
+ * 6. 其余按阶段兜底：body 读取 → `response`，请求阶段 → `unknown`。
  */
 function mapFailure(error: unknown, ctx: FailureContext, stage: FailureStage): AiRequestError {
   if (ctx.abortReason) return abortError(ctx.abortReason, ctx.timeoutMs);
+  if (error instanceof TransportFailure) {
+    switch (error.hint) {
+      case 'timeout':
+        // Rust 侧先超时：与浏览器通道共用同一句超时文案。
+        return abortError('timeout', ctx.timeoutMs);
+      case 'config':
+        return new AiRequestError(
+          'config',
+          'AI 代理请求配置有误，请到设置检查 Base URL 与 API Key',
+          {
+            detail: clipDetail(describeError(error.cause), ctx.secret),
+            cause: error.cause,
+          },
+        );
+      case 'network':
+        return new AiRequestError('network', '网络请求失败，无法连接模型网关', {
+          detail: clipDetail(describeError(error.cause), ctx.secret),
+          cause: error.cause,
+        });
+      default:
+        return mapFailure(error.cause, ctx, error.stage);
+    }
+  }
   if (error instanceof AiRequestError) return error;
   if (isAbortError(error)) return new AiRequestError('aborted', '请求已取消');
   if (error instanceof TypeError) return networkError(error, ctx.secret);
@@ -319,21 +502,12 @@ function safeStringify(value: unknown): string {
 }
 
 /**
- * 读取响应体文本（成功路径与非 2xx 都要用）。
+ * 解析响应体文本（成功路径与非 2xx 都要用）。
  *
- * 不吞异常：读取中被打断时交给 `mapFailure(..., 'body')`，
- * 「已 abort」优先判成 `aborted` / `timeout`，其次 `TypeError` → `network`，其余 → `response`。
+ * 空 body 与非法 JSON 都是结构性失败 → `response`；
+ * 传输层已经负责把「读 body 时被打断」映射成 `aborted` / `timeout`。
  */
-async function readBodyText(response: Response, failure: FailureContext): Promise<string> {
-  try {
-    return await response.text();
-  } catch (error) {
-    throw mapFailure(error, failure, 'body');
-  }
-}
-
-async function readJsonBody(response: Response, failure: FailureContext): Promise<unknown> {
-  const text = await readBodyText(response, failure);
+function parseJsonBody(text: string, failure: FailureContext): unknown {
   if (!text.trim()) throw new AiRequestError('response', '模型返回了空响应体');
   try {
     return JSON.parse(text) as unknown;
@@ -345,13 +519,20 @@ async function readJsonBody(response: Response, failure: FailureContext): Promis
   }
 }
 
-async function httpError(response: Response, failure: FailureContext): Promise<AiRequestError> {
-  const body = await readBodyText(response, failure);
-  const mapped = statusError(response.status);
+/**
+ * 非 2xx → `AiRequestError`。**两条通道共用**：无论状态码来自 `fetch` 还是 IPC，
+ * 都走同一个 `statusError`，不存在第二套分流。
+ */
+function httpError(status: number, body: string, failure: FailureContext): AiRequestError {
+  const mapped = statusError(status);
   return new AiRequestError(mapped.kind, mapped.message, {
-    status: response.status,
+    status,
     detail: clipDetail(body, failure.secret),
   });
+}
+
+function isSuccessStatus(status: number): boolean {
+  return status >= 200 && status < 300;
 }
 
 /* ------------------------------------------------------------------ */
@@ -455,7 +636,7 @@ export async function completeChat(
     timeoutMs,
     secret: config.apiKey.trim(),
   };
-  const fetchImpl = resolveFetch(options.fetchImpl);
+  const transport = resolveTransport(options);
   const request = preparedRequest(config, messages);
   const externalSignal = options.signal;
 
@@ -481,19 +662,32 @@ export async function completeChat(
   }, timeoutMs);
 
   try {
-    // 用 race 兜住「fetch 实现不响应 signal」的情况（部分网关 / 注入的桩），
-    // 保证超时一定能落地。
+    /**
+     * race 有两个作用：
+     * 1. 兜住「fetch 实现不响应 signal」的情况（部分网关 / 注入的桩），保证超时落地；
+     * 2. **IPC 通道无法中断 Rust 侧请求**：cancel 时立刻以 `aborted` / `timeout` 返回，
+     *    迟到的 IPC 结果被 race 丢弃（它只会被 race 内部吞掉，不产生第二次状态）。
+     */
     const response = await Promise.race([
-      fetchImpl(request.url, { ...request.init, signal: controller.signal }),
+      transport({
+        url: request.url,
+        headers: request.headers,
+        body: request.body,
+        timeoutMs,
+        signal: controller.signal,
+      }),
       aborted,
     ]);
-    if (!response.ok) throw await httpError(response, failure);
-    const payload = await readJsonBody(response, failure);
+    // 非 2xx 在两条通道里都是「请求成功、状态码失败」：共用同一个 httpError。
+    if (!isSuccessStatus(response.status)) {
+      throw httpError(response.status, response.body, failure);
+    }
+    const payload = parseJsonBody(response.body, failure);
     return config.provider === 'anthropic'
       ? anthropicText(payload, failure.secret)
       : openAiText(payload, failure.secret);
   } catch (error) {
-    // 唯一判定点：fetch 阶段与 body 读取阶段的失败都走 mapFailure，
+    // 唯一判定点：传输层与解析阶段的失败都走 mapFailure，
     // 已 abort 时（即使底层只报出空 body / TypeError）一律收敛成 aborted / timeout。
     throw mapFailure(error, failure, 'request');
   } finally {

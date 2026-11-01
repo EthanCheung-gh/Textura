@@ -21,6 +21,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
+# AI 代理通道（src/ai_proxy.rs）：桌面端通过 IPC 让 Rust 侧直连模型网关，
+# 从而绕开 webview 的 CSP `connect-src` 与浏览器 CORS。
+# `default-features = false` + `rustls-tls`：不引入 openssl / 系统 TLS 依赖
+# （reqwest 0.12 的 rustls 后端用 ring，交叉编译与离线打包都更省事）。
+# 不开 `json` 特性：这里只发已序列化好的 String，也只按字节读响应体。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [dev-dependencies]
 tempfile = "3"

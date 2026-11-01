@@ -1,9 +1,40 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiRequestError, DEFAULT_TIMEOUT_MS, assertAiReady, completeChat } from './client';
 import type { AiCallOptions, AiMessage } from './client';
 import type { AiConfig } from './config';
 
+/**
+ * Tauri IPC 桩：`client.ts` 用 **动态** `import('@tauri-apps/api/core')` 取 `invoke`，
+ * 这里用 `vi.mock` 拦截同一个模块，绝不需要真实 Tauri 运行时或网络。
+ */
+const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+}));
+
 const API_KEY = 'sk-test-1234567890';
+
+/**
+ * 最小化的 `process` 声明：本仓未装 `@types/node`（tsconfig 的 `types` 只有
+ * `vite/client`），这里只需要 unhandledRejection 的监听与卸载。
+ */
+declare const process: {
+  on(event: 'unhandledRejection', listener: (reason: unknown) => void): void;
+  off(event: 'unhandledRejection', listener: (reason: unknown) => void): void;
+};
+
+/** 把当前进程伪装成 Tauri（或还原成浏览器），驱动 `isTauri()` 的分支。 */
+function setTauriMode(enabled: boolean): void {
+  const scope = globalThis as unknown as { window?: Record<string, unknown> };
+  if (enabled) scope.window = { __TAURI_INTERNALS__: {} };
+  else delete scope.window;
+}
+
+afterEach(() => {
+  setTauriMode(false);
+  invokeMock.mockReset();
+});
 
 function baseConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -569,5 +600,304 @@ describe('completeChat · 调用选项', () => {
     const error = await captureError(() => completeChat(baseConfig(), [], options));
     expect(error.kind).toBe('config');
     expect(calls).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 桌面端 IPC 通道（Rust 命令 ai_proxy，绕开 CSP / CORS）              */
+/* ------------------------------------------------------------------ */
+
+interface RecordedProxyRequest {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+}
+
+const IPC_MESSAGES: AiMessage[] = [
+  { role: 'system', content: '你是测试助理' },
+  { role: 'user', content: '总结本周' },
+];
+
+/** 取出唯一一次 `invoke('ai_proxy', { request })` 的入参。 */
+function onlyProxyCall(): { command: string; request: RecordedProxyRequest } {
+  expect(invokeMock).toHaveBeenCalledTimes(1);
+  const call = invokeMock.mock.calls[0] as [string, { request: RecordedProxyRequest }];
+  return { command: call[0], request: call[1].request };
+}
+
+/** 手动控制的 `invoke` 返回，用来模拟「迟到响应」。 */
+function deferredInvoke(): { resolve: (value: unknown) => void; reject: (reason: unknown) => void } {
+  let resolve!: (value: unknown) => void;
+  let reject!: (reason: unknown) => void;
+  invokeMock.mockImplementation(
+    () =>
+      new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      }),
+  );
+  return {
+    resolve: (value) => resolve(value),
+    reject: (reason) => reject(reason),
+  };
+}
+
+describe('completeChat · Tauri IPC 通道', () => {
+  it('Tauri 环境选中 IPC 通道：调用 ai_proxy，密钥只在 headers 里', async () => {
+    setTauriMode(true);
+    invokeMock.mockResolvedValue({
+      status: 200,
+      body: JSON.stringify({ choices: [{ message: { content: ' 来自 IPC 的总结 ' } }] }),
+    });
+
+    const text = await completeChat(baseConfig(), IPC_MESSAGES);
+
+    expect(text).toBe('来自 IPC 的总结');
+    const { command, request } = onlyProxyCall();
+    expect(command).toBe('ai_proxy');
+    expect(request.url).toBe('https://api.example.com/v1/chat/completions');
+    expect(request.timeoutMs).toBe(DEFAULT_TIMEOUT_MS);
+    expect(request.headers.authorization).toBe(`Bearer ${API_KEY}`);
+    expect(request.headers['content-type']).toContain('application/json');
+    expect(request.headers['x-api-key']).toBeUndefined();
+    expect(JSON.parse(request.body)).toEqual({
+      model: 'gpt-test',
+      messages: IPC_MESSAGES,
+      temperature: 0.2,
+      max_tokens: 512,
+      stream: false,
+    });
+    // 请求体里不出现密钥（只允许出现在 headers）。
+    expect(request.body).not.toContain(API_KEY);
+  });
+
+  it('IPC 返回 401 → auth（与 fetch 通道共用同一套状态码映射）', async () => {
+    setTauriMode(true);
+    invokeMock.mockResolvedValue({
+      status: 401,
+      body: JSON.stringify({ error: 'invalid key' }),
+    });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('auth');
+    expect(error.status).toBe(401);
+    expect(error.message).toContain('HTTP 401');
+  });
+
+  it('IPC 返回 500 → server', async () => {
+    setTauriMode(true);
+    invokeMock.mockResolvedValue({ status: 500, body: '{"error":"boom"}' });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('server');
+    expect(error.status).toBe(500);
+  });
+
+  it('IPC 返回 200 但 body 为空 → response（证明解析仍走同一套逻辑）', async () => {
+    setTauriMode(true);
+    invokeMock.mockResolvedValue({ status: 200, body: '' });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('response');
+    expect(error.message).toContain('空响应体');
+  });
+
+  it('IPC 通道下外部取消立即返回 aborted，迟到响应被丢弃、不产生第二次状态', async () => {
+    setTauriMode(true);
+    const deferred = deferredInvoke();
+    const controller = new AbortController();
+    const settled: string[] = [];
+
+    const run = completeChat(baseConfig(), IPC_MESSAGES, {
+      signal: controller.signal,
+      timeoutMs: 5000,
+    })
+      .then(() => {
+        settled.push('resolved');
+      })
+      .catch((error: AiRequestError) => {
+        settled.push(error.kind);
+      });
+
+    setTimeout(() => controller.abort(), 10);
+    await run;
+
+    // 取消先落地：IPC 那侧从未返回过。
+    expect(settled).toEqual(['aborted']);
+
+    // 迟到的成功响应必须被丢弃：既不能再结算一次，也不能变成未处理拒绝。
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      deferred.resolve({
+        status: 200,
+        body: JSON.stringify({ choices: [{ message: { content: '迟到的成功' } }] }),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(settled).toEqual(['aborted']);
+  });
+
+  it('IPC 通道内部超时 → timeout（invoke 永不返回也能落地，且把 timeoutMs 下传）', async () => {
+    setTauriMode(true);
+    deferredInvoke();
+
+    const startedAt = Date.now();
+    const error = await captureError(() =>
+      completeChat(baseConfig(), IPC_MESSAGES, { timeoutMs: 20 }),
+    );
+
+    expect(error.kind).toBe('timeout');
+    expect(error.message).toContain('超时');
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+    // Rust 侧也拿到同一个超时，避免取消后连接一直挂着。
+    expect(onlyProxyCall().request.timeoutMs).toBe(20);
+  });
+
+  it('IPC 通道自身失败（Rust Err）→ network，且错误串不含 apiKey', async () => {
+    setTauriMode(true);
+    invokeMock.mockRejectedValue('无法连接模型网关（DNS 解析、TLS 握手失败或网络不可达）');
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('network');
+    expect(error.detail).toContain('无法连接模型网关');
+    expect(error.message).not.toContain(API_KEY);
+    expect(error.detail ?? '').not.toContain(API_KEY);
+  });
+
+  it('IPC 返回结构异常（缺 status / body）→ response，不误当成功', async () => {
+    setTauriMode(true);
+    invokeMock.mockResolvedValue({ status: '200' });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('response');
+  });
+});
+
+describe('completeChat · IPC 结构化错误分类（{ kind, message }）', () => {
+  it('{ kind: timeout } → timeout（不是 network，文案沿用超时口径）', async () => {
+    setTauriMode(true);
+    invokeMock.mockRejectedValue({
+      kind: 'timeout',
+      message: '请求超时（60000 毫秒），请检查网络或稍后重试',
+    });
+
+    const error = await captureError(() =>
+      completeChat(baseConfig(), IPC_MESSAGES, { timeoutMs: 60_000 }),
+    );
+
+    expect(error.kind).toBe('timeout');
+    expect(error.message).toContain('超时');
+    // 与浏览器通道共用同一句超时文案（abortError 单点产出）。
+    expect(error.message).not.toContain('无法连接模型网关');
+  });
+
+  it('{ kind: url } → config（地址/配置问题，引导去设置而不是重试）', async () => {
+    setTauriMode(true);
+    invokeMock.mockRejectedValue({
+      kind: 'url',
+      message: '请求地址指向链路本地 / 云元数据地址，AI 代理已拒绝',
+    });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('config');
+    expect(error.message).toContain('设置');
+    // Rust 的具体原因留在 detail，便于用户定位。
+    expect(error.detail).toContain('链路本地');
+    expect(error.detail ?? '').not.toContain(API_KEY);
+  });
+
+  it('{ kind: network } → network（保留 Rust 的具体原因）', async () => {
+    setTauriMode(true);
+    invokeMock.mockRejectedValue({
+      kind: 'network',
+      message: '响应体过大（>20 MiB），已中止读取',
+    });
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('network');
+    expect(error.detail).toContain('响应体过大');
+  });
+
+  it('旧版后端只回纯字符串错误 → 兜底为 network（向后兼容）', async () => {
+    setTauriMode(true);
+    invokeMock.mockRejectedValue('无法连接模型网关（DNS 解析、TLS 握手失败或网络不可达）');
+
+    const error = await captureError(() => completeChat(baseConfig(), IPC_MESSAGES));
+
+    expect(error.kind).toBe('network');
+    expect(error.detail).toContain('无法连接模型网关');
+  });
+
+  it('结构化错误不会覆盖取消优先级：已取消时仍报 aborted', async () => {
+    setTauriMode(true);
+    let reject!: (reason: unknown) => void;
+    invokeMock.mockImplementation(
+      () =>
+        new Promise((_resolve, rejectInvoke) => {
+          reject = rejectInvoke;
+        }),
+    );
+    const controller = new AbortController();
+    const run = captureError(() =>
+      completeChat(baseConfig(), IPC_MESSAGES, { signal: controller.signal, timeoutMs: 5000 }),
+    );
+
+    setTimeout(() => controller.abort(), 10);
+    const error = await run;
+    // 迟到的结构化超时错误不能改写已取消的事实。
+    reject({ kind: 'timeout', message: '请求超时（5000 毫秒）' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(error.kind).toBe('aborted');
+    expect(error.message).toBe('请求已取消');
+  });
+});
+
+describe('completeChat · 通道选择优先级', () => {
+  it('注入 fetchImpl 优先于 IPC 通道（单测可锁定浏览器通道）', async () => {
+    setTauriMode(true);
+    const { impl, calls } = mockFetch(() =>
+      jsonResponse({ choices: [{ message: { content: '走 fetch' } }] }),
+    );
+
+    const text = await completeChat(baseConfig(), [{ role: 'user', content: 'hi' }], {
+      fetchImpl: impl,
+    });
+
+    expect(text).toBe('走 fetch');
+    expect(calls).toHaveLength(1);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it('浏览器模式走 globalThis.fetch，完全不触发 ai_proxy', async () => {
+    setTauriMode(false);
+    const original = globalThis.fetch;
+    const { impl, calls } = mockFetch(() =>
+      jsonResponse({ choices: [{ message: { content: '浏览器通道' } }] }),
+    );
+    globalThis.fetch = impl;
+    try {
+      const text = await completeChat(baseConfig(), [{ role: 'user', content: 'hi' }]);
+      expect(text).toBe('浏览器通道');
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.init.method).toBe('POST');
+      expect(invokeMock).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

@@ -1,3 +1,4 @@
+mod ai_proxy;
 mod commands;
 mod model;
 mod storage;
@@ -22,6 +23,8 @@ pub fn run() {
             commands::export_workspace,
             commands::import_workspace,
             commands::save_repaired_workspace,
+            // AI 代理通道：桌面端绕开 CSP / CORS 直连模型网关。
+            ai_proxy::ai_proxy,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Textura");
