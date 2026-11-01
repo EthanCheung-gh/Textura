@@ -465,7 +465,7 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Item, WORKSPACE_VERSION};
+    use crate::model::{Item, Report, ReportSection, WORKSPACE_VERSION};
     use tempfile::TempDir;
 
     fn workspace_named(title: &str) -> Workspace {
@@ -491,6 +491,127 @@ mod tests {
             }],
             ..Workspace::default()
         }
+    }
+
+    fn report_named(title: &str) -> Report {
+        Report {
+            id: "r_1".to_string(),
+            kind: "week".to_string(),
+            period: "2026-W44".to_string(),
+            title: title.to_string(),
+            author: "林一".to_string(),
+            status: "draft".to_string(),
+            template_id: "weekly-external".to_string(),
+            sections: vec![ReportSection {
+                key: "overview".to_string(),
+                title: "概览".to_string(),
+                body: "本周把 onboarding 全链路补齐。".to_string(),
+                origin: "auto".to_string(),
+                updated_at: now_iso(),
+            }],
+            generated_at: Some(now_iso()),
+            finalized_at: None,
+            created_at: now_iso(),
+            updated_at: now_iso(),
+        }
+    }
+
+    #[test]
+    fn round_trip_preserves_reports() {
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::new(dir.path().join("app-data"));
+
+        let mut workspace = workspace_named("带报告");
+        workspace.reports = vec![report_named("2026 年第 44 周报")];
+        storage.save(&workspace).unwrap();
+
+        let loaded = storage.load().unwrap().workspace;
+        assert_eq!(loaded.reports.len(), 1);
+        let report = &loaded.reports[0];
+        assert_eq!(report.id, "r_1");
+        assert_eq!(report.kind, "week");
+        assert_eq!(report.period, "2026-W44");
+        assert_eq!(report.title, "2026 年第 44 周报");
+        assert_eq!(report.author, "林一");
+        assert_eq!(report.status, "draft");
+        assert_eq!(report.template_id, "weekly-external");
+        assert_eq!(report.sections.len(), 1);
+        assert_eq!(report.sections[0].key, "overview");
+        assert_eq!(report.sections[0].origin, "auto");
+        assert!(!report.sections[0].body.is_empty());
+        assert!(report.generated_at.is_some());
+        assert!(report.finalized_at.is_none());
+        assert!(!report.created_at.is_empty());
+    }
+
+    #[test]
+    fn loads_legacy_workspace_without_reports_key() {
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::new(dir.path().join("app-data"));
+        fs::create_dir_all(storage.data_dir()).unwrap();
+        fs::write(
+            storage.workspace_path(),
+            r#"{"version":1,"items":[],"edges":[],"areas":[],"runs":[],"updatedAt":"2026-01-01T00:00:00.000Z"}"#,
+        )
+        .unwrap();
+
+        let result = storage.load().unwrap();
+        assert!(result.workspace.reports.is_empty(), "缺 reports 键应回落为空数组");
+        assert_eq!(result.workspace.version, WORKSPACE_VERSION);
+        assert!(!result.fresh_install, "旧文件存在即不是首次安装");
+
+        // 再存一次会补上 reports 键，旧字段原样保留。
+        storage.save(&result.workspace).unwrap();
+        let text = fs::read_to_string(storage.workspace_path()).unwrap();
+        assert!(text.contains("\"reports\":[]"), "实际写入：{text}");
+        assert!(text.contains("\"updatedAt\":\"2026-01-01T00:00:00.000Z\""));
+    }
+
+    #[test]
+    fn ignores_unknown_fields_inside_reports() {
+        let dir = TempDir::new().unwrap();
+        let storage = Storage::new(dir.path().join("app-data"));
+        fs::create_dir_all(storage.data_dir()).unwrap();
+        fs::write(
+            storage.workspace_path(),
+            r#"{
+                "version": 1,
+                "items": [], "edges": [], "areas": [], "runs": [],
+                "reports": [{
+                    "id": "r_1", "kind": "month", "period": "2026-11",
+                    "title": "2026 年 11 月报", "author": "", "status": "final",
+                    "templateId": "monthly-external",
+                    "sections": [{
+                        "key": "progress", "title": "进展", "body": "- 完成 A",
+                        "origin": "manual", "updatedAt": "2026-11-30T09:00:00.000Z",
+                        "futureSectionField": 42
+                    }],
+                    "generatedAt": "2026-11-30T09:00:00.000Z",
+                    "finalizedAt": "2026-11-30T10:00:00.000Z",
+                    "createdAt": "2026-11-30T09:00:00.000Z",
+                    "updatedAt": "2026-11-30T10:00:00.000Z",
+                    "schemaVersion": 7, "unknownList": [1, 2, 3]
+                }, { "id": "r_2" }],
+                "updatedAt": ""
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = storage.load().unwrap().workspace;
+        assert_eq!(loaded.reports.len(), 2, "未知字段不得导致整份文件被丢弃");
+        let report = &loaded.reports[0];
+        assert_eq!(report.kind, "month");
+        assert_eq!(report.status, "final");
+        assert_eq!(report.template_id, "monthly-external");
+        assert!(report.finalized_at.is_some());
+        assert_eq!(report.sections[0].key, "progress");
+        assert_eq!(report.sections[0].origin, "manual");
+
+        // 缺字段的报告靠 #[serde(default)] 兜底，而不是解析失败。
+        let sparse = &loaded.reports[1];
+        assert_eq!(sparse.id, "r_2");
+        assert!(sparse.sections.is_empty());
+        assert!(sparse.period.is_empty());
     }
 
     #[test]

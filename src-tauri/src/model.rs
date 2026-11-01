@@ -27,6 +27,9 @@ pub struct Workspace {
     pub areas: Vec<Area>,
     #[serde(default)]
     pub runs: Vec<SopRunEntry>,
+    /// 周报 / 月报 / 季报。v1 新增，缺省为空：旧文件不需要写这个键。
+    #[serde(default)]
+    pub reports: Vec<Report>,
     #[serde(default)]
     pub updated_at: String,
 }
@@ -39,6 +42,7 @@ impl Default for Workspace {
             edges: Vec::new(),
             areas: Vec::new(),
             runs: Vec::new(),
+            reports: Vec::new(),
             updated_at: now_iso(),
         }
     }
@@ -174,4 +178,38 @@ pub struct SopRunEntry {
     pub at: String,
     pub result: String,
     pub note: String,
+}
+
+/// 报告章节。key 取值约定：'overview' | 'progress' | 'metrics' | 'risks' | 'next' | 'okr' | 'support'。
+/// Rust 侧只做透传（Rust 不参与语义校验，非法值由前端归一化层兜住）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ReportSection {
+    pub key: String,
+    pub title: String,
+    /// Markdown 纯文本
+    pub body: String,
+    /// 'auto' | 'manual' | 'ai'
+    pub origin: String,
+    pub updated_at: String,
+}
+
+/// 周报 / 月报 / 季报。kind: 'week' | 'month' | 'quarter'；
+/// period: '2026-W44' | '2026-11' | '2026-Q4'；status: 'draft' | 'final'。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Report {
+    pub id: String,
+    pub kind: String,
+    pub period: String,
+    pub title: String,
+    /// 报告人，空串表示未填
+    pub author: String,
+    pub status: String,
+    pub template_id: String,
+    pub sections: Vec<ReportSection>,
+    pub generated_at: Option<String>,
+    pub finalized_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }

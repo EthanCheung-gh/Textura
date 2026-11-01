@@ -523,6 +523,7 @@ export function buildDemoWorkspace(): Workspace {
     edges: [...okrEdges, ...flowEdges, ...dependsEdges],
     areas,
     runs,
+    reports: [],
     updatedAt: nowIso(),
   };
 }

@@ -11,6 +11,7 @@ import {
 
 describe('routeFromSearch', () => {
   it('accepts every known route and rejects invalid values', () => {
+    expect(ROUTE_IDS).toHaveLength(8);
     for (const route of ROUTE_IDS) {
       expect(routeFromSearch(`?route=${route}`)).toBe(route);
     }
@@ -87,5 +88,25 @@ describe('calendar route', () => {
       '?item=obj_activation&route=calendar',
     );
     expect(ROUTE_IDS.indexOf('calendar')).toBe(1);
+  });
+});
+
+describe('reports route', () => {
+  it('is a valid route placed right before settings', () => {
+    expect(ROUTE_IDS).toContain('reports');
+    expect(ROUTE_IDS.indexOf('reports')).toBe(ROUTE_IDS.indexOf('settings') - 1);
+    expect(ROUTE_IDS.indexOf('settings')).toBe(7);
+    expect(isRoute('reports')).toBe(true);
+  });
+
+  it('supports deep links, memory and URL syncing without disturbing other ids', () => {
+    expect(routeFromSearch('?route=reports')).toBe('reports');
+    expect(resolveInitialRoute('?route=reports', 'gtd')).toBe('reports');
+    expect(resolveInitialRoute('', 'reports')).toBe('reports');
+    expect(routeFromStored('reports')).toBe('reports');
+    expect(routeWithSearch('?item=obj_activation', 'reports')).toBe(
+      '?item=obj_activation&route=reports',
+    );
+    expect(routeFromSearch('?route=Reports')).toBeNull();
   });
 });

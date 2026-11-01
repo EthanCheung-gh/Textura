@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Item, Workspace } from './model';
+import type { Item, ReportSection, Workspace } from './model';
 import { WORKSPACE_VERSION } from './model';
 import { useWorkspace } from './store';
 import { emptyWorkspace, parseWorkspaceText } from './repo';
@@ -66,6 +66,7 @@ function makeWorkspace(marker: string, version = WORKSPACE_VERSION): Workspace {
       { id: `area_${marker}`, name: `领域 ${marker}`, color: '#C0663A', order: 0 },
     ],
     runs: [],
+    reports: [],
     updatedAt: '2000-01-01T00:00:00.000Z',
   };
 }
@@ -672,6 +673,261 @@ describe('store save queue and correction notices', () => {
     expect(state.notices.filter((notice) => notice.message.includes('已修正'))).toHaveLength(1);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+});
+
+describe('store report actions', () => {
+  function seedEmpty(): void {
+    useWorkspace.setState({
+      workspace: { ...emptyWorkspace(), reports: [] },
+      status: 'ready',
+      selectedId: null,
+      notices: [],
+    });
+  }
+
+  it('creates a draft report with kind-based title and template defaults', () => {
+    seedEmpty();
+
+    const report = useWorkspace.getState().createReport({ kind: 'week', period: '2026-W44' });
+
+    expect(report.id.startsWith('r_')).toBe(true);
+    expect(report.kind).toBe('week');
+    expect(report.period).toBe('2026-W44');
+    expect(report.title).toBe('2026 年第 44 周报');
+    expect(report.author).toBe('');
+    expect(report.status).toBe('draft');
+    expect(report.templateId).toBe('weekly-external');
+    expect(report.sections).toEqual([]);
+    expect(report.generatedAt).toBeTruthy();
+    expect(report.finalizedAt).toBeNull();
+    expect(report.createdAt).toBe(report.updatedAt);
+    expect(useWorkspace.getState().workspace.reports?.map((item) => item.id)).toEqual([report.id]);
+
+    // 经由 commit：一次历史快照 + 可撤销
+    expect(useWorkspace.getState().canUndo()).toBe(true);
+    useWorkspace.getState().undo();
+    expect(useWorkspace.getState().workspace.reports).toEqual([]);
+  });
+
+  it('maps month/quarter defaults and keeps explicit title, author and sections', () => {
+    seedEmpty();
+
+    const month = useWorkspace.getState().createReport({ kind: 'month', period: '2026-11' });
+    expect(month.title).toBe('2026 年 11 月报');
+    expect(month.templateId).toBe('monthly-external');
+
+    const quarter = useWorkspace.getState().createReport({ kind: 'quarter', period: '2026-Q4' });
+    expect(quarter.title).toBe('2026 年第四季度报');
+    expect(quarter.templateId).toBe('quarterly-external');
+
+    const custom = useWorkspace.getState().createReport({
+      kind: 'week',
+      period: '下周',
+      title: '外部周报',
+      author: '林一',
+      templateId: 'custom-template',
+      sections: [{ key: 'overview', title: '概览', body: 'v1', origin: 'manual', updatedAt: NOW }],
+    });
+    expect(custom.title).toBe('外部周报');
+    expect(custom.author).toBe('林一');
+    expect(custom.templateId).toBe('custom-template');
+    expect(custom.sections).toHaveLength(1);
+    // 章节时间戳统一刷新为创建时间，不沿用调用方传入的旧值
+    expect(custom.sections[0].updatedAt).not.toBe(NOW);
+    expect(custom.sections[0].updatedAt).toBe(custom.createdAt);
+  });
+
+  it('falls back to the raw period when it cannot be parsed', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({ kind: 'week', period: '下周' });
+    expect(report.title).toBe('下周');
+  });
+
+  it('uses the aggregation layer period wording for all three kinds', () => {
+    seedEmpty();
+    const store = useWorkspace;
+    // 固定 period，不依赖系统时钟
+    const week = store.getState().createReport({ kind: 'week', period: '2026-W44' });
+    const month = store.getState().createReport({ kind: 'month', period: '2026-11' });
+    const quarter = store.getState().createReport({ kind: 'quarter', period: '2026-Q4' });
+
+    expect([week.title, month.title, quarter.title]).toEqual([
+      '2026 年第 44 周报',
+      '2026 年 11 月报',
+      // 季报用中文数字，与 periodLabel('quarter', '2026-Q4') = '2026 年第四季度' 对齐
+      '2026 年第四季度报',
+    ]);
+    expect(quarter.title.startsWith('2026 年第四季度')).toBe(true);
+    expect(quarter.title).not.toContain('第 4');
+
+    // 显式标题始终以调用方为准，不被默认标题覆盖
+    const explicit = store.getState().createReport({
+      kind: 'quarter',
+      period: '2026-Q4',
+      title: 'Q4 对外季报',
+    });
+    expect(explicit.title).toBe('Q4 对外季报');
+  });
+
+  it('replaces sections wholesale and refreshes per-section timestamps', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({
+      kind: 'week',
+      period: '2026-W44',
+      sections: [
+        { key: 'overview', title: '概览', body: 'v1', origin: 'auto', updatedAt: NOW },
+        { key: 'risks', title: '风险', body: '', origin: 'ai', updatedAt: NOW },
+      ],
+    });
+    expect(report.sections.map((section) => section.key)).toEqual(['overview', 'risks']);
+
+    useWorkspace
+      .getState()
+      .updateReport(report.id, {
+        title: '重写周报',
+        sections: [{ key: 'progress', title: '进展', body: 'v2', origin: 'manual', updatedAt: NOW }],
+      });
+
+    const updated = (useWorkspace.getState().workspace.reports ?? []).find(
+      (item) => item.id === report.id,
+    );
+    expect(updated?.title).toBe('重写周报');
+    expect(updated?.sections.map((section) => section.key)).toEqual(['progress']);
+    expect(updated?.sections[0].body).toBe('v2');
+    expect(updated?.sections[0].origin).toBe('manual');
+    expect(updated?.sections[0].updatedAt).not.toBe(NOW);
+    expect(updated?.updatedAt).toBe(updated?.sections[0].updatedAt);
+    // 未传 author 的字段保持原值
+    expect(updated?.author).toBe('');
+  });
+
+  it('keeps the previous origin when the caller omits it', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({
+      kind: 'week',
+      period: '2026-W44',
+      sections: [{ key: 'overview', title: '概览', body: 'v1', origin: 'ai', updatedAt: NOW }],
+    });
+
+    useWorkspace.getState().updateReport(report.id, {
+      sections: [
+        { key: 'overview', title: '概览', body: 'v2', updatedAt: NOW } as ReportSection,
+      ],
+    });
+
+    const updated = (useWorkspace.getState().workspace.reports ?? []).find(
+      (item) => item.id === report.id,
+    );
+    expect(updated?.sections[0].body).toBe('v2');
+    expect(updated?.sections[0].origin).toBe('ai');
+  });
+
+  it('finalizes and reopens a report', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({ kind: 'month', period: '2026-11' });
+
+    useWorkspace.getState().finalizeReport(report.id);
+    let current = (useWorkspace.getState().workspace.reports ?? []).find(
+      (item) => item.id === report.id,
+    );
+    expect(current?.status).toBe('final');
+    expect(current?.finalizedAt).toBeTruthy();
+    expect(current?.updatedAt).toBe(current?.finalizedAt);
+    expect(current?.generatedAt).toBe(report.generatedAt);
+
+    useWorkspace.getState().undo();
+    current = (useWorkspace.getState().workspace.reports ?? []).find(
+      (item) => item.id === report.id,
+    );
+    expect(current?.status).toBe('draft');
+
+    useWorkspace.getState().finalizeReport(report.id);
+    useWorkspace.getState().reopenReport(report.id);
+    current = (useWorkspace.getState().workspace.reports ?? []).find(
+      (item) => item.id === report.id,
+    );
+    expect(current?.status).toBe('draft');
+    expect(current?.finalizedAt).toBeNull();
+  });
+
+  it('deletes a report and silently ignores unknown ids', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({ kind: 'week', period: '2026-W44' });
+
+    useWorkspace.getState().deleteReport(report.id);
+    expect(useWorkspace.getState().workspace.reports).toEqual([]);
+
+    const before = useWorkspace.getState().workspace;
+    useWorkspace.getState().finalizeReport('r_missing');
+    useWorkspace.getState().reopenReport('r_missing');
+    useWorkspace.getState().deleteReport('r_missing');
+    // 连工作区对象都不得替换：不产生多余的历史快照
+    expect(useWorkspace.getState().workspace).toBe(before);
+  });
+
+  it('is a pure no-op (no commit, no history) when updating an unknown report id', () => {
+    seedEmpty();
+    const report = useWorkspace.getState().createReport({ kind: 'week', period: '2026-W44' });
+    const before = useWorkspace.getState().workspace;
+    const beforeUndo = useWorkspace.getState().canUndo();
+
+    useWorkspace.getState().updateReport('r_missing', { title: '不存在的报告' });
+    useWorkspace.getState().updateReport('r_missing', {
+      sections: [{ key: 'overview', title: '概览', body: '不该写入', origin: 'manual', updatedAt: NOW }],
+    });
+
+    const reports = useWorkspace.getState().workspace.reports ?? [];
+    expect(reports).toHaveLength(1);
+    expect(reports[0].id).toBe(report.id);
+    expect(reports[0].title).toBe('2026 年第 44 周报');
+    expect(reports[0].sections).toEqual([]);
+    // 与 finalize/reopen/delete 同一口径：连工作区对象都不得替换，
+    // 否则未知 id 也会多压一次历史快照并触发防抖落盘。
+    expect(useWorkspace.getState().workspace).toBe(before);
+    expect(useWorkspace.getState().workspace.updatedAt).toBe(before.updatedAt);
+    expect(useWorkspace.getState().canUndo()).toBe(beforeUndo);
+  });
+
+  it('restores a deleted report on undo', () => {
+    const store = useWorkspace;
+    seedEmpty();
+    const report = store.getState().createReport({ kind: 'week', period: '2026-W44' });
+    expect(store.getState().workspace.reports).toHaveLength(1);
+
+    store.getState().deleteReport(report.id);
+    expect(store.getState().workspace.reports).toHaveLength(0);
+
+    store.getState().undo();
+    const restored = store.getState().workspace.reports ?? [];
+    expect(restored).toHaveLength(1);
+    expect(restored[0].id).toBe(report.id);
+    expect(restored[0].title).toBe('2026 年第 44 周报');
+    expect(store.getState().canRedo()).toBe(true);
+
+    // 撤销后同一个防抖/回调路径再拿旧 id 更新也不会污染历史（守卫兜住）
+    const afterUndo = store.getState().workspace;
+    store.getState().updateReport('r_never_existed', { author: '林一' });
+    expect(store.getState().workspace).toBe(afterUndo);
+  });
+
+  it('debounces exactly one save for report mutations', async () => {
+    loadWorkspaceMock.mockResolvedValue({
+      workspace: emptyWorkspace(),
+      freshInstall: false,
+      parentCycles: [],
+    });
+    await useWorkspace.getState().load();
+    saveWorkspaceMock.mockClear();
+
+    const report = useWorkspace.getState().createReport({ kind: 'week', period: '2026-W44' });
+    useWorkspace.getState().updateReport(report.id, { author: '林一' });
+    expect(saveWorkspaceMock).not.toHaveBeenCalled();
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(saveWorkspaceMock).toHaveBeenCalledTimes(1);
+    const persisted = saveWorkspaceMock.mock.calls[0][0] as Workspace;
+    expect((persisted.reports ?? []).map((item) => item.author)).toEqual(['林一']);
   });
 });
 

@@ -35,6 +35,7 @@ function baseWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     edges: [],
     areas: [],
     runs: [],
+    reports: [],
     updatedAt: NOW,
     ...overrides,
   };
@@ -234,5 +235,151 @@ describe('normalization correction summary (N8)', () => {
       to: 100,
     });
     expect(corrections.total).toBeGreaterThan(corrections.entries.length);
+  });
+});
+
+describe('report normalization', () => {
+  function firstReport(input: Record<string, unknown>) {
+    const { workspace, corrections } = migrateWorkspaceWithReport({
+      version: WORKSPACE_VERSION,
+      items: [],
+      ...input,
+    });
+    return { report: (workspace.reports ?? [])[0], workspace, corrections };
+  }
+
+  it('whitelists report fields, falls back on invalid enums and recovers ids', () => {
+    const { report } = firstReport({
+      reports: [
+        {
+          id: '',
+          kind: 'weekly',
+          period: '2026-W44',
+          title: '',
+          author: 5,
+          status: 'archived',
+          templateId: '',
+          sections: [{ key: '', title: 3, body: null, origin: 'robot', updatedAt: null }],
+          generatedAt: 9,
+          finalizedAt: '2026-11-02T09:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(report?.id).toBe('r_recovered_0');
+    expect(report?.kind).toBe('week');
+    expect(report?.period).toBe('2026-W44');
+    expect(report?.status).toBe('draft');
+    expect(report?.title).toBe('未命名报告');
+    expect(report?.author).toBe('');
+    expect(report?.templateId).toBe('weekly-external');
+    // 未生成/未定稿必须是 null，不能被补成 now
+    expect(report?.generatedAt).toBeNull();
+    expect(report?.finalizedAt).toBe('2026-11-02T09:00:00.000Z');
+    expect(report?.sections[0]).toMatchObject({ key: 'section_0', title: '', body: '', origin: 'auto' });
+    expect(Number.isNaN(Date.parse(report?.sections[0].updatedAt ?? ''))).toBe(false);
+    expect(Number.isNaN(Date.parse(report?.createdAt ?? ''))).toBe(false);
+  });
+
+  it('drops an invalid period to an empty string instead of guessing one', () => {
+    const { workspace, corrections } = firstReport({
+      reports: [
+        { id: 'r1', kind: 'week', period: '下周' },
+        { id: 'r2', kind: 'month', period: '2026-11' },
+        { id: 'r3', kind: 'quarter', period: '2026-Q5' },
+        { id: 'r4', kind: 'quarter', period: ' 2026-Q4 ' },
+      ],
+    });
+
+    expect((workspace.reports ?? []).map((report) => report.period)).toEqual([
+      '',
+      '2026-11',
+      '',
+      '2026-Q4',
+    ]);
+    const fields = corrections.entries.map((entry) => entry.field);
+    expect(fields).toContain('reports[0].period');
+    expect(fields).toContain('reports[2].period');
+    expect(fields).toContain('reports[3].period');
+    expect(corrections.entries.find((entry) => entry.field === 'reports[0].period')).toMatchObject({
+      itemId: 'r1',
+      from: '下周',
+      to: '',
+    });
+  });
+
+  it('caps sections at 40 and truncates bodies over 200k, both reported', () => {
+    const longBody = 'x'.repeat(200_001);
+    const sections = Array.from({ length: 41 }, (_, index) => ({
+      key: `s${index}`,
+      title: `S${index}`,
+      body: index === 0 ? longBody : 'ok',
+      origin: 'auto',
+      updatedAt: NOW,
+    }));
+
+    const { report, corrections } = firstReport({
+      reports: [{ id: 'r1', kind: 'week', period: '2026-W44', sections }],
+    });
+
+    expect(report?.sections).toHaveLength(40);
+    expect(report?.sections[0].body).toHaveLength(200_000);
+    expect(report?.sections[0].body.startsWith('xxx')).toBe(true);
+    expect(report?.sections[40]).toBeUndefined();
+
+    const fields = corrections.entries.map((entry) => entry.field);
+    expect(fields).toContain('reports[0].sections');
+    expect(fields).toContain('reports[0].sections[0].body');
+    expect(corrections.entries.every((entry) => entry.itemId === 'r1')).toBe(true);
+  });
+
+  it('keeps empty sections, backfills legacy workspaces, and stays idempotent', () => {
+    const legacy = migrateWorkspace({
+      version: WORKSPACE_VERSION,
+      items: [],
+      edges: [],
+      areas: [],
+      runs: [],
+      updatedAt: NOW,
+    });
+    expect(legacy.reports).toEqual([]);
+
+    const { report, corrections, workspace } = firstReport({
+      reports: [{ id: 'r1', kind: 'month', period: '2026-11', sections: [] }],
+    });
+    expect(report?.sections).toEqual([]);
+    // 「缺字段补默认值」不算修正，否则每次加载都会提示已修正
+    expect(corrections.total).toBe(0);
+    expect(report?.templateId).toBe('monthly-external');
+
+    const again = migrateWorkspace(JSON.parse(JSON.stringify(workspace)));
+    expect(again.reports).toEqual(workspace.reports);
+  });
+
+  it('reports section-level field corrections with the report id', () => {
+    const { corrections } = firstReport({
+      reports: [
+        {
+          id: 'r1',
+          kind: 'week',
+          period: '2026-W44',
+          status: 'draft',
+          title: '周报',
+          author: '',
+          templateId: 'weekly-external',
+          sections: [
+            { key: 7, title: '概览', body: '正常', origin: 'manual', updatedAt: NOW },
+          ],
+        },
+      ],
+    });
+
+    expect(corrections.entries).toHaveLength(1);
+    expect(corrections.entries[0]).toMatchObject({
+      itemId: 'r1',
+      field: 'reports[0].sections[0].key',
+      from: 7,
+      to: 'section_0',
+    });
   });
 });
