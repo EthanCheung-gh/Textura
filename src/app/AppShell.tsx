@@ -26,6 +26,9 @@ const GanttPage = lazy(() =>
   import('../modules/gantt/GanttPage').then((m) => ({ default: m.GanttPage })),
 );
 const SopPage = lazy(() => import('../modules/sop/SopPage').then((m) => ({ default: m.SopPage })));
+const ReportsPage = lazy(() =>
+  import('../modules/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })),
+);
 const CalendarPage = lazy(() =>
   import('../modules/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })),
 );
@@ -45,6 +48,8 @@ function RouteView({ route }: { route: Route }) {
       return <GanttPage />;
     case 'sop':
       return <SopPage />;
+    case 'reports':
+      return <ReportsPage />;
     case 'calendar':
       return <CalendarPage />;
     case 'settings':

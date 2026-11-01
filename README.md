@@ -144,6 +144,15 @@ export interface Item {
 
 ![SOP 运行模式：当前步骤、分支选择与逐步结果记录](docs/screenshots/sop-run.png)
 
+**周报**
+
+- 周 / 月 / 季三种粒度：期次列表 + 正文编辑 + 数据源三栏，按模板分节生成草稿，可单节重新汇总、
+  素材一键插入、定稿后冻结，Markdown 可复制 / 下载。
+- AI 参考：右栏切到「AI 参考」可按节或整份生成参考稿（编辑器每节的「AI 参考」按钮直达该节），
+  只有点「采用本节 / 全部采用」才以 AI 来源写回正文；参考结果只进参考区，**不会自动写入正文**。
+- 生成前需先在设置启用大模型（服务商、网关地址、密钥与模型）；浏览器 / webview 直连网关受
+  CORS 限制，被拒时面板会提示改用允许浏览器直连的网关。
+
 **应用级**
 
 - 命令面板（`Ctrl/Cmd + K`）：命令、条目、领域统一搜索，带「最近使用」。
@@ -152,8 +161,8 @@ export interface Item {
   `/今天 /明天 /本周` 语法，连续录入与单条撤销。
 - 设置页：主题切换、存储路径与备份列表（恢复备份）、导入 / 导出 JSON、撤销 / 重做、重置为演示数据。
 - 大模型配置：服务商预设、Base URL、模型、API Key、温度、最大输出 token 与系统提示词；
-  密钥只保存在本机 localStorage，不写入工作区、导出或备份。内置 MCP 独立库（`packages/textura-mcp`）
-  暴露 7 个工具，可让模型直接新增事项、更新状态、搜索与建立关联。
+  密钥只保存在本机 localStorage，不写入工作区、导出或备份。MCP 已抽取为同级独立项目
+  [`../textura-mcp`](../textura-mcp)（包 `@textura/mcp`），暴露 7 个工具，可让模型直接新增事项、更新状态、搜索与建立关联。
 - 快捷键帮助（`?`）、深色主题、视图深链（`?route=calendar`、`?route=okr&item=<id>`）与视图记忆。
 - 数据保护：导入时拒绝父子环并给出环路径；加载时自动切断环、另存修复副本且不覆盖原文件；
   工作区版本高于当前应用时拒绝加载并保留副本；非法字段自动归一化，失效枚举回落并提示「已修正 N 处非法数据」。
@@ -169,7 +178,8 @@ export interface Item {
 
 Tauri v2（Rust 侧负责单文档原子写 + 30 份轮换备份）+ React 18.3 + TypeScript strict + Zustand 5 + Vite 7；
 SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，日历的农历 / 节气引擎零依赖自研，
-其余日期计算统一走 `date-fns` 4。内置 MCP 独立为 npm workspace 包 `@textura/mcp`（`packages/textura-mcp`），
+其余日期计算统一走 `date-fns` 4。MCP 已抽取为同级独立项目 `../textura-mcp`（包 `@textura/mcp`），
+应用通过 `file:../textura-mcp` 依赖消费其 `dist` 产物（不再是 workspace，也不走源码路径别名）；
 通过 `TexturaBridge` 端口复用统一任务内核，服务本身不依赖 React 与具体运行时。
 没有路由库、没有 UI 组件库、没有 CSS 框架。生产构建启用 CSP（`script-src 'self'`，主题预置外置为
 `public/theme-init.js`），视图层有错误边界兜底；路由级 `React.lazy` + `manualChunks`（react / flow / date）
@@ -219,6 +229,9 @@ SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，�
   ```
 
 ```bash
+# MCP 库是同级独立项目，首次拉取需先安装并构建其 dist 产物
+npm --prefix ../textura-mcp install && npm --prefix ../textura-mcp run build
+
 npm install          # 安装前端依赖
 npm run dev          # 浏览器调试模式：http://localhost:1420
 npm run tauri dev    # 桌面开发模式（同时起 Vite 与 Tauri 窗口）
@@ -226,12 +239,15 @@ npm test             # vitest 单测
 npm run tauri:build  # 构建 deb 安装包
 ```
 
+`npm run dev` / `build` / `test` 都带 `pre*` 钩子（`npm --prefix ../textura-mcp run build`），
+会先按需重建库的 `dist`，所以改了库源码不必手动再构建一次；只有首次 `npm install` 之前需要上面的手动步骤。
+
 首次启动（**首次安装**且工作区为空）会自动写入一份演示数据：3 个领域、1 个目标 + 3 个 KR、
 1 个 7 步 SOP、1 个「官网改版」项目 + 6 个行动、6 条收件箱等。主文件 / `.bak` / 轮换备份任已存在时不再播种，
 所以导入空工作区后重启会保持为空。清理演示数据的方式见 USER-GUIDE 的「数据安全与保护」章节。
 
 视图可以直接深链：`?route=calendar`、`?route=okr`、`?route=gtd&item=<id>` 等
-（合法路由：`dashboard` / `calendar` / `okr` / `gtd` / `gantt` / `sop` / `settings`）。
+（合法路由：`dashboard` / `calendar` / `okr` / `gtd` / `gantt` / `sop` / `reports` / `settings`）。
 
 ## 安装包
 
@@ -294,9 +310,11 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
 ## 测试
 
 ```bash
-npm test                                        # 27 个测试文件 / 352 个用例（vitest run）
-cargo test --manifest-path src-tauri/Cargo.toml  # Rust 持久化测试，13 个用例
+npm test                                        # 39 个测试文件 / 582 个用例（vitest run）
+cargo test --manifest-path src-tauri/Cargo.toml  # Rust 持久化测试，16 个用例
 ```
+
+MCP 库自身的 10 个用例在 `../textura-mcp` 内运行（`npm --prefix ../textura-mcp test`），应用侧不再收集。
 
 前端单测覆盖：模型归一化与环检测（`repo.test.ts`）、store 的 `updateItems` 批量写入与历史、
 selectors 树查询、甘特几何 / 吸附 / 虚拟化窗口（`gantt/virtual.test.ts`）、GTD 逻辑与列表分页、
@@ -305,9 +323,9 @@ OKR 指标换算与表格分页、SOP 布局 / 适配 / 运行推进 / 节点对
 以及日历的农历引擎（`calendar/lunar.test.ts`，48 例）与日历逻辑（`calendar/calendarLogic.test.ts`，35 例）；
 `core/indexing.test.ts` 用 `deepFreeze` 守护「工作区与 Item 不可原地修改」并给出 10k 规模预算断言。
 
-`cargo test` 覆盖（13 个用例）：round-trip 与 `.bak` 生成、主文件损坏回退、全部损坏回退空库、
-30 份备份轮换与恢复、低版本迁移、备份名路径穿越拒绝、导出（缩进 2 空格）与导入、`freshInstall` 判定、
-未来版本拒绝与副本保留、并发保存串行化、锁中毒恢复、环修复副本不触碰主文件、非法字段反序列化拒绝。
+`cargo test` 覆盖（16 个用例）：round-trip 与 `.bak` 生成、报告往返、旧文件缺 `reports` 键、report 内未知字段忽略、
+主文件损坏回退、全部损坏回退空库、30 份备份轮换与恢复、低版本迁移、备份名路径穿越拒绝、导出（缩进 2 空格）与导入、
+`freshInstall` 判定、未来版本拒绝与副本保留、并发保存串行化、锁中毒恢复、环修复副本不触碰主文件、非法字段反序列化拒绝。
 
 浏览器端集成冒烟由 `scripts/qa/` 下的脚本用无头 Chrome + CDP 驱动（不依赖第三方包）：
 
@@ -405,7 +423,8 @@ Textura/
 │   │   ├── okr/               OKR 视图：季度条、卡片 / 表格（200 条 KR/页）/ 对齐、指标草稿与信心
 │   │   ├── gtd/               GTD 视图：收件箱、下一步、等待、某天（均 100 条/页）、澄清、周回顾
 │   │   ├── gantt/             甘特视图：scale.ts（几何与吸附）、virtual.ts（行 / 列窗口）、时间轴、左侧树、依赖
-│   │   └── sop/                SOP 视图：画布（视口渲染）、perf.ts（节点对象复用）、检查器、运行、布局
+│   │   ├── sop/                SOP 视图：画布（视口渲染）、perf.ts（节点对象复用）、检查器、运行、布局
+│   │   ├── reports/           周报 / 月报 / 季报：周期聚合（period / facts / draft）、三栏编辑页、定稿冻结与 Markdown 导出
 │   ├── styles/                设计令牌 tokens.css、基础排版 base.css、外壳 shell.css
 │   ├── ui/                    UI 原语：Button / IconButton / Modal / Field / Badge / Progress / EmptyState / Segmented / icons
 │   └── main.tsx               React 入口

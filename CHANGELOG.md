@@ -3,6 +3,36 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循语义化版本。本项目为单机桌面应用，数据格式版本单独由 `WORKSPACE_VERSION` 管理。
 
+## [未发布] - 2026-11-01
+
+### 新增
+
+- 周报 / 月报 / 季报：工作区新增 `reports` 字段（`Report` / `ReportSection`，正文按模板分节、定稿后冻结），
+  新增周期聚合层（ISO 周 / 自然月 / 季度的期次键、范围、偏移与中文标题；完成 / 风险 / KR / SOP 运行 / 下期计划的
+  素材抽取与草稿正文生成），以及「周报」页面：期次列表 + 正文编辑 + 数据源三栏，支持按节重新汇总、素材一键插入、
+  输入 600ms 防抖落盘、定稿与删除二次确认（取消定稿一键执行，可用撤销回退）、导出时跳过被清空的节，
+  以及 Markdown 复制 / 下载导出（不新增 Rust 命令）；并补充周报相关前端与 Rust 用例
+  （当前总数以 README「测试」一节为准，避免每次加用例都要改日志）。
+- 周报 AI 参考生成（按节 / 整份，结果只进参考区）：右栏新增「数据源 / AI 参考」两个标签，
+  编辑器每节工具条加「AI 参考」入口（点击即切标签并针对该节自动生成一次），面板顶部「整份生成参考」
+  走 `reportMessages` + `parseReportSections` 并按当前模板过滤 key；结果只展示在参考区，
+  必须手动「采用本节 / 全部采用」（整份采用有二次确认）才以 `origin: 'ai'` 写回正文，且可撤销；
+  面板显示 provider / 模型与「本次摘要 N 字符」，未启用或缺密钥时给「去设置」引导，
+  切换报告 / 期次 / 标签或卸载都会取消在途请求（`aborted` 静默忽略），错误按 kind 分流
+  （鉴权 / 限流 / 超时 / CORS / 网关 / 输出格式 / 配置）；需先在设置启用大模型，浏览器直连受 CORS 限制。
+
+### 变更
+
+- MCP 工具库抽取为同级独立项目 `../textura-mcp`（包 `@textura/mcp`）：删除仓库内 `packages/textura-mcp`，
+  取消 npm workspace，应用改为 `"@textura/mcp": "file:../textura-mcp"` 消费库的 `dist` 产物。
+- 移除配置层的源码耦合：`tsconfig.json` 的 `@textura/mcp` 路径映射与 `packages` 收录
+  （`include` 收敛为 `["src"]`），Vite / Vitest 的 `@textura/mcp` alias，以及 `vitest` 的 `packages/**/*.test.ts` 收集。
+- 新增 `predev` / `prebuild` / `pretest` 钩子（`npm --prefix ../textura-mcp run build`），
+  构建、测试与开发前先重建库，避免用到陈旧或不存在的 `dist`。
+- 首次拉取需先在 `../textura-mcp` 执行 `npm install && npm run build`；库自带的 10 个用例改在库内
+  （`../textura-mcp`）运行，应用侧的 vitest 不再收集库的测试，因此应用侧用例总数不随库抽取变化，
+  具体数字以 README「测试」一节为准。
+
 ## [0.1.0] - 2026-10-21
 
 首个可用版本：统一任务内核 + 日历与四个执行视图 + 应用级界面，桌面端可构建 deb 安装包。

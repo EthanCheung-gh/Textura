@@ -34,6 +34,7 @@ export type IconName =
   | 'clock'
   | 'trash'
   | 'edit'
+  | 'doc'
   | 'more';
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -173,6 +174,13 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M4 20h4L20 8l-4-4L4 16z" />
       <path d="m14.5 5.5 4 4" />
+    </>
+  ),
+  doc: (
+    <>
+      <path d="M13.5 3.5H6.5A1.5 1.5 0 0 0 5 5v14.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V9z" />
+      <path d="M13.5 3.5V9H19" />
+      <path d="M8.5 13.5h7M8.5 17h4.5" />
     </>
   ),
   more: (
