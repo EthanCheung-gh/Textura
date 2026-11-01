@@ -150,8 +150,11 @@ export interface Item {
   素材一键插入、定稿后冻结，Markdown 可复制 / 下载。
 - AI 参考：右栏切到「AI 参考」可按节或整份生成参考稿（编辑器每节的「AI 参考」按钮直达该节），
   只有点「采用本节 / 全部采用」才以 AI 来源写回正文；参考结果只进参考区，**不会自动写入正文**。
-- 生成前需先在设置启用大模型（服务商、网关地址、密钥与模型）；浏览器 / webview 直连网关受
-  CORS 限制，被拒时面板会提示改用允许浏览器直连的网关。
+- 生成前需先在设置启用大模型（服务商、网关地址、密钥与模型）；浏览器模式经 `fetch` 直连网关，
+  受 CORS 限制，被拒时面板会提示改用允许浏览器直连的网关；桌面端（Tauri）经 **Rust 代理通道**
+  （`ai_proxy`，`reqwest` + `rustls`）发出，不受 CORS 与 CSP `connect-src` 限制。
+  TLS 信任边界：代理使用内置 webpki 根证书，**不读系统 / 企业 CA**，企业 MITM 网关在桌面端会表现为
+  「无法连接模型网关」。
 
 **应用级**
 
@@ -277,9 +280,10 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
   工作区版本高于当前应用时拒绝加载，并把原文件复制为 `workspace.future-v<N>.json`；
   非法字段（越界数值、未知枚举）归一化后一次性提示「已修正 N 处非法数据」。
 - 应用启用 CSP：`default-src 'self'`、`script-src 'self'`、`frame-ancestors 'none'`，
-  只有 Tauri IPC 与内联样式被放行；磁盘读写在 Rust 侧完成，WebView 不直接访问文件系统。
-- 前端代码里没有任何网络请求、没有遥测、没有账号体系；唯一的外部交互是系统文件对话框
-  （导出 / 导入 JSON）。
+  只有 Tauri IPC 与内联样式被放行，`connect-src` 不放行任何外网地址；磁盘读写在 Rust 侧完成，
+  WebView 不直接访问文件系统。桌面端的大模型请求因此不经过 webview，而是经 Rust 代理通道发出。
+- 前端没有遥测、没有账号体系；唯一的外部网络交互是用户自己配置的大模型网关（浏览器模式由前端
+  `fetch` 直连、桌面端经 Rust 代理），其余外部交互是系统文件对话框（导出 / 导入 JSON）。
 - 浏览器调试模式（`npm run dev`）不落文件，改写 `localStorage['textura.workspace.v1']`。
 
 ## 已知限制
@@ -310,8 +314,8 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
 ## 测试
 
 ```bash
-npm test                                        # 39 个测试文件 / 582 个用例（vitest run）
-cargo test --manifest-path src-tauri/Cargo.toml  # Rust 持久化测试，16 个用例
+npm test                                        # 39 个测试文件 / 619 个用例（vitest run）
+cargo test --manifest-path src-tauri/Cargo.toml  # Rust 测试，33 个用例（持久化 + AI 代理）
 ```
 
 MCP 库自身的 10 个用例在 `../textura-mcp` 内运行（`npm --prefix ../textura-mcp test`），应用侧不再收集。
@@ -323,9 +327,11 @@ OKR 指标换算与表格分页、SOP 布局 / 适配 / 运行推进 / 节点对
 以及日历的农历引擎（`calendar/lunar.test.ts`，48 例）与日历逻辑（`calendar/calendarLogic.test.ts`，35 例）；
 `core/indexing.test.ts` 用 `deepFreeze` 守护「工作区与 Item 不可原地修改」并给出 10k 规模预算断言。
 
-`cargo test` 覆盖（16 个用例）：round-trip 与 `.bak` 生成、报告往返、旧文件缺 `reports` 键、report 内未知字段忽略、
+`cargo test` 覆盖（33 个用例）：round-trip 与 `.bak` 生成、报告往返、旧文件缺 `reports` 键、report 内未知字段忽略、
 主文件损坏回退、全部损坏回退空库、30 份备份轮换与恢复、低版本迁移、备份名路径穿越拒绝、导出（缩进 2 空格）与导入、
-`freshInstall` 判定、未来版本拒绝与副本保留、并发保存串行化、锁中毒恢复、环修复副本不触碰主文件、非法字段反序列化拒绝。
+`freshInstall` 判定、未来版本拒绝与副本保留、并发保存串行化、锁中毒恢复、环修复副本不触碰主文件、非法字段反序列化拒绝，
+以及 AI 代理命令（`ai_proxy`）：URL 协议白名单与缺主机/空地址文案、链路本地地址拒绝（保留 localhost 与私网）、
+超时参数夹取、错误分类与 20 MiB 响应体预算、`{kind,message}` 与 camelCase 入参的 serde 契约。
 
 浏览器端集成冒烟由 `scripts/qa/` 下的脚本用无头 Chrome + CDP 驱动（不依赖第三方包）：
 
