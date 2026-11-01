@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Area, Item, SopRunEntry, Workspace } from '../../core/model';
-import { collectFacts, collectFactsDetailed, factLine } from './facts';
+import { collectFacts, collectFactsDetailed, factLine, periodHasStarted } from './facts';
 
 /** 周期：2026-W45 = 2026-11-02（周一）~ 2026-11-08（周日）；下个周期 2026-W46 = 11-09 ~ 11-15。 */
 const PERIOD = '2026-W45';
@@ -578,5 +578,184 @@ describe('collectFacts：空工作区', () => {
     });
     expect(facts.facts).toEqual([]);
     expect(facts.completedByArea).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* PER-05 回归：未来期次不列当前数据 + KR 延期次过滤                    */
+/* ------------------------------------------------------------------ */
+
+describe('collectFacts：未来期次与 KR 延期次过滤（PER-05 回归）', () => {
+  /** 未来周次的期次键：2027-01-04 ~ 2027-01-10，晚于 NOW（2026-11-09）。 */
+  const FUTURE_WEEK = '2027-W01';
+
+  /**
+   * 三个季度各一条 KR（2026-Q3 / 2026-Q4 / 2027-Q1）+ 四类风险各一条
+   * + 一条 2027-W02 到期（用于验证 nextUp 不被归零）。
+   */
+  function quarterSpreadWorkspace(): Workspace {
+    return makeWorkspace([
+      makeItem({
+        id: 'kr_q3',
+        kind: 'keyresult',
+        title: 'Q3 的 KR',
+        okr: { period: '2026-Q3', confidence: 5, metric: { start: 0, target: 10, current: 5, unit: '件' } },
+        order: 1,
+      }),
+      makeItem({
+        id: 'kr_q4',
+        kind: 'keyresult',
+        title: 'Q4 的 KR',
+        okr: { period: '2026-Q4', confidence: 6 },
+        order: 2,
+      }),
+      makeItem({
+        id: 'kr_2027_q1',
+        kind: 'keyresult',
+        title: '2027 Q1 的 KR',
+        okr: { period: '2027-Q1', confidence: 7 },
+        order: 3,
+      }),
+      makeItem({
+        id: 'overdue',
+        kind: 'action',
+        title: '超期行动',
+        gantt: { start: '2026-10-01', end: '2026-11-05', progress: 0 },
+        order: 4,
+      }),
+      makeItem({
+        id: 'stuck',
+        kind: 'project',
+        title: '停滞项目',
+        gantt: { start: '2026-10-01', end: '2026-12-31', progress: 0 },
+        order: 5,
+      }),
+      makeItem({
+        id: 'waiting',
+        kind: 'action',
+        title: '等待反馈',
+        status: 'waiting',
+        gtd: { capturedAt: localIso(2026, 10, 1), clarified: true, waitingFor: '客户' },
+        order: 6,
+      }),
+      makeItem({ id: 'undated', kind: 'action', title: '未排期行动', order: 7 }),
+      // 2027-W02（= 2027-01-11 ~ 01-17）到期：未来期次也要照常列进「下周期计划」
+      makeItem({
+        id: 'plan_2027_w02',
+        kind: 'action',
+        title: '2027 第 2 周到期',
+        gantt: { start: '2027-01-11', end: '2027-01-13', progress: 0 },
+        order: 8,
+      }),
+    ]);
+  }
+
+  const ws = quarterSpreadWorkspace();
+
+  const krIds = (kind: 'week' | 'month' | 'quarter', period: string) =>
+    collectFactsDetailed(ws, kind, period, NOW)
+      .facts.filter((entry) => entry.kind === 'kr')
+      .map((entry) => entry.id);
+
+  it('未来周次（2027-W01）不产出 KR / 风险事实，stats.risks 为 0', () => {
+    const future = collectFactsDetailed(ws, 'week', FUTURE_WEEK, NOW);
+    // 前提：这一期确实晚于 NOW，否则下面的断言就没意义了
+    expect(future.period.start).toBe('2027-01-04');
+
+    expect(future.facts.filter((entry) => entry.kind === 'kr')).toHaveLength(0);
+    expect(future.facts.filter((entry) => entry.kind === 'risk')).toHaveLength(0);
+    expect(future.stats.risks).toBe(0);
+    expect(future.riskGroups).toEqual({ overdue: [], stuck: [], waiting: [], undated: [] });
+  });
+
+  it('未来期次的 nextUp 保持现状（未来期次本就用于规划）', () => {
+    const future = collectFactsDetailed(ws, 'week', FUTURE_WEEK, NOW);
+    expect(future.nextPeriod?.key).toBe('2027-W02');
+    expect(future.facts.filter((entry) => entry.kind === 'nextUp').map((entry) => entry.id)).toEqual([
+      'plan_2027_w02',
+    ]);
+  });
+
+  it('未来月报 / 季报同样不产出风险，且不影响过去期次', () => {
+    for (const [kind, period] of [
+      ['month', '2027-01'],
+      ['quarter', '2027-Q1'],
+    ] as const) {
+      const future = collectFactsDetailed(ws, kind, period, NOW);
+      expect(future.stats.risks).toBe(0);
+      expect(future.facts.filter((entry) => entry.kind === 'risk')).toHaveLength(0);
+    }
+    // 过去期次的风险一条不少：归零只对「尚未开始」的期次生效
+    const past = collectFactsDetailed(ws, 'week', PERIOD, NOW);
+    expect(past.stats.risks).toBe(4);
+    expect(past.riskGroups.overdue.map((entry) => entry.id)).toEqual(['overdue']);
+    expect(past.riskGroups.stuck.map((entry) => entry.id)).toEqual(['stuck']);
+    expect(past.riskGroups.waiting.map((entry) => entry.id)).toEqual(['waiting']);
+    expect(past.riskGroups.undated.map((entry) => entry.id)).toEqual(['undated']);
+  });
+
+  it('周报只取所在季度（2026-W45 → 2026-Q4）的 KR', () => {
+    expect(krIds('week', PERIOD)).toEqual(['kr_q4']);
+  });
+
+  it('月报只取所在季度（2026-11 → Q4；2026-09 → Q3）的 KR', () => {
+    expect(krIds('month', '2026-11')).toEqual(['kr_q4']);
+    expect(krIds('month', '2026-09')).toEqual(['kr_q3']);
+  });
+
+  it('季报只取该季度（2026-Q4 / 2026-Q3）的 KR', () => {
+    expect(krIds('quarter', '2026-Q4')).toEqual(['kr_q4']);
+    expect(krIds('quarter', '2026-Q3')).toEqual(['kr_q3']);
+  });
+
+  it('当季 KR 正常出现在当季报告里（防过度过滤）', () => {
+    // 2026-Q4 的 KR 应同时出现在当季的周报 / 月报 / 季报
+    expect(krIds('week', '2026-W45')).toEqual(['kr_q4']);
+    expect(krIds('month', '2026-11')).toEqual(['kr_q4']);
+    expect(krIds('quarter', '2026-Q4')).toEqual(['kr_q4']);
+  });
+
+  it('缺 okr / okr.period 的 KR 在任何期次都照列（不因过滤而永久消失）', () => {
+    // 手改 / 导入的旧数据可能整块没有 okr；按季过滤会让它们从此不进任何报告。
+    const legacy = makeWorkspace([
+      makeItem({ id: 'kr_legacy', kind: 'keyresult', title: '没有季次的 KR', order: 1 }),
+      makeItem({
+        id: 'kr_q4',
+        kind: 'keyresult',
+        title: 'Q4 的 KR',
+        okr: { period: '2026-Q4', confidence: 5 },
+        order: 2,
+      }),
+    ]);
+    const ids = (kind: 'week' | 'month' | 'quarter', period: string) =>
+      collectFactsDetailed(legacy, kind, period, NOW)
+        .facts.filter((entry) => entry.kind === 'kr')
+        .map((entry) => entry.id);
+
+    // 周 / 月 / 季三种粒度都要带上它，且不与当季 KR 互相顶掉
+    expect(ids('week', '2026-W45')).toEqual(['kr_legacy', 'kr_q4']);
+    expect(ids('month', '2026-11')).toEqual(['kr_legacy', 'kr_q4']);
+    expect(ids('quarter', '2026-Q4')).toEqual(['kr_legacy', 'kr_q4']);
+    // 别的季度（2026-Q3）里只剩下没有季次的那一条
+    expect(ids('quarter', '2026-Q3')).toEqual(['kr_legacy']);
+  });
+
+  it('跨季周按周一归属：2026-W53（2026-12-28 ~ 2027-01-03）只出 2026-Q4 的 KR', () => {
+    // 该周跨年跨季，刻意按「周期首日（周一）所在季度」归属，不按 ISO 周年/周四。
+    const yearEndNow = new Date(2026, 11, 29, 9, 0, 0);
+    const facts = collectFactsDetailed(ws, 'week', '2026-W53', yearEndNow);
+    expect(facts.period).toEqual({ kind: 'week', key: '2026-W53', start: '2026-12-28', end: '2027-01-03' });
+    expect(facts.facts.filter((entry) => entry.kind === 'kr').map((entry) => entry.id)).toEqual(['kr_q4']);
+    // 2027-Q1 的 KR 属于下一季，不出现在这一周
+    expect(facts.facts.filter((entry) => entry.kind === 'kr').map((entry) => entry.id)).not.toContain(
+      'kr_2027_q1',
+    );
+  });
+
+  it('periodHasStarted：周期首日不晚于今天才算已开始', () => {
+    expect(periodHasStarted('2026-11-09', NOW)).toBe(true);
+    expect(periodHasStarted('2026-11-08', NOW)).toBe(true);
+    expect(periodHasStarted('2026-11-10', NOW)).toBe(false);
+    expect(periodHasStarted('2027-01-04', NOW)).toBe(false);
   });
 });

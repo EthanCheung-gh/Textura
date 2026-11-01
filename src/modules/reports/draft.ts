@@ -30,6 +30,7 @@ import {
 } from '../../core/selectors';
 import {
   collectFactsDetailed,
+  periodHasStarted,
   RISK_CATEGORY_LABELS,
   RISK_CATEGORY_ORDER,
   type ReportFactsDetailed,
@@ -114,6 +115,8 @@ interface BuildContext {
   period: string;
   facts: ReportFactsDetailed;
   now: Date;
+  /** 周期是否已经开始；`false` 时风险与 KR 事实已被归零，正文改说「尚未开始」。 */
+  periodStarted: boolean;
 }
 
 function buildContext(
@@ -125,7 +128,15 @@ function buildContext(
   // 一次取索引、一次汇总事实，节构造全部复用。
   const index = getWorkspaceIndex(ws);
   const facts = collectFactsDetailed(ws, kind, period, now);
-  return { ws, index, kind, period, facts, now };
+  return {
+    ws,
+    index,
+    kind,
+    period,
+    facts,
+    now,
+    periodStarted: periodHasStarted(facts.period.start, now),
+  };
 }
 
 function krProgressOf(ctx: BuildContext, kr: Item): number {
@@ -143,7 +154,8 @@ function overviewBody(ctx: BuildContext, title: string): string {
     `### ${title}`,
     `- 完成：${stats.completed} 项`,
     `- 进行中：${stats.openInWindow} 项`,
-    `- 风险：${stats.risks} 项`,
+    // 「0 项」会被读成「本周期确实没有风险」；未来期次根本没做过风险判定。
+    ctx.periodStarted ? `- 风险：${stats.risks} 项` : '- 风险：本周期尚未开始',
     `- 收件箱：剩余 ${stats.inboxRemaining} 项 · 清理进度 ${stats.inboxProgress}%`,
   ].join('\n');
 }
@@ -166,6 +178,8 @@ function progressBody(ctx: BuildContext, title: string): string {
 
 function metricsBody(ctx: BuildContext, title: string): string {
   const lines: string[] = [`### ${title}`, '#### 关键结果'];
+  // 未来期次的事实层已把 KR 归零（`facts.ts` 的 `periodHasStarted`），
+  // 所以「本周期真的没有 KR」与「本周期尚未开始」都落到同一句空文案。
   const krFacts = ctx.facts.facts.filter((entry) => entry.kind === 'kr');
   if (krFacts.length === 0) {
     lines.push('- 本周期无关键结果数据');
@@ -190,6 +204,12 @@ function metricsBody(ctx: BuildContext, title: string): string {
 
 function risksBody(ctx: BuildContext, title: string): string {
   const lines: string[] = [`### ${title}`];
+  // 未来期次不做风险判定（事实层已全部归零），改用一句明确说明，
+  // 而不是罗列四类「无」——那会让人以为是「本期确实没有问题」。
+  if (!ctx.periodStarted) {
+    lines.push('- 本周期尚未开始，暂无风险数据');
+    return lines.join('\n');
+  }
   for (const category of RISK_CATEGORY_ORDER) {
     lines.push(`#### ${RISK_CATEGORY_LABELS[category]}`);
     const entries = ctx.facts.riskGroups[category];
@@ -215,6 +235,12 @@ function okrBody(ctx: BuildContext, title: string): string {
   const objectives = objectivesOfPeriod(ctx.ws, ctx.period);
   if (objectives.length === 0) {
     lines.push('- 本季度未设置目标');
+    return lines.join('\n');
+  }
+  // 未来季度只列目标与「尚未开始」：`rollupProgress` 算的是**此刻**的完成度，
+  // 拿它填还没开始的季度就是把现在当成期次结论（还会和「风险：本周期尚未开始」自相矛盾）。
+  if (!ctx.periodStarted) {
+    for (const objective of objectives) lines.push(`- ${objective.title}：本季度尚未开始`);
     return lines.join('\n');
   }
   for (const objective of objectives) {

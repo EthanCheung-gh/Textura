@@ -109,15 +109,20 @@ export interface ReportFactsDetailed extends ReportFacts {
  */
 const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/** 本地日键：`YYYY-MM-DD`，取自运行环境本地时区（不是 UTC）。 */
+export function localDayKeyOf(date: Date): string {
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${date.getFullYear()}-${month < 10 ? '0' : ''}${month}-${day < 10 ? '0' : ''}${day}`;
+}
+
 export function toLocalDayKey(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (trimmed.length === 10) return DAY_KEY_PATTERN.test(trimmed) ? trimmed : null;
   const date = new Date(trimmed);
   if (Number.isNaN(date.getTime())) return null;
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  return `${date.getFullYear()}-${month < 10 ? '0' : ''}${month}-${day < 10 ? '0' : ''}${day}`;
+  return localDayKeyOf(date);
 }
 
 /** 日键 → 'MM/dd'（等价 `formatDateKey(key, 'MM/dd')`，但不需要解析日期）。 */
@@ -137,6 +142,38 @@ function daysBetweenKeys(from: string, to: string): number {
 
 function inWindow(day: string | null, start: string, end: string): boolean {
   return day !== null && day >= start && day <= end;
+}
+
+/**
+ * 周期是否已经开始：周期首日**不晚于**今天（本地日）。
+ *
+ * 未来期次（尚未开始）不产出风险 / KR 事实，正文层也据此换文案——用今天的超期、
+ * 等待、KR 进度去填一份还没开始的报告，等于把现在冒充成期次结论。
+ * 判据只此一份实现，`facts.ts`（归零事实）与 `draft.ts`（换文案）都调它。
+ */
+export function periodHasStarted(start: string, now: Date = new Date()): boolean {
+  return start <= localDayKeyOf(now);
+}
+
+/**
+ * 报告期次所在的季度键（`YYYY-Qn`），KR 事实按它过滤。
+ *
+ * - 周报 / 月报：取周期**首日**（`range.start`）所在季度。跨季的那一周按周一归属
+ *   （例：2026-W53 = 2026-12-28 ~ 2027-01-03 归 2026-Q4），与 gantt「周一起始」一致，
+ *   且每个期次只会落到一个季度，不会两边都列；
+ * - 季报：期次键本身就是季度键；
+ * - 返回 `null` 表示「算不出合法季度」，调用方退回「不按期次过滤」：
+ *   宁可多列几条 KR，也不要因为键形态异常就静默丢掉全部 KR。
+ */
+function quarterKeyOf(kind: ReportPeriodKind, period: string, start: string): string | null {
+  if (kind === 'quarter') return periodRange('quarter', period) ? period : null;
+  const year = Number(start.slice(0, 4));
+  const month = Number(start.slice(5, 7));
+  if (!Number.isInteger(year) || year <= 0) return null;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  const key = `${year}-Q${Math.floor((month - 1) / 3) + 1}`;
+  // 回读校验：只有 `periodRange` 认得的季度键才用于过滤。
+  return periodRange('quarter', key) ? key : null;
 }
 
 /** 行格式：`- <标题> · <meta>`，任何位置都不加外层括号（规则见 `makeFact`）。 */
@@ -255,8 +292,10 @@ function collectRunRows(
  * 聚合层不允许产出归属不明的报告，静默返回空数据只会把错误推迟到页面层。
  *
  * 严重度基准日恒为**周期末日**（契约写法是「gantt.end < 周期末日」），
- * 因此 `now` 不参与判定；保留该参数只为与页面层 / `buildReportSections` 签名一致，
- * 以及将来需要「按今天截止」口径时不必改签名。
+ * 因此 `now` 不参与严重度判定，只用于一件事：判断周期是否**已经开始**
+ * （`periodHasStarted`）。周期首日晚于今天（本地日）时是未来期次，风险与 KR
+ * 事实一律归零——用今天的超期 / 等待 / KR 进度去填一份还没开始的报告，
+ * 等于用现在预测未来；「下周期计划」（nextUp）保持原样，未来期次本就用于规划。
  */
 export function collectFactsDetailed(
   ws: Workspace,
@@ -271,7 +310,13 @@ export function collectFactsDetailed(
   const windowEnd = range.end;
   /** 风险严重度基准日 = 周期末日（含），契约见模块头注释。 */
   const referenceDay = windowEnd;
-  void now;
+  /** 未来期次：周期首日排在今天之后（本地日比较，与窗口口径一致）。 */
+  const periodStarted = periodHasStarted(windowStart, now);
+  /**
+   * KR 的期次口径：周报 / 月报取所在季度的 KR，季报取该季度。
+   * 在循环外算一次，10k 条目下每个 KR 只做一次字符串比较。
+   */
+  const krQuarter = quarterKeyOf(kind, period, windowStart);
 
   const nextKey = shiftPeriod(kind, period, 1);
   const nextRange = nextKey ? periodRange(kind, nextKey) : null;
@@ -344,33 +389,44 @@ export function collectFactsDetailed(
 
     const endDay = dayOf(item.gantt?.end);
 
-    // 风险 1：超期——截止日早于基准日（= 周期末日）。
-    if (endDay && endDay < referenceDay) {
-      overdueCandidates.push(item);
-    }
-
-    // 风险 3：等待超 7 天。
-    if (item.status === 'waiting' && item.gtd?.waitingFor) {
-      const sinceDay = dayOf(item.gtd.capturedAt ?? item.updatedAt ?? item.createdAt);
-      if (sinceDay && daysBetweenKeys(sinceDay, referenceDay) > WAITING_WARN_DAYS) {
-        waitingCandidates.push({ item, sinceDay });
+    // 风险与 KR 都是「以周期末日为基准的状态快照」：周期还没开始时一条都不产出
+    // （`periodStarted` 的契约见 `collectFactsDetailed` 注释），nextUp 不受影响。
+    if (periodStarted) {
+      // 风险 1：超期——截止日早于基准日（= 周期末日）。
+      if (endDay && endDay < referenceDay) {
+        overdueCandidates.push(item);
       }
-    }
 
-    // 风险 4：无日期关键任务（next/active 的 action / project 且没有 gantt.end）。
-    if (
-      (item.kind === 'action' || item.kind === 'project') &&
-      (item.status === 'next' || item.status === 'active') &&
-      !endDay
-    ) {
-      undatedCandidates.push(item);
-    }
+      // 风险 3：等待超 7 天。
+      if (item.status === 'waiting' && item.gtd?.waitingFor) {
+        const sinceDay = dayOf(item.gtd.capturedAt ?? item.updatedAt ?? item.createdAt);
+        if (sinceDay && daysBetweenKeys(sinceDay, referenceDay) > WAITING_WARN_DAYS) {
+          waitingCandidates.push({ item, sinceDay });
+        }
+      }
 
-    if (item.kind === 'keyresult' && !isDone(item)) {
-      krCandidates.push({ item, percent: metricPercent(item.okr?.metric) });
-    }
+      // 风险 4：无日期关键任务（next/active 的 action / project 且没有 gantt.end）。
+      if (
+        (item.kind === 'action' || item.kind === 'project') &&
+        (item.status === 'next' || item.status === 'active') &&
+        !endDay
+      ) {
+        undatedCandidates.push(item);
+      }
 
-    if (item.kind === 'project') projectCandidates.push(item);
+      // KR 延期次过滤：只取「本报告所在季度」的未完成 KR。
+      // `krQuarter === null`（期次键算不出合法季度）时退回不过滤，见 `quarterKeyOf`。
+      // 缺 `okr` / `okr.period` 的 KR（手改 / 导入的旧数据，store 之外的来源）也照列：
+      // 它们没有季次信息，按季过滤会让它们在任何期次都消失，违反「宁可多列也不静默丢数据」。
+      if (item.kind === 'keyresult' && !isDone(item)) {
+        const krPeriod = item.okr?.period;
+        if (krQuarter === null || !krPeriod || krPeriod === krQuarter) {
+          krCandidates.push({ item, percent: metricPercent(item.okr?.metric) });
+        }
+      }
+
+      if (item.kind === 'project') projectCandidates.push(item);
+    }
 
     // 下周期候选：下个自然周期内到期且仍待办。
     if (

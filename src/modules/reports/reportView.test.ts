@@ -9,7 +9,11 @@ import {
   mergeSectionBodies,
   orderedSections,
   reportsOfKind,
+  sectionActionAriaLabel,
+  sectionAiAriaLabel,
+  sectionBodyChanged,
   sortReportsDesc,
+  textFieldChanged,
   wordCount,
 } from './reportView';
 
@@ -226,5 +230,67 @@ describe('mergeSectionBodies', () => {
   it('追加时缺省标题用 key 兜底', () => {
     const next = mergeSectionBodies([], 'extra', 'body');
     expect(next[0]).toMatchObject({ key: 'extra', title: 'extra', origin: 'auto' });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* FIN-06 回归：正文 / 标题没变就不该写盘                               */
+/* ------------------------------------------------------------------ */
+
+describe('写盘判据（FIN-06 回归）', () => {
+  it('textFieldChanged：逐字相同（含空白）返回 false，差一个字符就是 true', () => {
+    // 浏览器原生撤销（Ctrl/⌘+Z）会派发一次 onChange，但文本逐字相同
+    expect(textFieldChanged('2026 年第 45 周报', '2026 年第 45 周报')).toBe(false);
+    expect(textFieldChanged('', '')).toBe(false);
+    expect(textFieldChanged('张三', '张三 ')).toBe(true);
+    expect(textFieldChanged('张三', '张四')).toBe(true);
+    expect(textFieldChanged('张三', '')).toBe(true);
+  });
+
+  it('sectionBodyChanged：与草稿里该节正文逐字比较，空白差异也算变', () => {
+    const draft = draftFromReport(
+      makeReport({ sections: [section({ key: 'progress', body: '### 本周进展\n- 旧行\n' })] }),
+    );
+    expect(sectionBodyChanged(draft, 'progress', '### 本周进展\n- 旧行\n')).toBe(false);
+    // 末尾多一个换行、少一个缩进都算真改动
+    expect(sectionBodyChanged(draft, 'progress', '### 本周进展\n- 旧行')).toBe(true);
+    expect(sectionBodyChanged(draft, 'progress', '### 本周进展\n- 新行\n')).toBe(true);
+  });
+
+  it('sectionBodyChanged：草稿里没有这一节时算「变了」（会被补出来）', () => {
+    const draft = draftFromReport(makeReport({ sections: [] }));
+    expect(sectionBodyChanged(draft, 'risks', '')).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* A11Y-01 回归：节内同名按钮的可访问名要带节名                         */
+/* ------------------------------------------------------------------ */
+
+describe('节内按钮的可访问名（A11Y-01 回归）', () => {
+  it('三类动作都带节名，且包含可见文案（label-in-name 的包含关系）', () => {
+    expect(sectionActionAriaLabel('rebuild', '风险与阻塞')).toBe('重新汇总本节：风险与阻塞');
+    expect(sectionActionAriaLabel('clear', '风险与阻塞')).toBe('清空本节：风险与阻塞');
+    expect(sectionActionAriaLabel('ai', '风险与阻塞')).toBe('本节 AI 参考：风险与阻塞');
+    // 判据是「包含」而不是「以…开头」：`本节 AI 参考` 只是包含「AI 参考」
+    const visible: [Parameters<typeof sectionActionAriaLabel>[0], string][] = [
+      ['rebuild', '重新汇总'],
+      ['clear', '清空'],
+      ['ai', 'AI 参考'],
+    ];
+    for (const [action, text] of visible) {
+      expect(sectionActionAriaLabel(action, '风险与阻塞')).toContain(text);
+    }
+  });
+
+  it('「AI 参考」的语义化别名与 ai 动作一致', () => {
+    const titles = ['本周概览', '量化指标', '风险与阻塞'];
+    for (const title of titles) expect(sectionAiAriaLabel(title)).toBe(sectionActionAriaLabel('ai', title));
+  });
+
+  it('同一动作在不同节上的可访问名互不相同（不再重名）', () => {
+    const titles = templateFor('week').sections.map((entry) => entry.title);
+    expect(new Set(titles.map((title) => sectionAiAriaLabel(title))).size).toBe(titles.length);
+    expect(new Set(titles.map((title) => sectionActionAriaLabel('clear', title))).size).toBe(titles.length);
   });
 });

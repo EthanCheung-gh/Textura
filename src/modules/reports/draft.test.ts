@@ -543,3 +543,98 @@ describe('rebuildSection', () => {
     expect(() => rebuildSection(ws, 'week', 'bad', 'nope', NOW)).toThrow('非法周期：bad');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* PER-05 回归：未来期次的指标与风险不列当前数据                        */
+/* ------------------------------------------------------------------ */
+
+describe('buildReportSections：未来期次不列当前数据（PER-05 回归）', () => {
+  /** 2027-01-04 起的一周，晚于 NOW（2026-11-09）。 */
+  const FUTURE_WEEK = '2027-W01';
+
+  it('风险节改成「本周期尚未开始」，不再罗列四类「无」', () => {
+    const body = bodyOf(buildReportSections(richWorkspace(), 'week', FUTURE_WEEK, NOW), 'risks');
+    expect(body).toBe(['### 风险与阻塞', '- 本周期尚未开始，暂无风险数据'].join('\n'));
+    expect(body).not.toContain('#### 超期');
+  });
+
+  it('量化指标的 KR 段说「本周期无关键结果数据」，SOP 段沿用现有文案', () => {
+    const body = bodyOf(buildReportSections(richWorkspace(), 'week', FUTURE_WEEK, NOW), 'metrics');
+    expect(body).toContain('#### 关键结果\n- 本周期无关键结果数据');
+    expect(body).toContain('#### SOP 运行\n- 本周期无 SOP 运行记录');
+  });
+
+  it('当季报告仍列当季 KR 与当季风险（防止过度过滤）', () => {
+    const sections = buildReportSections(richWorkspace(), 'week', WEEK, NOW);
+    const metrics = bodyOf(sections, 'metrics');
+    expect(metrics).toContain('关键结果一');
+    expect(metrics).toContain('关键结果二');
+    expect(metrics).not.toContain('本周期无关键结果数据');
+
+    const risks = bodyOf(sections, 'risks');
+    expect(risks).toContain('#### 超期\n- 超期行动');
+    expect(risks).not.toContain('本周期尚未开始');
+  });
+
+  it('未来期次的重算单节与整体生成给出同一份文案', () => {
+    const ws = richWorkspace();
+    expect(rebuildSection(ws, 'week', FUTURE_WEEK, 'risks', NOW)).toBe(
+      ['### 风险与阻塞', '- 本周期尚未开始，暂无风险数据'].join('\n'),
+    );
+  });
+
+  /** 目标与 KR 都排在 2027-Q1（未来季），且当季已经有进度，用来验证「不拿现在当结论」。 */
+  function futureOkrWorkspace(): Workspace {
+    return makeWorkspace([
+      makeItem({
+        id: 'obj_2027',
+        kind: 'objective',
+        title: '2027 目标',
+        okr: { period: '2027-Q1', confidence: 7 },
+        order: 1,
+      }),
+      makeItem({
+        id: 'kr_2027_a',
+        kind: 'keyresult',
+        title: '2027 KR A',
+        parentId: 'obj_2027',
+        status: 'active',
+        okr: { period: '2027-Q1', confidence: 7, metric: { start: 0, target: 100, current: 45, unit: '%' } },
+        order: 2,
+      }),
+      makeItem({
+        id: 'kr_2027_b',
+        kind: 'keyresult',
+        title: '2027 KR B',
+        parentId: 'obj_2027',
+        status: 'done',
+        completedAt: localIso(2026, 11, 3, 10),
+        okr: { period: '2027-Q1', confidence: 8 },
+        order: 3,
+      }),
+    ]);
+  }
+
+  it('未来周 / 月 / 季的概览风险行是「本周期尚未开始」，不写「风险：0 项」', () => {
+    const ws = futureOkrWorkspace();
+    for (const [kind, period] of [
+      ['week', FUTURE_WEEK],
+      ['month', '2027-01'],
+      ['quarter', '2027-Q1'],
+    ] as const) {
+      const overview = bodyOf(buildReportSections(ws, kind, period, NOW), 'overview');
+      expect(overview).toContain('- 风险：本周期尚未开始');
+      expect(overview).not.toContain('- 风险：0 项');
+      // 概览里唯一的百分比是收件箱清理进度，完成度一个都不该出现
+      expect(overview).not.toContain('完成度');
+    }
+  });
+
+  it('未来季报的 okr 节只列目标与「尚未开始」，不输出完成度百分比', () => {
+    const okr = bodyOf(buildReportSections(futureOkrWorkspace(), 'quarter', '2027-Q1', NOW), 'okr');
+    expect(okr).toBe(['### 目标与关键结果', '- 2027 目标：本季度尚未开始'].join('\n'));
+    // 当前 rollupProgress（45%）是「此刻」的进度，不能当成未来季度的结论
+    expect(okr).not.toContain('%');
+    expect(okr).not.toContain('完成度');
+  });
+});

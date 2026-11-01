@@ -7,6 +7,10 @@
  *
  * 每节工具条的「AI 参考」只回调 `onAiSection(key)`：页面层负责切到右栏的 AI 标签并
  * 把这一节设为生成目标；参考结果只进右栏，不会直接改正文。
+ *
+ * 可访问名：三个节内按钮的可见文案（「重新汇总 / 清空 / AI 参考」）在每节都重复，
+ * 因此都带 `aria-label={`<动作>：<节名>`}`（文案由 `reportView.sectionActionAriaLabel`
+ * 统一生成），屏幕阅读器与语音控制才能区分是哪一节；可见文案与视觉不变。
  */
 import { useMemo } from 'react';
 import type { Report, ReportSectionOrigin } from '../../core/model';
@@ -19,7 +23,7 @@ import { Field, TextArea, TextInput } from '../../ui/Field';
 import { Icon } from '../../ui/icons';
 import type { ReportTemplate } from './draft';
 import { periodLabel } from './period';
-import { orderedSections, wordCount } from './reportView';
+import { orderedSections, sectionActionAriaLabel, sectionAiAriaLabel, wordCount } from './reportView';
 import type { ReportDraft } from './reportView';
 
 const ORIGIN_BADGES: Record<ReportSectionOrigin, { label: string; tone: BadgeTone }> = {
@@ -142,6 +146,7 @@ export function ReportEditor({
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label={sectionActionAriaLabel('rebuild', section.title)}
                         onClick={() => onRebuildSection(section.key)}
                         title="用当前工作区数据重写本节（会覆盖手写内容）"
                       >
@@ -151,6 +156,7 @@ export function ReportEditor({
                         variant="ghost"
                         size="sm"
                         disabled={!section.body.trim()}
+                        aria-label={sectionActionAriaLabel('clear', section.title)}
                         onClick={() => onClearSection(section.key)}
                         title="清空本节正文"
                       >
@@ -159,6 +165,7 @@ export function ReportEditor({
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label={sectionAiAriaLabel(section.title)}
                         onClick={() => onAiSection(section.key)}
                         title="让大模型基于本期数据生成这一节的参考稿（只进右栏参考区，不改正文）"
                       >

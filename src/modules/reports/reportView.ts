@@ -118,6 +118,68 @@ export function appendLine(body: string, line: string): string {
   return `${trimmed}\n${line}`;
 }
 
+/* ------------------------------------------------------------------ */
+/* 写盘判据（FIN-06）                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 单值字段（标题 / 报告人）是否真的变了——逐字比较，含前后空白。
+ *
+ * 为什么需要这层判据：在输入框里按 Ctrl/⌘+Z 让浏览器原生撤销时，Chrome 仍会派发
+ * 一次 `onChange`，哪怕文本逐字相同。页面层若不比对就 `patchDraft` + `scheduleSave`，
+ * 会白白写一次盘：`updatedAt` 被刷新、`origin` 从 `auto` 变 `manual`，
+ * 80 步历史里还多出一条「什么都没改」的快照。
+ */
+export function textFieldChanged(current: string, next: string): boolean {
+  return current !== next;
+}
+
+/**
+ * 节正文是否需要写盘：与当前草稿里该节正文逐字比较（含空白）。
+ * 节不存在（模板改版前生成的旧报告）一律算「变了」——`mergeSectionBodies` 会补出该节。
+ */
+export function sectionBodyChanged(
+  draft: Pick<ReportDraft, 'sections'>,
+  key: string,
+  body: string,
+): boolean {
+  const section = draft.sections.find((entry) => entry.key === key);
+  return section ? section.body !== body : true;
+}
+
+/* ------------------------------------------------------------------ */
+/* 节内工具条的可访问名（A11Y-01）                                      */
+/* ------------------------------------------------------------------ */
+
+/** 节内工具条的动作：可见文案在各节之间逐字重复，可访问名必须带上节名。 */
+export type SectionAction = 'rebuild' | 'clear' | 'ai';
+
+/**
+ * 可访问名前缀。三者都**包含**可见文案（「重新汇总」/「清空」/「AI 参考」），
+ * 满足 WCAG 2.5.3 label-in-name 的包含关系——注意 `本节 AI 参考` 是**包含**
+ * 而非以「AI 参考」开头，判据看的是包含，不是前缀。
+ */
+const SECTION_ACTION_ARIA_PREFIX: Record<SectionAction, string> = {
+  rebuild: '重新汇总本节',
+  clear: '清空本节',
+  ai: '本节 AI 参考',
+};
+
+/**
+ * 节内按钮的可访问名：`本节 AI 参考：量化指标`、`重新汇总本节：风险与阻塞`……
+ *
+ * 可见文案保持「重新汇总 / 清空 / AI 参考」不变（视觉不变），可访问名**包含**该文案；
+ * 但同一个页面上同名按钮会出现 6~7 次，屏幕阅读器与语音控制无法区分是哪一节。
+ */
+export function sectionActionAriaLabel(action: SectionAction, title: string): string {
+  return `${SECTION_ACTION_ARIA_PREFIX[action]}：${title}`;
+}
+
+/** 「AI 参考」按钮的可访问名（`sectionActionAriaLabel('ai', title)` 的语义化别名）。 */
+export function sectionAiAriaLabel(title: string): string {
+  return sectionActionAriaLabel('ai', title);
+}
+
 export interface SectionMergeMeta {
   /** 不传则保留原节的 origin。 */
   origin?: ReportSectionOrigin;

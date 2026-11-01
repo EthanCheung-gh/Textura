@@ -46,7 +46,9 @@ import {
   findReport,
   mergeSectionBodies,
   reportsOfKind,
+  sectionBodyChanged,
   sortReportsDesc,
+  textFieldChanged,
 } from './reportView';
 import type { ReportDraft } from './reportView';
 import './reports.css';
@@ -391,7 +393,11 @@ export function ReportsPage() {
 
   const handleTitleChange = useCallback(
     (value: string) => {
-      const next = patchDraft((current) => ({ ...current, title: value }));
+      const current = draftRef.current;
+      // 值没变（浏览器原生撤销同样会派发一次 onChange）就不写盘：
+      // 否则 updatedAt 被刷新、历史里多一条空快照。判据见 `reportView.textFieldChanged`。
+      if (!current || !textFieldChanged(current.title, value)) return;
+      const next = patchDraft((draft) => ({ ...draft, title: value }));
       if (next) scheduleSave(next.id, { title: value });
     },
     [patchDraft, scheduleSave],
@@ -399,7 +405,9 @@ export function ReportsPage() {
 
   const handleAuthorChange = useCallback(
     (value: string) => {
-      const next = patchDraft((current) => ({ ...current, author: value }));
+      const current = draftRef.current;
+      if (!current || !textFieldChanged(current.author, value)) return;
+      const next = patchDraft((draft) => ({ ...draft, author: value }));
       if (next) scheduleSave(next.id, { author: value });
     },
     [patchDraft, scheduleSave],
@@ -407,9 +415,13 @@ export function ReportsPage() {
 
   const handleSectionChange = useCallback(
     (key: string, body: string) => {
-      const next = patchDraft((current) => ({
-        ...current,
-        sections: mergeSectionBodies(current.sections, key, body, {
+      const current = draftRef.current;
+      // 正文逐字相同（原生撤销的 onChange）直接返回：不 patch、不排期、不改 origin、
+      // 不刷新 updatedAt。判据见 `reportView.sectionBodyChanged`。
+      if (!current || !sectionBodyChanged(current, key, body)) return;
+      const next = patchDraft((draft) => ({
+        ...draft,
+        sections: mergeSectionBodies(draft.sections, key, body, {
           origin: 'manual',
           updatedAt: nowIso(),
           title: templateTitle(key),
