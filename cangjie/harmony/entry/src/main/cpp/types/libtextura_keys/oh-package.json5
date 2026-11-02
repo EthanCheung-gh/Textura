@@ -1,6 +1,0 @@
-{
-  "name": "libtextura_keys.so",
-  "types": "./Index.d.ts",
-  "version": "1.0.0",
-  "description": "ArkTS to SDL key bridge for keys ArkUI keeps (Tab)."
-}

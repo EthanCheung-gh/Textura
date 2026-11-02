@@ -50,6 +50,10 @@
 - 首次拉取需先在 `../textura-mcp` 执行 `npm install && npm run build`；库自带的 10 个用例改在库内
   （`../textura-mcp`）运行，应用侧的 vitest 不再收集库的测试，因此应用侧用例总数不随库抽取变化，
   具体数字以 README「测试」一节为准。
+- 把仓颉重写抽离到独立仓库 `TexturaCJ`（同级目录），本仓库 `main` 作为其转写模板；本仓库删除 `cangjie/` 目录，
+  仓颉侧源码、像素验收与鸿蒙链路文档随仓库迁移，README 的仓颉章节改为指向新仓库。
+- 合并 `feat/cangjie-rewrite`（含 MCP 单来源收口）：该合并曾把 main 侧的 `packages/textura-mcp` 副本与三处源码别名
+  带回来，与 `file:../textura-mcp` 依赖并存；本次移除副本与别名，MCP 代码只保留同级库一份。
 
 ## [0.1.0] - 2026-10-21
 

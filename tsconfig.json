@@ -17,12 +17,7 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "esModuleInterop": true,
-    "types": ["vite/client"],
-    "baseUrl": ".",
-    "paths": {
-      "@textura/mcp": ["packages/textura-mcp/src/index.ts"]
-    }
+    "types": ["vite/client"]
   },
-  "include": ["src", "packages"],
-  "exclude": ["packages/*/dist"]
+  "include": ["src"]
 }

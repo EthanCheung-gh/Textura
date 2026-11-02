@@ -184,8 +184,8 @@ export interface Item {
 Tauri v2（Rust 侧负责单文档原子写 + 30 份轮换备份）+ React 18.3 + TypeScript strict + Zustand 5 + Vite 7；
 SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，日历的农历 / 节气引擎零依赖自研，
 其余日期计算统一走 `date-fns` 4。MCP 已抽取为同级独立项目 `../textura-mcp`（包 `@textura/mcp`），
-应用通过 `file:../textura-mcp` 依赖消费其 `dist` 产物（不再是 npm workspace）；仓库内的
-`packages/textura-mcp` 副本保留给 vite / vitest / tsconfig 的源码别名，便于就地类型检查与调试；
+应用通过 `file:../textura-mcp` 依赖消费其 `dist` 产物（不再是 npm workspace），仓库内不保留副本，
+配置层也没有源码别名（`tsconfig` / Vite / Vitest 一律按包解析到 `../textura-mcp`）；
 通过 `TexturaBridge` 端口复用统一任务内核，服务本身不依赖 React 与具体运行时。
 没有路由库、没有 UI 组件库、没有 CSS 框架。生产构建启用 CSP（`script-src 'self'`，主题预置外置为
 `public/theme-init.js`），视图层有错误边界兜底；路由级 `React.lazy` + `manualChunks`（react / flow / date）
@@ -317,7 +317,7 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
 ## 测试
 
 ```bash
-npm test                                        # 39 个测试文件 / 619 个用例（vitest run）
+npm test                                        # 41 个测试文件 / 637 个用例（vitest run）
 cargo test --manifest-path src-tauri/Cargo.toml  # Rust 测试，33 个用例（持久化 + AI 代理）
 ```
 
@@ -464,10 +464,7 @@ Textura/
 
 ## 仓颉重写
 
-同一套产品另有**仓颉原生重写**，放在 [`cangjie/`](cangjie/README.md)：CUI 0.9.6 + SDL3 绘制，
-七条路由全部实现，可与 Web 版 1440×900 截图做像素比对，并带一条鸿蒙 HAP 打包链
-（当前未签名、未真机验证）。Web 版与本目录的源码互不影响。
-
-- 入口与快速开始：[`cangjie/README.md`](cangjie/README.md)
-- 像素验收协议与实测证据：[`cangjie/docs/PARITY.md`](cangjie/docs/PARITY.md)、[`cangjie/docs/PARITY-RESULTS.md`](cangjie/docs/PARITY-RESULTS.md)
-- 鸿蒙链路与已知风险：[`cangjie/docs/HARMONY.md`](cangjie/docs/HARMONY.md)
+同一套产品另有**仓颉原生重写**（CUI 0.9.6 + SDL3 绘制，七条路由全部实现，可与 Web 版 1440×900 截图
+做像素比对，并带一条鸿蒙 HAP 打包链）。该重写已抽离为独立仓库 **`TexturaCJ`**（与本仓库同级目录），
+本仓库 `main` 作为其转写模板：仓颉侧源码、像素验收协议与鸿蒙链路文档均随仓库迁移，
+本仓库不再包含 `cangjie/` 目录，Web 版与仓颉版源码仍互不影响。

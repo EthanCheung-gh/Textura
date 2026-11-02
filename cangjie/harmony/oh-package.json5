@@ -1,6 +1,0 @@
-{
-  "modelVersion": "6.1.1",
-  "description": "Textura HarmonyOS shell (CUI on SDL, Cangjie host)",
-  "dependencies": {},
-  "devDependencies": {}
-}
