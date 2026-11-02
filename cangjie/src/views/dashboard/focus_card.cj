@@ -313,7 +313,7 @@ class FocusRowsView <: Widget {
                 return pressAt(ctx, x, y)
             case UiEvent.MouseUp(_, x, y) =>
                 return releaseAt(ctx, x, y)
-            case UiEvent.MouseWheel(x, y, _, dy) =>
+            case UiEvent.MouseWheel(_, dy, x, y) =>
                 // `.dash-focus-list { overflow-y: auto }`：滚轮只滚列表自身。
                 if (Rect(frame.x, frame.y, frame.w, viewportHeight(ctx)).contains(x, y)) {
                     let total = listHeight(ctx)

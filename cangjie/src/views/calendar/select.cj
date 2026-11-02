@@ -173,7 +173,7 @@ class CalSelectView <: Widget {
                         }
                         openState.value = 0
                         return true
-                    case UiEvent.MouseWheel(_, _, _, dy) =>
+                    case UiEvent.MouseWheel(_, dy, _, _) =>
                         let maxOffset = maxInt(0, options.size - rows)
                         scrollState.value = minInt(maxOffset, maxInt(0, scrollState.value - Int64(dy)))
                         return true

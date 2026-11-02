@@ -7,6 +7,10 @@
 七个视图 + 外壳在仓颉/CUI 上完整可跑，像素门禁 14/14，签名 HAP 已装上华为笔记本（MateBook，HarmonyOS 6，外接屏 2880×1620）。
 **唯一阻塞项**：OKR 页底「新增关键结果」prompt 打开后 10–90 秒必崩，根因在**仓颉运行时 GC（CopyCollector forward 阶段）**，应用侧已做「去泵」但不足以规避（见 §6）。
 
+> **2026-10-28 复验结论（先读）**：三条应用侧缓解——GC 环境变量注入、`RetainedSubtree` 页面缓存、
+> 关闭光标闪烁（CUI-P13）——都已实现并上真机，**全部失败**；最小复现 400 次 0 崩（纯仓颉栈无法复现）。
+> 详见 `docs/STABILITY.md` §8。**不要再重复这三条**；下一步是把 §6.1 的栈交给运行时侧。
+
 ## 2. 仓库与分支
 
 | 项 | 值 |
@@ -14,7 +18,7 @@
 | 仓库 | `/home/ethan/CodeRepo/sandbox/Textura` |
 | 分支 | `feat/cangjie-rewrite`（新目录 `cangjie/`，Web 原版在根目录不动） |
 | HEAD | `c0bbeeb perf(okr): stop re-measuring the same text advance on every layout` |
-| 工作树 | clean（`build-profile.json5` 必须保持未修改状态，见 §7） |
+| 工作树 | 本轮未提交：`docs/{STABILITY,HANDOFF}.md`、`tools/runtime-repro/`、滚轮与选中修复（见 §4.1）、`src/views/gantt/logic/wheel*.cj`；`build-profile.json5` 必须保持未修改状态（见 §7） |
 | 测试 | 根包 `cjpm test` **704/704**；CUI 包 967 通过 + 1 个既有夹具 ERROR；cangjie-sdl 包 239/241（1 个既有字体像素失败） |
 | 像素门禁 | `scripts/parity.sh --theme both` + `scripts/diff.sh --theme both` **14/14** |
 
@@ -24,7 +28,7 @@
 |---|---|
 | hdc | `~/deveco-cli-stable/command-line-tools/sdk/default/openharmony/toolchains/hdc`（**无线调试，端口会轮换**：`hdc list targets` / `hdc tconn <ip>:<port>`） |
 | bundle | `com.ethancheung.textura` |
-| 已装包 | HEAD `c0bbeeb` 出货包，**30,118,758 B**，sha256 `a2ac45a691d46b0fefc68118bfb891624b68b9c442d26da970458783dc90105e`（构建副本 `~/.cache/wk-final/cangjie/harmony/out/entry-default-signed.hap`） |
+| 已装包 | 2026-10-29 选中修复包，**30,128,808 B**，sha256 `e2bb4f28d977dece46e1d60fc6c9ec3e75484ee2241afd91c5b15dff4cb4cf3a`（`cangjie/harmony/out/entry-default-signed.hap`） |
 | 用户数据 | 已还原到验收前：`workspace.json` sha256 `0ec8c7029db30219c57089bd8f142e33297a6a87dbec13337a816e4f9962edbd`；备份在 `~/.cache/workspace-before.json` |
 | 界面状态 | 浮动窗口、浅色主题、密度「详细」、路由 OKR |
 
@@ -49,6 +53,27 @@
 
 补丁台账在 `cangjie/third_party/README.md`（CUI-P01…P12，含 SDL 补丁与理由），**改动 CUI/SDL 前必须读它**。
 
+### 4.1 本轮未提交（2026-10-28/29）：滚轮字段错位（真机 PASS）
+
+- 根因：`UiEvent.MouseWheel` 的载荷是 **`(wheelX, wheelY, mouseX, mouseY)`**
+  （`third_party/cangjie-sdl/src/events.cj:131`）。SOP 检查器/画布、日历、Gantt、Dashboard 把前两个
+  当成鼠标坐标、把第 4 个当成滚动增量，于是「浮动窗口下右栏检查项被裁切且滚不动」。
+- 修法：统一成 `MouseWheel(_, dy, x, y)`（SOP 检查器、Dashboard）或
+  `MouseWheel(dx, dy, _, _)`（Gantt）；`sop.cj` 的 `mouseX/mouseY` 也取第 3/4 字段。
+  新增回归 `sopInspectorWheelUsesPointerCoordinates`（修前红）。
+- 验证：根包 **705/705**、parity **14/14**；真机实体鼠标：SOP 右栏可滚动（PASS）、
+  OKR 滚一格约 72px、连滚 3 秒连续更新（PASS）。`okr_link_list.cj` 原本就是对的，未改。
+- 追加（同日）：甘特图主体的滚轮是**自绘**的，原来 `scrollTop + dy`（方向相反、步长 1）。
+  改为 `ganttWheelDelta(wheel) = -wheel * 72`（`src/views/gantt/logic/wheel.cj`），与 CUI
+  `ScrollView` 的 `offset - wheel * 72` 完全一致；新增 4 个纯函数用例（`wheel_test.cj`）。
+  根包 **709/709**、parity **14/14**；真机 PASS（向下滚看后面的行、每格与 OKR 相同）。
+- 追加（同日）：甘特图点项目/任务行「像没点」——`ShellHost.armStoreBridge` 订阅了
+  `state`/`ui`/`notices`，**漏了 `selectedId`**，而 `selectedId` 是 build 期读取的构造参数
+  （`GanttBody` 与检查器都吃它）。写入 store 后没有 revision，树不重建，画面停在旧选中。
+  修法：`store.selectedId.subscribe {_ => pump()}`（`src/shell/appshell.cj`）。这是全局修复，
+  OKR/SOP/日历的选中同样受益。回归 `ganttClickOnATreeRowSelectsIt`（去掉订阅即红）。
+  根包 **710/710**、parity **14/14**；真机 PASS（点不同项目/任务行，高亮与检查器同步切换）。
+
 ## 5. 两个「看起来是 UI，其实在框架」的根因（别重踩）
 
 ### 5.1 硬件数字键打不进（已修，CUI-P10）
@@ -72,9 +97,15 @@
 - 已做缓解（不足）：绘制批跨帧复用 + 文字测量记忆化 → 每帧文字测量 821→149、GC 时间 −28%，但**崩溃仍 3/3**。
 
 ### 6.2 下一步（按推荐顺序）
-1. **调运行时 GC 参数**：`libcangjie-runtime.so` 里有 `cjHeapSize`、`cjLargeThresholdSize` 参数（字符串证据：`Unsupported cjHeapSize parameter...`）。在 `requireCJLib('libtextura_host.so')` **之前**把参数注入（`setenv` 可在 `harmony/entry/src/main/cpp/host_bootstrap.c` 里做，或 ArkTS 侧加一个 NAPI 前置调用），把 heuristic GC 从 160ms 一次压到秒级；配合同步降低光标闪烁期间的整页重绘（让闪烁只重绘编辑器矩形）。验收口径就用「打开 prompt 等 90s ×3 不崩」。
-2. **最小复现上报运行时**：一个 ~60 行仓颉程序，30MB/s 分配 + 周期 GC，能稳定打出 `toRegion2Idx != INVALID_VALUE`；附 §6.1 两条栈与设备版本（MNT-W72C 7.0.0.111 SP7C00E103R12P2）。
-3. **临时绕开**（换可用性）：prompt 打开期间停掉光标闪烁/页面动画，把「持续出帧 + 高分配」这个组合拆掉。属缓解，需在文档里标明。
+1. **上报运行时，别再在应用侧绕**：三种缓解都已证伪（`docs/STABILITY.md` §8）。材料齐了——
+   §6.1 两条栈 + 设备版本（MNT-W72C 7.0.0.111 SP7C00E103R12P2）+ `scripts/stability.sh` 的 `#0` 行
+   （`textura.shell`，约 1/100）+ `tools/runtime-repro/` 的「纯仓颉 200 次 0 崩 / 带 FFI 200 次 0 崩」。
+   诉求：`RegionInfo::VisitLiveObjectsUntilFalse` / `SlotRoot::VisitGCRoots` 对非法槽位短路。
+2. **不要再试环境变量**：NAPI `setenv`（含 import 提前、`appEnvironments`）在真机上对运行时不可见，
+   `Region size` 恒为 64KB；桌面 `cjRegionSize` 有效只是假象（见 §8.1）。
+3. **若必须换可用性**（属产品决策，不是修复）：把 OKR prompt 从 `Ui.inlineEditor` 改成
+   `Ui.prompt` 模态，拆掉「自绘页 + Portal + IME 会话」这个组合；必须先在真机做 A/B，不能只看主机。
+4. 保留 `scripts/stability.sh` 作为回归闸门；**它约 1% 报红是运行时的真实残余，不是脚本噪声**。
 
 ## 7. 构建 / 装机（照抄即可）
 
@@ -121,12 +152,13 @@ git status --porcelain                                  # 必须为空
 
 ## 9. 待办（按优先级）
 
-1. 【阻塞】§6.2 的 GC 参数调优 → 用「prompt 等 90s ×3」验收；顺带把 §6.1 的最小复现写出来。
-2. 【待用户确认】实体鼠标滚一格：应立刻移动约 72px、连滚 3 秒连续更新、不需切页签（CUI-P12 主机已验证，真机因注入限制未测）。滚轮目前是 72px 跳步，**没有惯性动画**——若需要平滑滚动是另一个决定（时间驱动偏移动画）。
-3. 【体验】OKR 页底 prompt 打开时整页每帧重绘（光标闪烁驱动）→ 可只重绘编辑器区域，既是性能也是 §6.2 第 1 条的配套。
-4. 【已知小问题】SOP 右栏在浮动窗口高度下「检查项」区块被裁切且右栏不可滚动（最大化才看得到），与 Web 的 `overflow-y: auto` 有差距。
-5. 【文档】把 §6 的运行时缺陷整理进 `docs/STABILITY.md`（现有 §C1 已有同类栈），并给上游一份可复现材料。
-6. 【清理】`~/.cache/` 下的构建副本（`wk-*`，含 800MB+ 树、HAP）可随时删。
+1. 【阻塞 / 需运行时侧】§6.1 两条栈 + `scripts/stability.sh` + `tools/runtime-repro/` 的结果整理成上游 issue；
+   应用侧三条路线已证伪，不要再重做（`docs/STABILITY.md` §8）。
+2. 【提交】本轮滚轮修复（§4.1）+ 文档 + `tools/runtime-repro/` 尚未提交；按逻辑分批：
+   滚轮字段修复与回归用例一批，文档与复现材料一批。提交前重跑 `cjpm test`（705）与 parity（14/14）。
+3. 【可选产品决策】OKR prompt 改 `Ui.prompt` 模态以换可用性（§6.2 第 3 条），需真机 A/B。
+4. 【体验】滚轮仍是 72px 跳步、**没有惯性动画**；若要平滑滚动是另一个决定（时间驱动偏移动画）。
+5. 【清理】`~/.cache/` 下的构建副本（`wk-*`，含 800MB+ 树、HAP）可随时删。
 
 ## 10. 关键文件地图
 

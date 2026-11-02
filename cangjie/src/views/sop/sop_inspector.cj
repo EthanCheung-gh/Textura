@@ -727,7 +727,9 @@ func paintHistory(ctx: UiContext, view: SopFrame): Unit {
 /** Inspector + history interactions (checklist, type chips, duplicate/delete, presets). */
 func handleInspector(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
     match (event) {
-        case UiEvent.MouseWheel(x, y, _, dy) =>
+        case UiEvent.MouseWheel(_, dy, x, y) =>
+            // Payload order is (wheelX, wheelY, mouseX, mouseY) — event.cj pins it. Using the
+            // first two as pointer coordinates made the body unhittable on device.
             let rects = inspectorRects(ctx, view)
             if (!rects.body.contains(x, y)) {
                 return false

@@ -975,7 +975,8 @@ func handleCanvas(ctx: UiContext, view: SopFrame, event: UiEvent): Bool {
                 view.state.touch()
             }
             return handled
-        case UiEvent.MouseWheel(x, y, _, wheelY) =>
+        case UiEvent.MouseWheel(_, wheelY, x, y) =>
+            // (wheelX, wheelY, mouseX, mouseY): zoom needs the pointer, not the scroll delta.
             if (!view.flow.contains(x, y) || wheelY == 0.0) {
                 return false
             }

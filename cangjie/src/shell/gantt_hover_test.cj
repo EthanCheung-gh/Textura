@@ -59,3 +59,48 @@ func ganttHoverRepaintsWithoutRebuildingTheShell(): Unit {
     let _ = testHost.frame(GH_RECT, events: [UiEvent.MouseMove(GH_TIMELINE_X, GH_ROW_4_Y)], body: body)
     @Expect(builds.count, afterFirst)
 }
+/*
+ * 点击左侧树的行必须选中该行（`store.selectedId` 是唯一真源）。真机现场：点了项目行，
+ * 右侧检查器/高亮都不变，像是"没点中"。
+ */
+@Test
+func ganttClickOnATreeRowSelectsIt(): Unit {
+    try {
+        setVariable("HOME", GH_HOME)
+    } catch (_: Exception) {
+        ()
+    }
+    let clock = FixedClock(GH_ANCHOR)
+    let store = AppStore(clock: clock)
+    store.loadFromText(encodeWorkspaceDocument(createSeedWorkspace(clock)))
+    store.setRoute(routeId(Route.Gantt))
+    let runtime = ShellRuntime(ShellPreferences.load(), store)
+    let noLoadError: ?String = None
+    let host = ShellHost(store, runtime, "2026-01-01", false, noLoadError, 1440, 900)
+    host.armStoreBridge({action => action()})
+    let testHost = WidgetTestHost()
+    let builds = ShellBuilds()
+    let body = {=>
+        builds.note()
+        buildShell(host)
+    }
+    let _ = testHost.frame(GH_RECT, body: body)
+    let clearedSelection: ?String = None
+    store.select(clearedSelection)
+    let _ = testHost.frame(GH_RECT, body: body)
+    let buildsBefore = builds.count
+    // 左侧树第一行：x 落在 272px 树内、y 落在第一条数据行。
+    let x: Float32 = 300.0
+    let _ = testHost.frame(GH_RECT,
+        events: [UiEvent.MouseDown(MouseButton.Left, x, GH_ROW_0_Y), UiEvent.MouseUp(MouseButton.Left, x, GH_ROW_0_Y)],
+        body: body)
+    let selected = match (store.selectedId.value()) {
+        case Some(id) => id
+        case None => ""
+    }
+    @Expect(selected.isEmpty(), false)
+    // 选中是 store 事实，写进去后必须重新描述整棵树：否则甘特只拿到旧的 `selectedId`，
+    // 高亮与右侧检查器都不变——真机现场就是"点了像没点"。
+    let _ = testHost.frame(GH_RECT, body: body)
+    @Expect(builds.count > buildsBefore, true)
+}

@@ -366,7 +366,7 @@ class PanelListView <: Widget {
 
     public func handle(ctx: UiContext, event: UiEvent): Bool {
         match (event) {
-            case UiEvent.MouseWheel(_, _, _, dy) =>
+            case UiEvent.MouseWheel(_, dy, _, _) =>
                 let heights = cardHeights(ctx)
                 var total = PANEL_BODY_PAD * 2.0
                 for (height in heights) {

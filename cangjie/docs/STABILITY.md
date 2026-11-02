@@ -225,3 +225,59 @@ cd cangjie
    `TEXTURA_STRESS_SKIP_BUILD=1` 复用它上一次的产物。
 4. `SopPageWidget.layout` → `buildFrame` → `layoutIds`：视图层仍然每帧调用；本轮在逻辑层做了缓存兜底，
    更彻底的做法是视图层按数据版本号记忆（`src/views/sop/sop.cj` 归 SOP 视图 worker）。
+## 8. 2026-10-28 真机复验：三条缓解路线全部被证伪
+
+本轮目标只有一个：让 OKR 页底「新增关键结果」prompt 打开后「不动任何东西等 90s ×3」不崩。
+三条路线都实现并跑到真机，**全部失败**。失败结论本身就是资产——不要让下一个接手的人重做。
+
+### 8.1 运行时 GC 参数注入（`cjRegionSize` / `cjHeapSize` / `cjGCThreshold`）
+
+- 桌面验证：`env cjRegionSize=999999999 ./h` 会让运行时打印
+  `Unsupported cjRegionSize parameter ... Valid range [4KB, 2048KB]`，说明参数名与读取方式正确。
+- 真机实现（HAP 侧）：新增 `libtextura_env.so` NAPI 模块，`EntryAbility.onCreate` 里先
+  `setenv("cjRegionSize","1024KB",1)` 再 `requireCJLib`；模块 import 提到
+  `libark_interop_loader.so` 之前；另在 `AppScope/app.json5` 写 `appEnvironments`
+  （已确认该字段进了 HAP 的 `module.json`）。
+- 结果：**四种变体都无效**。
+  - `hilog` 有 `Textura/HOST: runtime env read-back: 999999999|applied=...`（setenv 与同模块 getenv 自洽）；
+  - 但 13ms 后运行时仍打印 `Region size: 64(KB)`、`Heap size: 524288(KB)`，且非法值
+    `999999999` 没有触发 `Unsupported cjRegionSize` 警告。
+  - 结论：**真机 HAP 进程里，Cangjie runtime 的 `getenv` 看不到 ArkTS/NAPI 侧设置的进程环境变量**
+    （疑似 libc/namespace 隔离；`libcangjie-runtime.so` 的 `getenv` 是 `UND`，没有本地 `environ`）。
+  - `appEnvironments` 同理无效，不要再用它做运行时调参。
+
+### 8.2 页面级 `RetainedSubtree` 缓存
+
+- 改动：`src/views/okr/okr.cj` 用 `RetainedSubtree("okr-page-root", UInt64(storeRevision),
+  cachePaint: true)` 包住 OKR 页，让光标闪烁帧命中 build/layout/paint 缓存。
+- 门槛：根包 `cjpm test` **704/704**；`parity.sh`/`diff.sh --theme both` **14/14**。
+- 真机：prompt 第 1 轮就崩（pid 4493 → 5473 → 5622，两次 `toRegion2Idx != INVALID_VALUE`）。
+- 结论：缓存没有改变触发面；对运行时缺陷无效。
+
+### 8.3 关闭光标闪烁（CUI-P13）
+
+- 改动：`TextInputStyle.caretBlink`（默认 `true`）+ `paintCaret` 关闭时只画常亮光标、不调
+  `requestFrameAt`；OKR prompt 传 `caretBlink: false`。
+- 门槛：根包 **704/704**；CUI 包 967 通过 + 1 个既有 unicode 夹具 ERROR。
+- 真机：prompt 打开后 **10s 内**崩（pid 16684，`toRegion2Idx`）。
+- 结论：**「空闲出帧」不是充分触发条件**；打开 prompt 这个动作本身（布局、IME 会话、编辑器
+  初始化）已经足够把 GC 推到坏落点。
+
+### 8.4 最小复现（`cangjie/tools/runtime-repro/`）
+
+按 HANDOFF 要求写了独立程序：96 层递归 + 每层 `ArrayList`/`HashMap`/字符串分配 + 栈底 4096 条
+字符串 + 单进程 300 轮；另加每层 `malloc`/`free` FFI 帧。
+
+| 版本 | 次数 | 崩溃 |
+|---|---|---|
+| 纯仓颉分配 | 200 | 0 |
+| 每层 FFI 帧 | 200 | 0 |
+
+**没有复现**。这把缺陷范围收窄为「需要 CUI/SDL 参与的真实栈」，而不是「任意深栈 + 高频 GC」。
+
+### 8.5 本轮结论
+
+- 应用层已没有可用的规避手段：GC 参数改不了、缓存和降帧都无效。
+- 可复现材料仍是 `scripts/stability.sh`（`textura.shell`，修后约 1/100），`#0` 行可直接交上游。
+- 设备已恢复为基线包（`sha256 476437783a1f0242ebeb969437f850af45b32dae53d5622512aa1e2a143f8218`，
+  30,118,784 B）；工作树只有本文件、`docs/HANDOFF.md` 与新增的 `tools/runtime-repro/`。

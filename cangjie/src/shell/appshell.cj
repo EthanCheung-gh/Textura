@@ -127,6 +127,10 @@ public class ShellHost {
         store.state.subscribe {_ => pump()}
         store.ui.subscribe {_ => pump()}
         store.notices.subscribe {_ => pump()}
+        // Selection is a store fact read during build (Gantt hands it to `GanttBody`, the inspector
+        // reads it, OKR/SOP highlight rows). Without this subscription a click updates `selectedId`
+        // but nothing re-describes the tree, so the click looked ignored on device.
+        store.selectedId.subscribe {_ => pump()}
         runtime.onVisualChange = pump
     }
 

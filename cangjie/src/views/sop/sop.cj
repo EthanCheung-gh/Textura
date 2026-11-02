@@ -214,7 +214,7 @@ func mouseX(event: UiEvent): Float32 {
         case UiEvent.MouseDown(_, x, _) => return x
         case UiEvent.MouseUp(_, x, _) => return x
         case UiEvent.MouseMove(x, _) => return x
-        case UiEvent.MouseWheel(x, _, _, _) => return x
+        case UiEvent.MouseWheel(_, _, x, _) => return x
         case _ => return -1.0
     }
 }
@@ -224,7 +224,7 @@ func mouseY(event: UiEvent): Float32 {
         case UiEvent.MouseDown(_, _, y) => return y
         case UiEvent.MouseUp(_, _, y) => return y
         case UiEvent.MouseMove(_, y) => return y
-        case UiEvent.MouseWheel(_, y, _, _) => return y
+        case UiEvent.MouseWheel(_, _, _, y) => return y
         case _ => return -1.0
     }
 }

@@ -172,8 +172,10 @@ class GanttBody <: Widget {
 
     public func handle(ctx: UiContext, event: UiEvent): Bool {
         match (event) {
-            case UiEvent.MouseWheel(_, _, dx, dy) =>
-                scrollBy(dx, dy)
+            case UiEvent.MouseWheel(dx, dy, _, _) =>
+                // Same sign and step as CUI's ScrollView (offset - wheel * 72): wheel-down
+                // (dy < 0) moves the content forward, never the other way round.
+                scrollBy(ganttWheelDelta(dx), ganttWheelDelta(dy))
                 true
             case UiEvent.MouseMove(x, y) => handleMove(x, y)
             case UiEvent.MouseDown(pressButton, x, y) where isPrimaryPointerButton(pressButton) => handleDown(x, y)

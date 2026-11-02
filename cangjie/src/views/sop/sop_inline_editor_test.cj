@@ -646,3 +646,37 @@ func nodeInspectorChecklistRuleSitsBelowTheTypeChips(): Unit {
     @Expect(rects.addChecklist.centerY() >= rects.checklistLabelY, true)
     @Expect(rects.addChecklist.centerY() <= rects.checklistLabelY + SOP_SECTION_LABEL_LINE, true)
 }
+/**
+ * 滚轮按**鼠标坐标**命中检查器 body、按 `wheelY` 滚动。
+ *
+ * `UiEvent.MouseWheel` 的载荷顺序是 `(wheelX, wheelY, mouseX, mouseY)`（`cangjie-sdl/src/events.cj`
+ * 第 131 行）。如果把前两个当成坐标，浮动窗口下鼠标永远"不在 body 里"，右栏就滚不动——这正是
+ * 「检查项被裁切且右栏不可滚动」的现场。
+ */
+@Test
+func sopInspectorWheelUsesPointerCoordinates(): Unit {
+    let harness = SopEditorHarness(viewportHeight: 560.0)
+    let testHost = WidgetTestHost()
+    harness.build(testHost)
+    let state = match (harness.state) {
+        case Some(value) => value
+        case None =>
+            @Expect("a SOP view state", "none")
+            return
+    }
+    let view = match (harness.frame(testHost)) {
+        case Some(value) => value
+        case None =>
+            @Expect("a laid-out SOP frame", "none")
+            return
+    }
+    let ctx = testHost.context
+    let rects = inspectorRects(ctx, view)
+    // 矮窗口必须真的溢出，否则这条用例只能证明"没滚"。
+    @Expect(inspectorMaxScroll(ctx, view) > 0.0, true)
+    let x = rects.body.centerX()
+    let y = rects.body.centerY()
+    @Expect(handleInspector(ctx, view, UiEvent.MouseWheel(0.0, -1.0, x, y)), true)
+    @Expect(state.inspectorScroll > 0.0, true)
+    @Expect(state.inspectorScroll <= inspectorMaxScroll(ctx, view), true)
+}
