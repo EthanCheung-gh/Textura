@@ -1,0 +1,1177 @@
+{
+  "environment": {
+    "cpu": "Intel Core Ultra 7 268V (8 cores / 8 threads)",
+    "os": "Windows 11 Pro 10.0.26200",
+    "cangjie": "1.0.5",
+    "SDL_ttf": "3.2.2",
+    "FreeType": [
+      2,
+      13,
+      2
+    ],
+    "SDL_ttf_sha256": "9a3defa81cfb71a48256333f1a015ee72a9b7d82311891cdc87afcb9f23ec5a9",
+    "emojiFont": "C:/Windows/Fonts/seguiemj.ttf",
+    "emojiFontSha256": "f07cbd7886f4a1a5255a1bdf4ca5ea29db3be3357414003a92bec5d1c3165578"
+  },
+  "method": {
+    "repeats": 8,
+    "processes": 144,
+    "workloadFrames": 180,
+    "warmFrameStartZeroBased": 64,
+    "memory": "Windows PrivateUsage in MiB (process private commit)",
+    "startupBaseline": "Frozen original source",
+    "workloadBaseline": "Original font allocation policy with null-engine text ownership and immutable raster keys",
+    "families": "32 registered aliases for the same UI font",
+    "sizes": "24 raster sizes 14..37 in a cycle",
+    "newGlyphs": "160 codepoints beginning at U+1F300",
+    "warmDistribution": "Pooled warm frame times from 8 processes",
+    "cpu": "Process user + kernel time; roughly 15.625 ms accounting granularity"
+  },
+  "performance": {
+    "default": {
+      "before": {
+        "startupMs": {
+          "median": 198.1249,
+          "mad": 19.069150000000008,
+          "minimum": 162.9968,
+          "maximum": 219.8504,
+          "p95": 219.8504
+        },
+        "privateMiB": {
+          "median": 58.142578125,
+          "mad": 0.064453125,
+          "minimum": 57.98828125,
+          "maximum": 58.4921875,
+          "p95": 58.4921875
+        },
+        "cpuMs": {
+          "median": 171.875,
+          "mad": 7.8125,
+          "minimum": 156.25,
+          "maximum": 218.75,
+          "p95": 218.75
+        }
+      },
+      "after": {
+        "startupMs": {
+          "median": 187.85815,
+          "mad": 16.828699999999984,
+          "minimum": 171.0107,
+          "maximum": 218.2775,
+          "p95": 218.2775
+        },
+        "privateMiB": {
+          "median": 58.294921875,
+          "mad": 0.15234375,
+          "minimum": 58.05859375,
+          "maximum": 58.51953125,
+          "p95": 58.51953125
+        },
+        "cpuMs": {
+          "median": 179.6875,
+          "mad": 23.4375,
+          "minimum": 140.625,
+          "maximum": 234.375,
+          "p95": 234.375
+        }
+      }
+    },
+    "emoji": {
+      "before": {
+        "startupMs": {
+          "median": 232.37095,
+          "mad": 1.5176000000000016,
+          "minimum": 229.1015,
+          "maximum": 234.5405,
+          "p95": 234.5405
+        },
+        "privateMiB": {
+          "median": 74.4296875,
+          "mad": 0.05859375,
+          "minimum": 74.3125,
+          "maximum": 74.5625,
+          "p95": 74.5625
+        },
+        "cpuMs": {
+          "median": 242.1875,
+          "mad": 23.4375,
+          "minimum": 203.125,
+          "maximum": 312.5,
+          "p95": 312.5
+        }
+      },
+      "after": {
+        "startupMs": {
+          "median": 223.12115,
+          "mad": 3.010149999999996,
+          "minimum": 215.6678,
+          "maximum": 227.1728,
+          "p95": 227.1728
+        },
+        "privateMiB": {
+          "median": 66.62109375,
+          "mad": 0.06640625,
+          "minimum": 66.53125,
+          "maximum": 66.828125,
+          "p95": 66.828125
+        },
+        "cpuMs": {
+          "median": 218.75,
+          "mad": 15.625,
+          "minimum": 171.875,
+          "maximum": 250.0,
+          "p95": 250.0
+        }
+      }
+    },
+    "plain": {
+      "control": {
+        "firstFrameMs": {
+          "median": 6.77525,
+          "mad": 0.36395,
+          "minimum": 6.1663,
+          "maximum": 7.4926,
+          "p95": 7.4926
+        },
+        "warmFrameMs": {
+          "median": 0.2635,
+          "mad": 0.040100000000000025,
+          "minimum": 0.1694,
+          "maximum": 0.8271,
+          "p95": 0.411
+        },
+        "readyPrivateMiB": {
+          "median": 52.654296875,
+          "mad": 0.103515625,
+          "minimum": 52.38671875,
+          "maximum": 53.09765625,
+          "p95": 53.09765625
+        },
+        "frame-0PrivateMiB": {
+          "median": 59.189453125,
+          "mad": 0.107421875,
+          "minimum": 59.05078125,
+          "maximum": 59.3671875,
+          "p95": 59.3671875
+        },
+        "frame-31PrivateMiB": {
+          "median": 59.52734375,
+          "mad": 0.087890625,
+          "minimum": 59.41015625,
+          "maximum": 59.83984375,
+          "p95": 59.83984375
+        },
+        "frame-63PrivateMiB": {
+          "median": 59.58984375,
+          "mad": 0.087890625,
+          "minimum": 59.47265625,
+          "maximum": 59.90234375,
+          "p95": 59.90234375
+        },
+        "frames-endPrivateMiB": {
+          "median": 59.6875,
+          "mad": 0.1015625,
+          "minimum": 59.53515625,
+          "maximum": 59.98046875,
+          "p95": 59.98046875
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 59.26953125,
+          "mad": 0.515625,
+          "minimum": 58.3671875,
+          "maximum": 59.84375,
+          "p95": 59.84375
+        },
+        "closedPrivateMiB": {
+          "median": 47.408203125,
+          "mad": 0.37109375,
+          "minimum": 46.65625,
+          "maximum": 48.203125,
+          "p95": 48.203125
+        },
+        "cpuMs": {
+          "median": 54.6875,
+          "mad": 23.4375,
+          "minimum": 0.0,
+          "maximum": 78.125,
+          "p95": 78.125
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 6.491300000000001,
+          "mad": 0.2588499999999998,
+          "minimum": 6.1518,
+          "maximum": 7.5596,
+          "p95": 7.5596
+        },
+        "warmFrameMs": {
+          "median": 0.2726,
+          "mad": 0.03225,
+          "minimum": 0.0581,
+          "maximum": 1.0305,
+          "p95": 0.3976
+        },
+        "readyPrivateMiB": {
+          "median": 52.66796875,
+          "mad": 0.162109375,
+          "minimum": 52.390625,
+          "maximum": 53.1796875,
+          "p95": 53.1796875
+        },
+        "frame-0PrivateMiB": {
+          "median": 58.2890625,
+          "mad": 0.09765625,
+          "minimum": 58.15625,
+          "maximum": 59.15234375,
+          "p95": 59.15234375
+        },
+        "frame-31PrivateMiB": {
+          "median": 58.640625,
+          "mad": 0.052734375,
+          "minimum": 58.578125,
+          "maximum": 59.17578125,
+          "p95": 59.17578125
+        },
+        "frame-63PrivateMiB": {
+          "median": 58.640625,
+          "mad": 0.052734375,
+          "minimum": 58.578125,
+          "maximum": 59.17578125,
+          "p95": 59.17578125
+        },
+        "frames-endPrivateMiB": {
+          "median": 58.703125,
+          "mad": 0.052734375,
+          "minimum": 58.640625,
+          "maximum": 59.23828125,
+          "p95": 59.23828125
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 58.484375,
+          "mad": 0.263671875,
+          "minimum": 57.984375,
+          "maximum": 59.0078125,
+          "p95": 59.0078125
+        },
+        "closedPrivateMiB": {
+          "median": 47.17578125,
+          "mad": 0.400390625,
+          "minimum": 46.62109375,
+          "maximum": 48.19140625,
+          "p95": 48.19140625
+        },
+        "cpuMs": {
+          "median": 31.25,
+          "mad": 23.4375,
+          "minimum": 0.0,
+          "maximum": 62.5,
+          "p95": 62.5
+        }
+      }
+    },
+    "same": {
+      "control": {
+        "firstFrameMs": {
+          "median": 21.726,
+          "mad": 0.4468000000000014,
+          "minimum": 21.0118,
+          "maximum": 23.6325,
+          "p95": 23.6325
+        },
+        "warmFrameMs": {
+          "median": 0.2505,
+          "mad": 0.03040000000000001,
+          "minimum": 0.1882,
+          "maximum": 1.2862,
+          "p95": 0.3465
+        },
+        "readyPrivateMiB": {
+          "median": 52.783203125,
+          "mad": 0.2265625,
+          "minimum": 52.296875,
+          "maximum": 53.046875,
+          "p95": 53.046875
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.833984375,
+          "mad": 0.11328125,
+          "minimum": 74.6875,
+          "maximum": 75.21484375,
+          "p95": 75.21484375
+        },
+        "frame-31PrivateMiB": {
+          "median": 75.2421875,
+          "mad": 0.056640625,
+          "minimum": 75.0546875,
+          "maximum": 75.5,
+          "p95": 75.5
+        },
+        "frame-63PrivateMiB": {
+          "median": 75.3046875,
+          "mad": 0.056640625,
+          "minimum": 75.1171875,
+          "maximum": 75.8515625,
+          "p95": 75.8515625
+        },
+        "frames-endPrivateMiB": {
+          "median": 75.509765625,
+          "mad": 0.119140625,
+          "minimum": 75.1796875,
+          "maximum": 75.9140625,
+          "p95": 75.9140625
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 59.6640625,
+          "mad": 0.203125,
+          "minimum": 58.61328125,
+          "maximum": 60.19921875,
+          "p95": 60.19921875
+        },
+        "closedPrivateMiB": {
+          "median": 47.681640625,
+          "mad": 0.302734375,
+          "minimum": 47.125,
+          "maximum": 48.35546875,
+          "p95": 48.35546875
+        },
+        "cpuMs": {
+          "median": 46.875,
+          "mad": 15.625,
+          "minimum": 15.625,
+          "maximum": 78.125,
+          "p95": 78.125
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 10.162700000000001,
+          "mad": 0.7167500000000011,
+          "minimum": 9.4049,
+          "maximum": 12.2838,
+          "p95": 12.2838
+        },
+        "warmFrameMs": {
+          "median": 0.23659999999999998,
+          "mad": 0.018199999999999966,
+          "minimum": 0.1786,
+          "maximum": 0.4122,
+          "p95": 0.315
+        },
+        "readyPrivateMiB": {
+          "median": 52.806640625,
+          "mad": 0.130859375,
+          "minimum": 52.40234375,
+          "maximum": 53.1171875,
+          "p95": 53.1171875
+        },
+        "frame-0PrivateMiB": {
+          "median": 66.169921875,
+          "mad": 0.14453125,
+          "minimum": 65.9609375,
+          "maximum": 66.328125,
+          "p95": 66.328125
+        },
+        "frame-31PrivateMiB": {
+          "median": 66.369140625,
+          "mad": 0.12109375,
+          "minimum": 66.23828125,
+          "maximum": 66.78515625,
+          "p95": 66.78515625
+        },
+        "frame-63PrivateMiB": {
+          "median": 66.369140625,
+          "mad": 0.12109375,
+          "minimum": 66.23828125,
+          "maximum": 66.78515625,
+          "p95": 66.78515625
+        },
+        "frames-endPrivateMiB": {
+          "median": 66.494140625,
+          "mad": 0.119140625,
+          "minimum": 66.36328125,
+          "maximum": 66.91015625,
+          "p95": 66.91015625
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 58.56640625,
+          "mad": 0.314453125,
+          "minimum": 58.2109375,
+          "maximum": 59.7109375,
+          "p95": 59.7109375
+        },
+        "closedPrivateMiB": {
+          "median": 47.455078125,
+          "mad": 0.328125,
+          "minimum": 46.62890625,
+          "maximum": 48.2578125,
+          "p95": 48.2578125
+        },
+        "cpuMs": {
+          "median": 39.0625,
+          "mad": 7.8125,
+          "minimum": 31.25,
+          "maximum": 62.5,
+          "p95": 62.5
+        }
+      }
+    },
+    "new-glyphs": {
+      "control": {
+        "firstFrameMs": {
+          "median": 21.340899999999998,
+          "mad": 0.7456999999999994,
+          "minimum": 20.2645,
+          "maximum": 25.3414,
+          "p95": 25.3414
+        },
+        "warmFrameMs": {
+          "median": 0.33575,
+          "mad": 0.0806,
+          "minimum": 0.1769,
+          "maximum": 17.4937,
+          "p95": 0.8222
+        },
+        "readyPrivateMiB": {
+          "median": 52.65234375,
+          "mad": 0.111328125,
+          "minimum": 52.53515625,
+          "maximum": 53.0859375,
+          "p95": 53.0859375
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.587890625,
+          "mad": 0.033203125,
+          "minimum": 74.5234375,
+          "maximum": 74.69140625,
+          "p95": 74.69140625
+        },
+        "frame-31PrivateMiB": {
+          "median": 76.181640625,
+          "mad": 0.07421875,
+          "minimum": 76.10546875,
+          "maximum": 76.41796875,
+          "p95": 76.41796875
+        },
+        "frame-63PrivateMiB": {
+          "median": 77.134765625,
+          "mad": 0.109375,
+          "minimum": 77.0,
+          "maximum": 77.34375,
+          "p95": 77.34375
+        },
+        "frames-endPrivateMiB": {
+          "median": 81.275390625,
+          "mad": 0.08203125,
+          "minimum": 81.0703125,
+          "maximum": 81.578125,
+          "p95": 81.578125
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 63.84765625,
+          "mad": 0.3046875,
+          "minimum": 63.06640625,
+          "maximum": 64.4453125,
+          "p95": 64.4453125
+        },
+        "closedPrivateMiB": {
+          "median": 51.73828125,
+          "mad": 0.263671875,
+          "minimum": 51.4296875,
+          "maximum": 53.7890625,
+          "p95": 53.7890625
+        },
+        "cpuMs": {
+          "median": 140.625,
+          "mad": 15.625,
+          "minimum": 93.75,
+          "maximum": 203.125,
+          "p95": 203.125
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 9.18835,
+          "mad": 0.5363999999999995,
+          "minimum": 8.3473,
+          "maximum": 10.0514,
+          "p95": 10.0514
+        },
+        "warmFrameMs": {
+          "median": 0.30465,
+          "mad": 0.05040000000000003,
+          "minimum": 0.1802,
+          "maximum": 8.0976,
+          "p95": 0.7822
+        },
+        "readyPrivateMiB": {
+          "median": 52.65234375,
+          "mad": 0.11328125,
+          "minimum": 52.40234375,
+          "maximum": 52.9140625,
+          "p95": 52.9140625
+        },
+        "frame-0PrivateMiB": {
+          "median": 66.03515625,
+          "mad": 0.15625,
+          "minimum": 65.7265625,
+          "maximum": 66.26953125,
+          "p95": 66.26953125
+        },
+        "frame-31PrivateMiB": {
+          "median": 67.22265625,
+          "mad": 0.0625,
+          "minimum": 67.1484375,
+          "maximum": 67.5390625,
+          "p95": 67.5390625
+        },
+        "frame-63PrivateMiB": {
+          "median": 69.03125,
+          "mad": 0.08203125,
+          "minimum": 68.73046875,
+          "maximum": 69.12109375,
+          "p95": 69.12109375
+        },
+        "frames-endPrivateMiB": {
+          "median": 73.025390625,
+          "mad": 0.140625,
+          "minimum": 72.5625,
+          "maximum": 73.26171875,
+          "p95": 73.26171875
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 63.97265625,
+          "mad": 0.32421875,
+          "minimum": 63.31640625,
+          "maximum": 64.44921875,
+          "p95": 64.44921875
+        },
+        "closedPrivateMiB": {
+          "median": 51.783203125,
+          "mad": 0.388671875,
+          "minimum": 51.08984375,
+          "maximum": 52.64453125,
+          "p95": 52.64453125
+        },
+        "cpuMs": {
+          "median": 125.0,
+          "mad": 15.625,
+          "minimum": 93.75,
+          "maximum": 156.25,
+          "p95": 156.25
+        }
+      }
+    },
+    "families": {
+      "control": {
+        "firstFrameMs": {
+          "median": 21.724449999999997,
+          "mad": 0.966050000000001,
+          "minimum": 20.3027,
+          "maximum": 23.0735,
+          "p95": 23.0735
+        },
+        "warmFrameMs": {
+          "median": 9.2707,
+          "mad": 0.5365500000000001,
+          "minimum": 8.057,
+          "maximum": 14.0193,
+          "p95": 10.899
+        },
+        "readyPrivateMiB": {
+          "median": 52.68359375,
+          "mad": 0.103515625,
+          "minimum": 52.49609375,
+          "maximum": 53.25,
+          "p95": 53.25
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.80078125,
+          "mad": 0.16015625,
+          "minimum": 74.5859375,
+          "maximum": 75.0,
+          "p95": 75.0
+        },
+        "frame-31PrivateMiB": {
+          "median": 479.107421875,
+          "mad": 0.134765625,
+          "minimum": 478.82421875,
+          "maximum": 479.29296875,
+          "p95": 479.29296875
+        },
+        "frame-63PrivateMiB": {
+          "median": 488.7265625,
+          "mad": 0.26171875,
+          "minimum": 486.78125,
+          "maximum": 489.1171875,
+          "p95": 489.1171875
+        },
+        "frames-endPrivateMiB": {
+          "median": 488.0625,
+          "mad": 0.283203125,
+          "minimum": 487.21484375,
+          "maximum": 489.46484375,
+          "p95": 489.46484375
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 78.525390625,
+          "mad": 0.876953125,
+          "minimum": 77.375,
+          "maximum": 79.98828125,
+          "p95": 79.98828125
+        },
+        "closedPrivateMiB": {
+          "median": 65.033203125,
+          "mad": 0.634765625,
+          "minimum": 63.06640625,
+          "maximum": 65.79296875,
+          "p95": 65.79296875
+        },
+        "cpuMs": {
+          "median": 1796.875,
+          "mad": 23.4375,
+          "minimum": 1734.375,
+          "maximum": 1859.375,
+          "p95": 1859.375
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 10.0767,
+          "mad": 0.5423,
+          "minimum": 9.3114,
+          "maximum": 12.5433,
+          "p95": 12.5433
+        },
+        "warmFrameMs": {
+          "median": 1.0855000000000001,
+          "mad": 0.07755000000000012,
+          "minimum": 0.9258,
+          "maximum": 2.5693,
+          "p95": 1.7754
+        },
+        "readyPrivateMiB": {
+          "median": 52.4921875,
+          "mad": 0.185546875,
+          "minimum": 52.296875,
+          "maximum": 52.89453125,
+          "p95": 52.89453125
+        },
+        "frame-0PrivateMiB": {
+          "median": 65.994140625,
+          "mad": 0.04296875,
+          "minimum": 65.84765625,
+          "maximum": 66.28515625,
+          "p95": 66.28515625
+        },
+        "frame-31PrivateMiB": {
+          "median": 90.150390625,
+          "mad": 0.072265625,
+          "minimum": 90.04296875,
+          "maximum": 90.76171875,
+          "p95": 90.76171875
+        },
+        "frame-63PrivateMiB": {
+          "median": 94.5,
+          "mad": 0.126953125,
+          "minimum": 94.1875,
+          "maximum": 94.90234375,
+          "p95": 94.90234375
+        },
+        "frames-endPrivateMiB": {
+          "median": 108.216796875,
+          "mad": 0.109375,
+          "minimum": 107.93359375,
+          "maximum": 108.71484375,
+          "p95": 108.71484375
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 81.12890625,
+          "mad": 0.150390625,
+          "minimum": 80.9375,
+          "maximum": 81.57421875,
+          "p95": 81.57421875
+        },
+        "closedPrivateMiB": {
+          "median": 69.03515625,
+          "mad": 0.087890625,
+          "minimum": 68.94140625,
+          "maximum": 69.390625,
+          "p95": 69.390625
+        },
+        "cpuMs": {
+          "median": 250.0,
+          "mad": 31.25,
+          "minimum": 218.75,
+          "maximum": 296.875,
+          "p95": 296.875
+        }
+      }
+    },
+    "sizes": {
+      "control": {
+        "firstFrameMs": {
+          "median": 21.78465,
+          "mad": 0.7716999999999992,
+          "minimum": 20.9056,
+          "maximum": 23.4517,
+          "p95": 23.4517
+        },
+        "warmFrameMs": {
+          "median": 0.32935000000000003,
+          "mad": 0.04654999999999998,
+          "minimum": 0.1974,
+          "maximum": 1.0007,
+          "p95": 0.4512
+        },
+        "readyPrivateMiB": {
+          "median": 52.76171875,
+          "mad": 0.2109375,
+          "minimum": 52.46875,
+          "maximum": 53.21484375,
+          "p95": 53.21484375
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.775390625,
+          "mad": 0.123046875,
+          "minimum": 74.6484375,
+          "maximum": 75.08203125,
+          "p95": 75.08203125
+        },
+        "frame-31PrivateMiB": {
+          "median": 475.23828125,
+          "mad": 0.087890625,
+          "minimum": 474.828125,
+          "maximum": 475.4609375,
+          "p95": 475.4609375
+        },
+        "frame-63PrivateMiB": {
+          "median": 475.30078125,
+          "mad": 0.087890625,
+          "minimum": 474.890625,
+          "maximum": 475.7421875,
+          "p95": 475.7421875
+        },
+        "frames-endPrivateMiB": {
+          "median": 475.36328125,
+          "mad": 0.087890625,
+          "minimum": 474.953125,
+          "maximum": 475.8046875,
+          "p95": 475.8046875
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 68.3828125,
+          "mad": 0.34375,
+          "minimum": 68.015625,
+          "maximum": 69.97265625,
+          "p95": 69.97265625
+        },
+        "closedPrivateMiB": {
+          "median": 56.693359375,
+          "mad": 0.375,
+          "minimum": 55.4296875,
+          "maximum": 57.875,
+          "p95": 57.875
+        },
+        "cpuMs": {
+          "median": 273.4375,
+          "mad": 23.4375,
+          "minimum": 250.0,
+          "maximum": 359.375,
+          "p95": 359.375
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 9.4512,
+          "mad": 0.38480000000000025,
+          "minimum": 9.057,
+          "maximum": 10.9715,
+          "p95": 10.9715
+        },
+        "warmFrameMs": {
+          "median": 4.9220500000000005,
+          "mad": 0.3869500000000001,
+          "minimum": 4.2725,
+          "maximum": 8.065,
+          "p95": 6.4801
+        },
+        "readyPrivateMiB": {
+          "median": 52.576171875,
+          "mad": 0.12109375,
+          "minimum": 52.40625,
+          "maximum": 52.765625,
+          "p95": 52.765625
+        },
+        "frame-0PrivateMiB": {
+          "median": 65.943359375,
+          "mad": 0.08984375,
+          "minimum": 65.8203125,
+          "maximum": 66.14453125,
+          "p95": 66.14453125
+        },
+        "frame-31PrivateMiB": {
+          "median": 142.806640625,
+          "mad": 0.2578125,
+          "minimum": 142.3671875,
+          "maximum": 144.0,
+          "p95": 144.0
+        },
+        "frame-63PrivateMiB": {
+          "median": 151.197265625,
+          "mad": 0.146484375,
+          "minimum": 150.9765625,
+          "maximum": 151.56640625,
+          "p95": 151.56640625
+        },
+        "frames-endPrivateMiB": {
+          "median": 173.884765625,
+          "mad": 0.130859375,
+          "minimum": 173.49609375,
+          "maximum": 174.16015625,
+          "p95": 174.16015625
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 96.59765625,
+          "mad": 0.373046875,
+          "minimum": 96.21875,
+          "maximum": 98.13671875,
+          "p95": 98.13671875
+        },
+        "closedPrivateMiB": {
+          "median": 84.783203125,
+          "mad": 0.767578125,
+          "minimum": 83.765625,
+          "maximum": 85.76171875,
+          "p95": 85.76171875
+        },
+        "cpuMs": {
+          "median": 992.1875,
+          "mad": 15.625,
+          "minimum": 921.875,
+          "maximum": 1062.5,
+          "p95": 1062.5
+        }
+      }
+    },
+    "italic": {
+      "control": {
+        "firstFrameMs": {
+          "median": 32.627,
+          "mad": 0.810649999999999,
+          "minimum": 30.8527,
+          "maximum": 34.0318,
+          "p95": 34.0318
+        },
+        "warmFrameMs": {
+          "median": 0.29295,
+          "mad": 0.037500000000000006,
+          "minimum": 0.1806,
+          "maximum": 0.6349,
+          "p95": 0.3834
+        },
+        "readyPrivateMiB": {
+          "median": 52.62109375,
+          "mad": 0.09765625,
+          "minimum": 52.4609375,
+          "maximum": 52.8828125,
+          "p95": 52.8828125
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.5625,
+          "mad": 0.02734375,
+          "minimum": 74.515625,
+          "maximum": 74.765625,
+          "p95": 74.765625
+        },
+        "frame-31PrivateMiB": {
+          "median": 75.123046875,
+          "mad": 0.021484375,
+          "minimum": 75.09765625,
+          "maximum": 75.3515625,
+          "p95": 75.3515625
+        },
+        "frame-63PrivateMiB": {
+          "median": 75.154296875,
+          "mad": 0.052734375,
+          "minimum": 75.09765625,
+          "maximum": 75.5390625,
+          "p95": 75.5390625
+        },
+        "frames-endPrivateMiB": {
+          "median": 75.30859375,
+          "mad": 0.08203125,
+          "minimum": 75.22265625,
+          "maximum": 75.6640625,
+          "p95": 75.6640625
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 58.140625,
+          "mad": 0.3125,
+          "minimum": 57.78515625,
+          "maximum": 58.9609375,
+          "p95": 58.9609375
+        },
+        "closedPrivateMiB": {
+          "median": 46.7890625,
+          "mad": 0.162109375,
+          "minimum": 46.5390625,
+          "maximum": 47.5703125,
+          "p95": 47.5703125
+        },
+        "cpuMs": {
+          "median": 62.5,
+          "mad": 0.0,
+          "minimum": 31.25,
+          "maximum": 93.75,
+          "p95": 93.75
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 9.503900000000002,
+          "mad": 0.08475000000000144,
+          "minimum": 8.6175,
+          "maximum": 10.6902,
+          "p95": 10.6902
+        },
+        "warmFrameMs": {
+          "median": 0.246,
+          "mad": 0.03044999999999999,
+          "minimum": 0.1758,
+          "maximum": 0.4851,
+          "p95": 0.3321
+        },
+        "readyPrivateMiB": {
+          "median": 52.58203125,
+          "mad": 0.095703125,
+          "minimum": 52.2421875,
+          "maximum": 52.75,
+          "p95": 52.75
+        },
+        "frame-0PrivateMiB": {
+          "median": 64.931640625,
+          "mad": 0.068359375,
+          "minimum": 64.81640625,
+          "maximum": 65.1640625,
+          "p95": 65.1640625
+        },
+        "frame-31PrivateMiB": {
+          "median": 65.4609375,
+          "mad": 0.076171875,
+          "minimum": 65.328125,
+          "maximum": 65.6484375,
+          "p95": 65.6484375
+        },
+        "frame-63PrivateMiB": {
+          "median": 65.4609375,
+          "mad": 0.076171875,
+          "minimum": 65.328125,
+          "maximum": 65.6484375,
+          "p95": 65.6484375
+        },
+        "frames-endPrivateMiB": {
+          "median": 65.587890625,
+          "mad": 0.076171875,
+          "minimum": 65.453125,
+          "maximum": 65.77734375,
+          "p95": 65.77734375
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 58.345703125,
+          "mad": 0.3671875,
+          "minimum": 57.40234375,
+          "maximum": 58.80859375,
+          "p95": 58.80859375
+        },
+        "closedPrivateMiB": {
+          "median": 46.2421875,
+          "mad": 0.169921875,
+          "minimum": 46.0703125,
+          "maximum": 47.47265625,
+          "p95": 47.47265625
+        },
+        "cpuMs": {
+          "median": 46.875,
+          "mad": 7.8125,
+          "minimum": 0.0,
+          "maximum": 78.125,
+          "p95": 78.125
+        }
+      }
+    },
+    "decorated": {
+      "control": {
+        "firstFrameMs": {
+          "median": 21.98165,
+          "mad": 0.16045000000000087,
+          "minimum": 20.3063,
+          "maximum": 22.4303,
+          "p95": 22.4303
+        },
+        "warmFrameMs": {
+          "median": 0.25295,
+          "mad": 0.03005000000000002,
+          "minimum": 0.187,
+          "maximum": 0.8347,
+          "p95": 0.3471
+        },
+        "readyPrivateMiB": {
+          "median": 52.73046875,
+          "mad": 0.14453125,
+          "minimum": 52.40625,
+          "maximum": 53.0546875,
+          "p95": 53.0546875
+        },
+        "frame-0PrivateMiB": {
+          "median": 74.80859375,
+          "mad": 0.087890625,
+          "minimum": 74.66796875,
+          "maximum": 74.98828125,
+          "p95": 74.98828125
+        },
+        "frame-31PrivateMiB": {
+          "median": 75.12890625,
+          "mad": 0.095703125,
+          "minimum": 74.87109375,
+          "maximum": 75.35546875,
+          "p95": 75.35546875
+        },
+        "frame-63PrivateMiB": {
+          "median": 75.19140625,
+          "mad": 0.095703125,
+          "minimum": 74.93359375,
+          "maximum": 75.41796875,
+          "p95": 75.41796875
+        },
+        "frames-endPrivateMiB": {
+          "median": 75.330078125,
+          "mad": 0.119140625,
+          "minimum": 74.99609375,
+          "maximum": 75.48828125,
+          "p95": 75.48828125
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 59.09765625,
+          "mad": 0.419921875,
+          "minimum": 58.62109375,
+          "maximum": 59.59375,
+          "p95": 59.59375
+        },
+        "closedPrivateMiB": {
+          "median": 47.4921875,
+          "mad": 0.123046875,
+          "minimum": 46.953125,
+          "maximum": 49.5703125,
+          "p95": 49.5703125
+        },
+        "cpuMs": {
+          "median": 46.875,
+          "mad": 7.8125,
+          "minimum": 31.25,
+          "maximum": 78.125,
+          "p95": 78.125
+        }
+      },
+      "after": {
+        "firstFrameMs": {
+          "median": 10.4956,
+          "mad": 0.5529000000000002,
+          "minimum": 9.5282,
+          "maximum": 11.4708,
+          "p95": 11.4708
+        },
+        "warmFrameMs": {
+          "median": 0.25370000000000004,
+          "mad": 0.03140000000000004,
+          "minimum": 0.1839,
+          "maximum": 0.7351,
+          "p95": 0.341
+        },
+        "readyPrivateMiB": {
+          "median": 52.74609375,
+          "mad": 0.05078125,
+          "minimum": 52.59765625,
+          "maximum": 53.2578125,
+          "p95": 53.2578125
+        },
+        "frame-0PrivateMiB": {
+          "median": 66.14453125,
+          "mad": 0.08984375,
+          "minimum": 66.03515625,
+          "maximum": 66.3046875,
+          "p95": 66.3046875
+        },
+        "frame-31PrivateMiB": {
+          "median": 66.505859375,
+          "mad": 0.015625,
+          "minimum": 66.19921875,
+          "maximum": 66.52734375,
+          "p95": 66.52734375
+        },
+        "frame-63PrivateMiB": {
+          "median": 66.505859375,
+          "mad": 0.015625,
+          "minimum": 66.19921875,
+          "maximum": 66.52734375,
+          "p95": 66.52734375
+        },
+        "frames-endPrivateMiB": {
+          "median": 66.638671875,
+          "mad": 0.044921875,
+          "minimum": 66.32421875,
+          "maximum": 66.89453125,
+          "p95": 66.89453125
+        },
+        "cache-clearedPrivateMiB": {
+          "median": 58.974609375,
+          "mad": 0.310546875,
+          "minimum": 58.0625,
+          "maximum": 59.5859375,
+          "p95": 59.5859375
+        },
+        "closedPrivateMiB": {
+          "median": 47.326171875,
+          "mad": 0.46875,
+          "minimum": 46.54296875,
+          "maximum": 47.98046875,
+          "p95": 47.98046875
+        },
+        "cpuMs": {
+          "median": 31.25,
+          "mad": 7.8125,
+          "minimum": 15.625,
+          "maximum": 62.5,
+          "p95": 62.5
+        }
+      }
+    }
+  },
+  "qtExperiment": {
+    "default": {
+      "measure": {
+        "privateMiB": 3.30859375,
+        "ms": 95.58005
+      },
+      "draw": {
+        "privateMiB": 3.3125,
+        "ms": 95.9324
+      }
+    },
+    "emoji": {
+      "measure": {
+        "privateMiB": 30.02734375,
+        "ms": 298.73535000000004
+      },
+      "draw": {
+        "privateMiB": 30.373046875,
+        "ms": 322.453
+      }
+    }
+  },
+  "limits": [
+    "Host-specific measurements, not a universal memory minimum",
+    "Qt QImage first-use deltas cannot be compared directly with CUI whole-process startup figures",
+    "64 MiB COLR/CPAL budget is not a process or GPU-memory hard limit"
+  ]
+}

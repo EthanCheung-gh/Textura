@@ -12,10 +12,17 @@ import type {
   ItemPatch,
   ItemStatus,
   NewItemInput,
+  NewReportInput,
+  Report,
+  ReportPatch,
+  ReportPeriodKind,
+  ReportSection,
+  ReportSectionOrigin,
+  ReportStatus,
   SopRunEntry,
   Workspace,
 } from './model';
-import { WORKSPACE_VERSION } from './model';
+import { REPORT_TEMPLATE_BY_KIND, WORKSPACE_VERSION } from './model';
 import { createHistory } from './history';
 import { createDebouncer, areaPalette, currentQuarter, nowIso, uid } from './utils';
 import {
@@ -38,7 +45,15 @@ import {
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-export type Route = 'dashboard' | 'calendar' | 'sop' | 'okr' | 'gtd' | 'gantt' | 'settings';
+export type Route =
+  | 'dashboard'
+  | 'calendar'
+  | 'sop'
+  | 'okr'
+  | 'gtd'
+  | 'gantt'
+  | 'reports'
+  | 'settings';
 
 export interface UiState {
   route: Route;
@@ -89,6 +104,12 @@ export interface WorkspaceStore {
   createArea(name: string): Area;
   updateArea(id: string, patch: Partial<Omit<Area, 'id'>>): void;
   deleteArea(id: string): void;
+
+  createReport(input: NewReportInput): Report;
+  updateReport(id: string, patch: ReportPatch): void;
+  finalizeReport(id: string): void;
+  reopenReport(id: string): void;
+  deleteReport(id: string): void;
 
   logRun(input: { sopId: string; stepId: string; result: SopRunEntry['result']; note?: string }): SopRunEntry;
 
@@ -188,6 +209,50 @@ function nextSiblingOrder(ws: Workspace, parentId: string | null): number {
   const siblings = getWorkspaceIndex(ws).children.get(parentId) ?? [];
   if (siblings.length === 0) return 0;
   return Math.max(...siblings.map((item) => item.order)) + 1;
+}
+
+/** 报告集合（v1 之前的工作区可能没有这个键）。 */
+function reportsOf(ws: Workspace): Report[] {
+  return ws.reports ?? [];
+}
+
+/** 季度中文数字（1→一 … 4→四），与聚合层 periodLabel 的季度形态对齐。 */
+const QUARTER_CN_LABELS = ['一', '二', '三', '四'] as const;
+
+/**
+ * 默认标题：能解析出周期就写成中文「2026 年第 44 周报」，
+ * 解析不了（含 period 为空串）就把 period 原样当标题，由上层决定是否允许生成。
+ */
+function defaultReportTitle(kind: ReportPeriodKind, period: string): string {
+  const week = /^(\d{4})-W(\d{2})$/.exec(period);
+  if (kind === 'week' && week) return `${week[1]} 年第 ${Number(week[2])} 周报`;
+  const month = /^(\d{4})-(\d{2})$/.exec(period);
+  if (kind === 'month' && month) return `${month[1]} 年 ${Number(month[2])} 月报`;
+  const quarter = /^(\d{4})-Q([1-4])$/.exec(period);
+  if (kind === 'quarter' && quarter) {
+    // 季报用中文数字，与聚合层 `periodLabel('quarter', …)` 的「第四季度」同一形态：
+    // 否则左栏标题写「第 4 季度报」、页头期次写「第四季度」，同一份报告两种口径。
+    const label = QUARTER_CN_LABELS[Number(quarter[2]) - 1];
+    if (label) return `${quarter[1]} 年第${label}季度报`;
+  }
+  return period;
+}
+
+/**
+ * 章节整份替换：updatedAt 统一刷新为本次时间戳；
+ * 调用方没给 origin 时按同 key 的旧章节回填（未传则保留原值）。
+ */
+function replaceSections(
+  previous: ReportSection[],
+  next: ReportSection[],
+  timestamp: string,
+): ReportSection[] {
+  const byKey = new Map(previous.map((section) => [section.key, section]));
+  return next.map((section) => {
+    const inherited = byKey.get(section.key)?.origin;
+    const origin: ReportSectionOrigin = section.origin ?? inherited ?? 'auto';
+    return { ...section, origin, updatedAt: timestamp };
+  });
 }
 
 const history = createHistory<Workspace>(80);
@@ -626,6 +691,85 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
       }));
     },
 
+    createReport(input) {
+      const now = nowIso();
+      const report: Report = {
+        id: uid('r'),
+        kind: input.kind,
+        period: input.period,
+        // 空白标题等于没填，走默认标题；只有显式给了非空标题才覆盖。
+        title:
+          input.title && input.title.trim()
+            ? input.title
+            : defaultReportTitle(input.kind, input.period),
+        author: input.author ?? '',
+        status: 'draft',
+        templateId:
+          input.templateId && input.templateId.trim()
+            ? input.templateId
+            : REPORT_TEMPLATE_BY_KIND[input.kind],
+        sections: replaceSections([], input.sections ?? [], now),
+        generatedAt: now,
+        finalizedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      commit((ws) => ({ ...ws, reports: [...reportsOf(ws), report] }));
+      return report;
+    },
+
+    updateReport(id, patch) {
+      // 与 finalize/reopen/delete 同一口径：不存在的 id 直接返回。
+      // 页面层的防抖定时器可能拿着已经失效的 id 回调（例如刚撤销了删除），
+      // 没有这道守卫就会把一次「什么都没变」写进历史栈，还会替换 workspace 触发落盘。
+      if (!reportsOf(get().workspace).some((report) => report.id === id)) return;
+      const timestamp = nowIso();
+      commit((ws) => ({
+        ...ws,
+        reports: reportsOf(ws).map((report) => {
+          if (report.id !== id) return report;
+          const next: Report = { ...report, updatedAt: timestamp };
+          if (patch.title !== undefined) next.title = patch.title;
+          if (patch.author !== undefined) next.author = patch.author;
+          if (patch.sections !== undefined) {
+            next.sections = replaceSections(report.sections, patch.sections, timestamp);
+          }
+          return next;
+        }),
+      }));
+    },
+
+    finalizeReport(id) {
+      if (!reportsOf(get().workspace).some((report) => report.id === id)) return;
+      const timestamp = nowIso();
+      commit((ws) => ({
+        ...ws,
+        reports: reportsOf(ws).map((report) =>
+          report.id === id
+            ? { ...report, status: 'final', finalizedAt: timestamp, updatedAt: timestamp }
+            : report,
+        ),
+      }));
+    },
+
+    reopenReport(id) {
+      if (!reportsOf(get().workspace).some((report) => report.id === id)) return;
+      const timestamp = nowIso();
+      commit((ws) => ({
+        ...ws,
+        reports: reportsOf(ws).map((report) =>
+          report.id === id
+            ? { ...report, status: 'draft', finalizedAt: null, updatedAt: timestamp }
+            : report,
+        ),
+      }));
+    },
+
+    deleteReport(id) {
+      if (!reportsOf(get().workspace).some((report) => report.id === id)) return;
+      commit((ws) => ({ ...ws, reports: reportsOf(ws).filter((report) => report.id !== id) }));
+    },
+
     logRun(input) {
       const run: SopRunEntry = {
         id: uid('run'),
@@ -694,7 +838,21 @@ export function getWorkspace(): WorkspaceStore {
 
 /** 供模块按需使用的持久化能力（设置页导入/导出等）。 */
 export { repo };
-export type { Item, Area, Edge, ItemStatus, NewItemInput, ItemPatch };
+export type {
+  Item,
+  Area,
+  Edge,
+  ItemStatus,
+  NewItemInput,
+  ItemPatch,
+  Report,
+  ReportSection,
+  ReportPatch,
+  NewReportInput,
+  ReportPeriodKind,
+  ReportStatus,
+  ReportSectionOrigin,
+};
 
 /** 历史诊断（只读）：当前快照步数与上限。 */
 export function getHistoryStats(): { steps: number; limit: number } {

@@ -1,0 +1,25 @@
+diff --git a/src/video/openharmony/SDL_openharmonyclipboard.c b/src/video/openharmony/SDL_openharmonyclipboard.c
+index 5927d18..14b5bdf 100644
+--- a/src/video/openharmony/SDL_openharmonyclipboard.c
++++ b/src/video/openharmony/SDL_openharmonyclipboard.c
+@@ -185,7 +185,8 @@ char *OPENHARMONY_GetClipboardText(SDL_VideoDevice *_this)
+ 
+         OH_UdsPlainText *udspt = OH_UdsPlainText_Create();
+         if (!udspt) {
+-            OH_UdmfRecord_Destroy(udmfrec);
++            // udmfrec is owned by udmfdata: destroying the data frees it. Destroying
++            // the record here as well is a double free (SIGTRAP on HarmonyOS).
+             OH_UdmfData_Destroy(udmfdata);
+             SDL_SetError("Could not create OH_UdsPlainText instance");
+             return NULL;
+@@ -200,7 +201,9 @@ char *OPENHARMONY_GetClipboardText(SDL_VideoDevice *_this)
+         }
+ 
+         OH_UdsPlainText_Destroy(udspt);
+-        OH_UdmfRecord_Destroy(udmfrec);
++        // udmfrec is borrowed from udmfdata (OH_UdmfData_GetRecord does not transfer
++        // ownership), so OH_UdmfData_Destroy below frees it. Calling
++        // OH_UdmfRecord_Destroy here released it twice -> double free / SIGTRAP.
+         OH_UdmfData_Destroy(udmfdata);
+     }
+ 

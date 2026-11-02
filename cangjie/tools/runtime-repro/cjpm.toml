@@ -1,0 +1,7 @@
+[package]
+cjc-version = "1.2.0"
+name = "runtime_repro"
+description = "Minimal reproduction for the Cangjie runtime CopyCollector abort seen on device"
+version = "0.1.0"
+output-type = "executable"
+compile-option = "-O2"

@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "Textura HarmonyOS shell module" },
+    { "name": "EntryAbility_desc", "value": "Textura structured execution workbench" },
+    { "name": "EntryAbility_label", "value": "织理 Textura" }
+  ]
+}

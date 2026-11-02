@@ -1,0 +1,43 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    // Tablets and 2in1 first; phone works but is not the design target (1440x900 landscape first).
+    "deviceTypes": [
+      "tablet",
+      "2in1",
+      "phone"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    // No permissions are declared on purpose: a merely declared restricted permission is enforced at
+    // install time (the reference project's READ_PASTEBOARD blocked `hdc install` with
+    // 9568289 install failed due to grant request permissions failed). Nothing in this scaffold
+    // needs one.
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "launchType": "singleton",
+        // Landscape first: the Textura workbench is a wide 1440x900 layout.
+        "orientation": "landscape",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "supportWindowMode": [ "fullscreen", "split", "floating" ],
+        "skills": [
+          {
+            "entities": [ "entity.system.home" ],
+            "actions": [ "ohos.want.action.home" ]
+          }
+        ]
+      }
+    ]
+  }
+}

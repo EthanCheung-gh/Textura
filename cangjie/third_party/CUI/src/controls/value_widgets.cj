@@ -1,0 +1,243 @@
+package cui.controls
+
+import std.math.floor
+import sdl.{FontSizes, Key, MouseButton, Pen, Rect, Size, UiEvent, clampF32}
+import cui.core.{Bindable, CUI_CONTROL_H, CUI_SMALL_H, CursorShape, Observable, Spring, UiContext, Widget,
+    claimHoverIfInside, controlIdentity, drawSurface, emit, localState, registerFocusable, resolveControlKey}
+
+private let VALUE_CONTROL_W: Float32 = 180.0
+
+/*
+ * A read-only horizontal progress indicator for an `Observable<Float32>` value within
+ * `range`. The fill animates toward the value; not focusable and consumes no input.
+ */
+public class ProgressBar <: Widget {
+    private let value: Observable<Float32>
+    private var lowerBound: Float32
+    private var upperBound: Float32
+    private let fillSpring: Spring
+    private var frame = Rect.zero()
+
+    public init(value: Observable<Float32>, lower!: Float32 = 0.0, upper!: Float32 = 1.0) {
+        validateValueRange(lower, upper)
+        this.value = value
+        this.lowerBound = min(lower, upper)
+        this.upperBound = max(lower, upper)
+        // The fill eases toward the value, so a jump slides rather than snaps. Retained across
+        // rebuilds and started at the current amount, so a static first frame is snapshot-stable.
+        let startAmount = normalizedAmount(value.get(), lowerBound, upperBound)
+        this.fillSpring = localState<Spring>("${controlIdentity("ProgressBar")}:fill") {Spring(startAmount)}.value
+        emit(this)
+    }
+
+    /** Sets the inclusive value range represented by the bar. */
+    public func range(lower: Float32, upper: Float32): ProgressBar {
+        validateValueRange(lower, upper)
+        lowerBound = min(lower, upper)
+        upperBound = max(lower, upper)
+        this
+    }
+
+    public func measure(_: UiContext, available: Size): Size {
+        Size(min(available.w, VALUE_CONTROL_W), CUI_SMALL_H)
+    }
+
+    public func layout(_: UiContext, rect: Rect): Unit {
+        frame = rect
+    }
+
+    public func draw(ctx: UiContext): Unit {
+        let amount = normalizedAmount(value.get(), lowerBound, upperBound)
+        // Bar and percentage share the animated value, so both slide together toward the target.
+        // Clamped: the underdamped spring overshoots slightly, and the fill must not paint past
+        // the control's edge (nor the label read -0% / 101%).
+        let shown = clampF32(fillSpring.animate(ctx, target: amount), 0.0, 1.0)
+        let fill = Rect(frame.x, frame.y, frame.w * shown, frame.h)
+        drawSurface(ctx, frame, ctx.theme.fieldSurface())
+        ctx.renderer.fillRoundedRect(fill, ctx.theme.smallRadius, ctx.theme.accent)
+        ctx.textCenter("${Int64(shown * 100.0)}%", frame, ctx.theme.text,
+            pointSize: ctx.textSize(fallback: FontSizes.CAPTION))
+    }
+
+    public func handle(_: UiContext, _: UiEvent): Bool {
+        false
+    }
+}
+
+/*
+ * A horizontal value slider bound to a `Bindable<Float32>` within `range`; `step` of 0
+ * is continuous, a positive step snaps to multiples. Drag or Left/Right arrows adjust;
+ * a focus stop in Tab traversal.
+ */
+public class Slider <: Widget {
+    private let id: String
+    private let value: Bindable<Float32>
+    private var lowerBound: Float32
+    private var upperBound: Float32
+    // 0 means continuous; a positive step snaps the value to `lower + k*step` multiples.
+    private var stepSize: Float32 = 0.0
+    private var frame = Rect.zero()
+
+    public init(value: Bindable<Float32>, key!: ?String = None, lower!: Float32 = 0.0, upper!: Float32 = 1.0,
+        step!: Float32 = 0.0) {
+        this.id = resolveControlKey(key, "Slider")
+        validateValueRange(lower, upper)
+        this.value = value
+        this.lowerBound = min(lower, upper)
+        this.upperBound = max(lower, upper)
+        this.stepSize = checkedValueStep(step)
+        // Snap the initial value only for a discrete slider, so a continuous slider keeps its exact
+        // starting value (byte-identical to before this parameter existed).
+        if (stepSize > 0.0) {
+            applyNormalize()
+        }
+        registerFocusable(this.id)
+        emit(this)
+    }
+
+    /** Sets the inclusive value range controlled by the slider. */
+    public func range(lower: Float32, upper: Float32): Slider {
+        validateValueRange(lower, upper)
+        lowerBound = min(lower, upper)
+        upperBound = max(lower, upper)
+        // Write only when normalizing changes the value: this runs on every frame's rebuild,
+        // and an unconditional write would notify the bound state's observers each frame.
+        applyNormalize()
+        this
+    }
+
+    /**
+     * Sets the value increment. Values snap to `lower + k*step` multiples; 0 (the default) leaves
+     * the slider continuous. Parallels `Stepper.step`, so a slider and a stepper express a discrete
+     * range the same way.
+     */
+    public func step(step: Float32): Slider {
+        stepSize = checkedValueStep(step)
+        applyNormalize()
+        this
+    }
+
+    public func measure(ctx: UiContext, available: Size): Size {
+        Size(min(available.w, VALUE_CONTROL_W), ctx.textRowHeight(minHeight: CUI_CONTROL_H, padding: 12.0))
+    }
+
+    public func layout(_: UiContext, rect: Rect): Unit {
+        frame = rect
+    }
+
+    public func draw(ctx: UiContext): Unit {
+        let track = Rect(frame.x + 8.0, frame.centerY() - 3.0, max(0.0, frame.w - 16.0), 6.0)
+        let amount = normalizedAmount(value.value, lowerBound, upperBound)
+        let knobX = track.x + track.w * amount
+        ctx.renderer.fillRoundedRect(track, ctx.theme.smallRadius, ctx.theme.field)
+        ctx
+            .renderer
+            .fillRoundedRect(Rect(track.x, track.y, track.w * amount, track.h), ctx.theme.smallRadius, ctx.theme.accent)
+        ctx.renderer.fillCircle(knobX, frame.centerY() + 1.5, 9.5, ctx.theme.shadow.withAlpha(30))
+        ctx.renderer.fillCircle(knobX, frame.centerY(), 8.5, ctx.theme.panelRaised)
+        ctx.renderer.strokeCircle(knobX, frame.centerY(), 8.0, Pen(width: 2.0, color: ctx.theme.accent), segments: 40)
+    }
+
+    public func handle(ctx: UiContext, event: UiEvent): Bool {
+        claimHoverIfInside(ctx, event, frame, id, CursorShape.Interactive)
+        match (event) {
+            case UiEvent.MouseDown(MouseButton.Left, x, y) =>
+                if (frame.contains(x, y)) {
+                    ctx.focus(id)
+                    ctx.beginDrag(id)
+                    updateFromX(x)
+                    return true
+                }
+            case UiEvent.MouseMove(x, _) =>
+                if (ctx.isDragging(id) && ctx.leftMouseDown) {
+                    updateFromX(x)
+                    return true
+                }
+            case UiEvent.MouseUp(MouseButton.Left, x, _) =>
+                if (ctx.isDragging(id)) {
+                    updateFromX(x)
+                    return true
+                }
+            case UiEvent.KeyDown(Key.Left, _) =>
+                if (ctx.hasFocus(id)) {
+                    value.value = normalize(value.value - keyboardStep())
+                    return true
+                }
+            case UiEvent.KeyDown(Key.Right, _) =>
+                if (ctx.hasFocus(id)) {
+                    value.value = normalize(value.value + keyboardStep())
+                    return true
+                }
+            case _ => ()
+        }
+        false
+    }
+
+    public func focusableId(): ?String {
+        Some(id)
+    }
+
+    private func updateFromX(x: Float32): Unit {
+        let trackX = frame.x + 8.0
+        let trackW = max(1.0, frame.w - 16.0)
+        let amount = clampF32((x - trackX) / trackW, 0.0, 1.0)
+        value.value = normalize(lowerBound + amount * rangeSize(lowerBound, upperBound))
+    }
+
+    private func keyboardStep(): Float32 {
+        if (stepSize > 0.0) {
+            return stepSize
+        }
+        rangeSize(lowerBound, upperBound) / 100.0
+    }
+
+    // Clamps to the range, then (for a discrete slider) snaps to the nearest step multiple. With
+    // stepSize <= 0 this is a plain range clamp, so the continuous path is unchanged.
+    private func normalize(raw: Float32): Float32 {
+        let clamped = safeValue(raw, lowerBound, upperBound)
+        if (stepSize <= 0.0) {
+            return clamped
+        }
+        // Float64 arithmetic keeps tiny steps and large finite values out of integer overflow.
+        let steps = floor((Float64(clamped) - Float64(lowerBound)) / Float64(stepSize) + 0.5)
+        let snapped = Float64(lowerBound) + steps * Float64(stepSize)
+        Float32(max(Float64(lowerBound), min(Float64(upperBound), snapped)))
+    }
+
+    private func applyNormalize(): Unit {
+        let normalized = normalize(value.value)
+        if (normalized != value.value) {
+            value.value = normalized
+        }
+    }
+}
+
+private func normalizedAmount(value: Float32, lower: Float32, upper: Float32): Float32 {
+    clampF32((safeValue(value, lower, upper) - lower) / rangeSize(lower, upper), 0.0, 1.0)
+}
+
+private func rangeSize(lower: Float32, upper: Float32): Float32 {
+    max(0.000001, upper - lower)
+}
+
+// Invalid configuration is rejected before it reaches drawing or numeric conversions.
+private func validateValueRange(lower: Float32, upper: Float32): Unit {
+    if (lower.isNaN() || upper.isNaN() || lower.isInf() || upper.isInf() || (upper - lower).isInf()) {
+        throw IllegalArgumentException("Value control range and its span must be finite")
+    }
+}
+
+private func checkedValueStep(step: Float32): Float32 {
+    if (step.isNaN() || step.isInf()) {
+        throw IllegalArgumentException("Slider step must be finite")
+    }
+    max(0.0, step)
+}
+
+private func safeValue(value: Float32, lower: Float32, upper: Float32): Float32 {
+    if (value.isNaN()) {
+        lower
+    } else {
+        clampF32(value, lower, upper)
+    }
+}

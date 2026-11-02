@@ -181,6 +181,14 @@ export function ObjectiveCard({
             编辑
           </Button>
           <IconButton
+            label={`编辑目标：${objective.title}`}
+            size="sm"
+            data-edit-objective={objective.id}
+            onClick={() => onEdit(objective.id)}
+          >
+            <Icon name="edit" size={15} />
+          </IconButton>
+          <IconButton
             label={`「${objective.title}」更多操作`}
             size="sm"
             aria-haspopup="menu"

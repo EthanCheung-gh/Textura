@@ -18,12 +18,25 @@ import type {
   ItemKind,
   ItemStatus,
   OkrData,
+  Report,
+  ReportPeriodKind,
+  ReportSection,
+  ReportSectionOrigin,
+  ReportStatus,
   SopData,
   SopNodeType,
   SopRunEntry,
   Workspace,
 } from './model';
-import { ITEM_KINDS, ITEM_STATUSES, WORKSPACE_VERSION } from './model';
+import {
+  ITEM_KINDS,
+  ITEM_STATUSES,
+  REPORT_PERIOD_KINDS,
+  REPORT_SECTION_ORIGINS,
+  REPORT_STATUSES,
+  REPORT_TEMPLATE_BY_KIND,
+  WORKSPACE_VERSION,
+} from './model';
 import { findParentCycles } from './selectors';
 import { currentQuarter, nowIso } from './utils';
 
@@ -125,6 +138,7 @@ export function emptyWorkspace(): Workspace {
     edges: [],
     areas: [],
     runs: [],
+    reports: [],
     updatedAt: nowIso(),
   };
 }
@@ -331,6 +345,72 @@ function normalizeRun(input: unknown, index: number): SopRunEntry {
   };
 }
 
+/** 单份报告的硬上限：章节数与单节正文长度。防止导入/生成把文档撑爆。 */
+const MAX_REPORT_SECTIONS = 40;
+const MAX_REPORT_SECTION_BODY = 200_000;
+
+/** '2026-W44' | '2026-11' | '2026-Q4' 三种周期写法之一。 */
+const REPORT_PERIOD_PATTERN = /^(?:\d{4}-W\d{2}|\d{4}-\d{2}|\d{4}-Q[1-4])$/;
+
+/**
+ * 周期归一化：不匹配任一周期写法时回落成空串，而不是补一个「当前周/月/季」。
+ *
+ * 理由：周期是报告的对外身份（也是 finalized 之后不可再改的归档标签）。
+ * 模型层并不知道这份报告本来属于哪一周，凭当前时间猜一个会把脏数据悄悄
+ * 洗成一份「看起来合法但归属错误」的周报 —— 那比空值危险得多。
+ * 空串是显式的「未设置」，聚合层必须在生成草稿前拒绝 `period === ''`，
+ * 从而把错误暴露在用户面前。顺带的好处是归一化保持纯函数（不依赖时钟），
+ * 同一份输入重复归一化结果稳定，便于导入往返与测试。
+ */
+function normalizeReportPeriod(value: unknown): string {
+  const period = asString(value).trim();
+  return REPORT_PERIOD_PATTERN.test(period) ? period : '';
+}
+
+function normalizeReportSection(input: unknown, sectionIndex: number): ReportSection {
+  const raw = isRecord(input) ? input : {};
+  const now = nowIso();
+  const origin: ReportSectionOrigin = asEnum(raw.origin, REPORT_SECTION_ORIGINS, 'auto');
+  // body 是 Markdown 纯文本，超长直接截断（截断差值会进修正摘要）。
+  const body = asString(raw.body).slice(0, MAX_REPORT_SECTION_BODY);
+  return {
+    // key 是章节身份（'overview'/'progress'…），缺失时补一个稳定占位，
+    // 否则渲染层的 key 与去重逻辑会拿到空串。
+    key: asNonEmptyString(raw.key, `section_${sectionIndex}`),
+    title: asString(raw.title),
+    body,
+    origin,
+    updatedAt: asIsoOrFallback(raw.updatedAt, now),
+  };
+}
+
+function normalizeReport(input: unknown, index: number): Report {
+  const raw = isRecord(input) ? input : {};
+  const now = nowIso();
+  const kind: ReportPeriodKind = asEnum(raw.kind, REPORT_PERIOD_KINDS, 'week');
+  const status: ReportStatus = asEnum(raw.status, REPORT_STATUSES, 'draft');
+  return {
+    id: asNonEmptyString(raw.id, `r_recovered_${index}`),
+    kind,
+    period: normalizeReportPeriod(raw.period),
+    title: asNonEmptyString(raw.title, '未命名报告'),
+    // 空串 = 报告人未填，是合法状态，不做占位。
+    author: asString(raw.author),
+    status,
+    templateId: asNonEmptyString(raw.templateId, REPORT_TEMPLATE_BY_KIND[kind]),
+    // 空数组保留（不伪造章节）；超出上限的章节直接丢弃。
+    sections: asArray(raw.sections)
+      .slice(0, MAX_REPORT_SECTIONS)
+      .map((section, position) => normalizeReportSection(section, position)),
+    // 生成/定稿时间是「可能没有」的语义，用 asDateOrNull 而不是 asIsoOrFallback：
+    // 后者会把 null 补成 now，让未定稿的报告看起来像已定稿。
+    generatedAt: asDateOrNull(raw.generatedAt),
+    finalizedAt: asDateOrNull(raw.finalizedAt),
+    createdAt: asIsoOrFallback(raw.createdAt, now),
+    updatedAt: asIsoOrFallback(raw.updatedAt, now),
+  };
+}
+
 function normalizeWorkspace(input: unknown): Workspace {
   if (!isRecord(input)) throw new Error('工作区数据不是对象');
 
@@ -346,6 +426,7 @@ function normalizeWorkspace(input: unknown): Workspace {
     edges: asArray(input.edges).map((edge, index) => normalizeEdge(edge, index)),
     areas: asArray(input.areas).map((area, index) => normalizeArea(area, index)),
     runs: asArray(input.runs).map((run, index) => normalizeRun(run, index)),
+    reports: asArray(input.reports).map((report, index) => normalizeReport(report, index)),
     updatedAt: asIsoOrFallback(input.updatedAt, nowIso()),
   };
 }
@@ -481,6 +562,47 @@ function collectCorrections(input: Record<string, unknown>, workspace: Workspace
     for (const field of ['id', 'sopId', 'stepId', 'at', 'result', 'note'] as const) {
       diff(null, `runs[${index}].${field}`, raw[field], run[field]);
     }
+  });
+
+  const rawReports = asArray(input.reports);
+  (workspace.reports ?? []).forEach((report, index) => {
+    const raw = isRecord(rawReports[index]) ? (rawReports[index] as Record<string, unknown>) : {};
+    const id = report.id;
+    const fields = [
+      'id',
+      'kind',
+      'period',
+      'title',
+      'author',
+      'status',
+      'templateId',
+      'generatedAt',
+      'finalizedAt',
+      'createdAt',
+      'updatedAt',
+    ] as const;
+    for (const field of fields) {
+      diff(id, `reports[${index}].${field}`, raw[field], report[field]);
+    }
+
+    // 只记长度差：整段 sections 可能很大，摘要里不放正文副本。
+    const rawSections = asArray(raw.sections);
+    if (raw.sections !== undefined) {
+      diff(id, `reports[${index}].sections`, rawSections.length, report.sections.length);
+    }
+    report.sections.forEach((section, position) => {
+      const rawSection = isRecord(rawSections[position])
+        ? (rawSections[position] as Record<string, unknown>)
+        : {};
+      for (const field of ['key', 'title', 'body', 'origin', 'updatedAt'] as const) {
+        diff(
+          id,
+          `reports[${index}].sections[${position}].${field}`,
+          rawSection[field],
+          section[field],
+        );
+      }
+    });
   });
 
   return collector.summary();
