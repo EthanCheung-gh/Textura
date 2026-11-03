@@ -157,7 +157,7 @@ async function flowA(page, check, failShot) {
   await page.reset('gtd');
   const before = await page.eval(`
     return {
-      sidebar: Number(document.querySelector('.sidebar-link-count')?.textContent.trim() ?? -1),
+      sidebar: Number(document.querySelector('.sidebar-link[data-route="gtd"] .sidebar-link-count')?.textContent.trim() ?? -1),
       card: Number(document.querySelector('.gtd-flow-card--accent .gtd-flow-card-value')?.textContent.trim() ?? -1),
       next: Number(document.querySelectorAll('.gtd-flow-card')[1]?.querySelector('.gtd-flow-card-value')?.textContent.trim() ?? -1),
     };
@@ -201,7 +201,7 @@ async function flowA(page, check, failShot) {
 
   const after = await page.eval(`
     return {
-      sidebar: Number(document.querySelector('.sidebar-link-count')?.textContent.trim() ?? -1),
+      sidebar: Number(document.querySelector('.sidebar-link[data-route="gtd"] .sidebar-link-count')?.textContent.trim() ?? -1),
       card: Number(document.querySelector('.gtd-flow-card--accent .gtd-flow-card-value')?.textContent.trim() ?? -1),
       session: [...document.querySelectorAll('.capture-session-row')].map((r) => r.textContent.trim()),
     };
@@ -250,7 +250,7 @@ async function flowA(page, check, failShot) {
 
   const afterClarify = await page.eval(`
     return {
-      sidebar: Number(document.querySelector('.sidebar-link-count')?.textContent.trim() ?? -1),
+      sidebar: Number(document.querySelector('.sidebar-link[data-route="gtd"] .sidebar-link-count')?.textContent.trim() ?? -1),
       inbox: Number(document.querySelector('.gtd-flow-card--accent .gtd-flow-card-value')?.textContent.trim() ?? -1),
       next: Number(document.querySelectorAll('.gtd-flow-card')[1]?.querySelector('.gtd-flow-card-value')?.textContent.trim() ?? -1),
     };
@@ -680,7 +680,7 @@ async function flowH(page, check, failShot) {
       inbox: ws ? ws.items.filter((i) => i.status === 'inbox').length : 0,
       areas: ws ? ws.areas.length : 0,
       runs: ws ? ws.runs.length : 0,
-      sidebarCount: document.querySelector('.sidebar-link-count')?.textContent.trim() ?? null,
+      sidebarCount: document.querySelector('.sidebar-link[data-route="gtd"] .sidebar-link-count')?.textContent.trim() ?? null,
     };
   `);
   check(

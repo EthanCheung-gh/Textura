@@ -125,6 +125,8 @@
 }
 
 .sidebar-link-count {
+  flex: none;
+  margin-left: 4px;
   font-size: 11px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;

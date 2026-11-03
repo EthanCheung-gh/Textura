@@ -210,7 +210,7 @@ async function flowA(page) {
     const card = document.querySelectorAll('.gtd-flow-card')[0];
     return {
       inbox: Number(card?.querySelector('.gtd-flow-card-value')?.textContent.trim() ?? -1),
-      sidebar: Number(document.querySelector('.sidebar-link-count')?.textContent.trim() ?? -1),
+      sidebar: Number(document.querySelector('.sidebar-link[data-route="gtd"] .sidebar-link-count')?.textContent.trim() ?? -1),
     };
   `);
   const ws = await readWorkspace(page);
