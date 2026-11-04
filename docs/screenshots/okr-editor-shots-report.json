@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:1438",
+  "baseUrl": "http://localhost:1430",
   "results": [
     {
       "label": "截图前工作区为演示数据（清 localStorage 后重新播种）",
@@ -41,12 +41,12 @@
       }
     },
     {
-      "label": "已生成 docs/screenshots/okr-editor.png（1440×900 展示态）",
+      "label": "已生成 docs/screenshots/okr-editor.png（1920×1280 展示态）",
       "ok": true,
       "detail": {
         "viewport": {
-          "w": 1440,
-          "h": 900
+          "w": 1920,
+          "h": 1280
         },
         "editorWidth": 1080,
         "fieldRows": 1,
@@ -80,7 +80,7 @@
       }
     },
     {
-      "label": "已生成 docs/screenshots/okr-editor-editing.png（1440×900 单 KR 编辑态）",
+      "label": "已生成 docs/screenshots/okr-editor-editing.png（1920×1280 单 KR 编辑态）",
       "ok": true,
       "detail": {
         "editingRows": 1,
@@ -103,14 +103,14 @@
       }
     },
     {
-      "label": "1024×720 布局与 1440 对比（诊断信息，决定是否值得单独说明）",
+      "label": "1024×720 布局与 1920×1280 对比（诊断信息，决定是否值得单独说明）",
       "ok": true,
       "detail": {
         "representative": false,
         "wide": {
           "viewport": {
-            "w": 1440,
-            "h": 900
+            "w": 1920,
+            "h": 1280
           },
           "editorWidth": 1080,
           "fieldRows": 1,

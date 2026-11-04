@@ -38,6 +38,16 @@
   （PER-01 与 EXP-02，不再写死某一周）、浏览器模式的保存状态改为「写入次数」判据（EDT-01）；
   另有 1 条边界说明新增（桌面端 AI 代理的内置 webpki 根证书不读系统 / 企业 CA），
   并按新行为改写了 PER-05 与第 10 组（桌面端 AI 已落地，不再标「进行中 / 不验」）。
+- 历史快照不再钉住整份工作区索引（10k 数据下 100 次编辑堆净增 **44.4 MB → 4.4 MB**）：根因是
+  `history.record()` 把变更前 `workspace` 的**对象引用**压入 80 步历史栈，而该对象在入栈前必然已被索引，
+  索引又按 `Workspace` 身份缓存在 `WeakMap` 里，于是每份快照各自保留一整份 `buildIndex`
+  （`byId` / `children` / `byKind` / `byStatus` / `edges*` / memo，单份约 0.53 MB）。修复为入栈时只压
+  **外壳浅拷贝**（`{ ...ws }`，`items/edges/areas/runs` 与未变更 `Item` 仍共享引用），快照对象
+  身份是新的，因此不再命中索引缓存；`undo/redo` 仍按原路 `{...snapshot}` 换新身份、
+  索引按需重建（10k 下约 16 ms，已含在原有撤销延迟内）。同时给 `perf-bench.mjs` 的内存段改为
+  读数前做 3 轮 GC（`PERF_GC_PASSES` 可覆盖、`report.memory.gcPasses` 记录口径），并新增一条单测
+  守护「快照是新对象、`items` 数组仍共享」。此前文档记录的「100 次编辑 +7.5 MB」经复核是单次 GC
+  基线被抬高造成的测量假象（稳定口径下修复前同版本实为 43.5–44.7 MB）。
 
 ### 变更
 
@@ -54,6 +64,20 @@
   仓颉侧源码、像素验收与鸿蒙链路文档随仓库迁移，README 的仓颉章节改为指向新仓库。
 - 合并 `feat/cangjie-rewrite`（含 MCP 单来源收口）：该合并曾把 main 侧的 `packages/textura-mcp` 副本与三处源码别名
   带回来，与 `file:../textura-mcp` 依赖并存；本次移除副本与别名，MCP 代码只保留同级库一份。
+- QA 截图与性能基线改口径：截图统一为 **3:2**（宽屏视口 1440×900 → **1920×1280**，窄屏仍以
+  1024×720 拍摄后由 `Page.screenshot()` 补白到 1080×720；补白用格点法求解目标尺寸并加后置断言，
+  已 3:2 的截图直接写原始字节），`docs/screenshots/` 顶层 21 张主图随之重拍；另出 16:9 对外
+  截图集（新增 `scripts/qa/shots-16x9.mjs`，7 张 1920×1080 主视图写入 `docs/screenshots/16x9/`，
+  不走 3:2 补白）。为让 QA 可跨日重跑：`lib.mjs` 新增 `Page.freezeClock()` / `clearClock()`
+  （CDP 注入 Date 补丁，epoch 在页面内按浏览器时区计算），`final-fixes.mjs` 与
+  `calendar-acceptance.mjs` 把「今天」冻结到 2026-10-21，`calendar-1024.mjs` 与
+  `perf-regression.mjs` 里写死的 `[data-date="2026-10-21"]` 改为 `.cal-daynum.is-today` 选择器；
+  `perf-bench.mjs` 的 OKR 编辑步骤改走「目标卡编辑 → 第一条 KR 铅笔 → 指标输入框」（旧选择器
+  在卡片改只读后已失效），截图前等待撤销 toast 消失，报告改为失败也落盘。README / ARCHITECTURE /
+  USER-GUIDE 的性能表按 1920×1280 重测值更新（首屏 6 个请求 / 283.9 KiB raw / 92.5 KiB gzip、
+  FCP ≈200 ms、路由 30–77 ms、编辑 23–52 ms、撤销 18–32 ms、甘特 42 行 / 9 列 / 31 条 bar、
+  SOP 40 节点 / 50 边），并删除「历史实测、本轮未重测」的说明；`docs/contract.md` 的历史契约
+  同步改为「外壳浅拷贝」。
 
 ## [0.1.0] - 2026-10-21
 

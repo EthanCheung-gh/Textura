@@ -303,8 +303,8 @@ async function flowResponsive(page) {
   );
   await page.screenshot(`${OUT}/4-1024x720-editor-expanded.png`);
 
-  // 恢复 1440，避免影响后续
-  await page.setViewport(1440, 900);
+  // 恢复 1920，避免影响后续
+  await page.setViewport(1920, 1280);
 }
 
 /* ======================================================= dark contrast == */
@@ -373,7 +373,7 @@ async function flowDarkContrast(page) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
     for (const flow of [flowA11y, flowResponsive, flowDarkContrast]) {
       try {
         await flow(page);

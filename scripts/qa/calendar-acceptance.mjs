@@ -313,8 +313,9 @@ async function okrHeader(page) {
 
 async function flowC(page) {
   const flow = 'c-okr-header';
-  for (const width of [1440, 1024]) {
-    await page.setViewport(width, 900);
+  // 宽屏 1920×1280 / 窄屏 1024×900（此处窄屏沿用既有测试语义，不是截图用的 1024×720）
+  for (const [width, height] of [[1920, 1280], [1024, 900]]) {
+    await page.setViewport(width, height);
     await clearAndReset(page, 'okr');
     await sleep(500);
     const cards = await okrHeader(page);
@@ -336,7 +337,7 @@ async function flowC(page) {
     check(flow, `${width}: 季度条内无视图/密度控件`, cards.periodBarControls.length === 0, { periodBarControls: cards.periodBarControls });
   }
 
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await clearAndReset(page, 'okr');
   await sleep(400);
   const densityBefore = (await okrHeader(page)).children.length;
@@ -360,7 +361,7 @@ async function flowC(page) {
   await page.setViewport(1024, 720);
   await sleep(400);
   await page.screenshot(`${OUT}/c-okr-header-1024.png`);
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
 }
 
 /* ------------------------------------------------------------------ d --- */
@@ -383,6 +384,7 @@ async function flowD(page) {
   `);
   check(flow, '42 格 / 6 行 / 周一起始', grid.count === 42 && grid.rows === 6 && grid.firstWeekday === 1 && grid.headers[0] === '一', grid);
 
+  // 锚点是冻结时钟（2026-10-21），不是真实运行日
   const today = await cellInfo(page, '2026-10-21');
   const todayPanel = await page.eval(`return document.querySelector('.cal-panel-lunar')?.textContent.trim() ?? null;`);
   check(
@@ -425,6 +427,7 @@ async function flowD(page) {
 
   // 键盘导航
   await page.eval(`document.querySelector('[data-date="2026-10-21"]').focus(); return true;`);
+  // 期望值以冻结的 2026-10-21 为锚（Home=当周周一 10-19、End=当周周日 10-25）
   const keys = [
     ['ArrowRight', '2026-10-22', 'code'],
     ['ArrowLeft', '2026-10-21', 'code'],
@@ -446,6 +449,7 @@ async function flowD(page) {
   }
   check(flow, '方向键 / Home / End 导航正确并移动焦点', keyResults.every((r) => r.ok && r.focused === r.expected), keyResults);
 
+  // 期望月份 11 / 期望值 2026-11-25 均以冻结的 2026-10-21 为锚
   const beforePageDown = await page.eval(`return document.querySelector('.cal-cell.is-selected')?.dataset.date ?? null;`);
   await page.pressKey('PageDown', { code: 'PageDown', vk: 34 });
   await sleep(500);
@@ -584,6 +588,7 @@ async function flowG(page) {
   const flow = 'g-calendar-quick-add';
   await clearAndReset(page, 'calendar');
   await sleep(700);
+  // 2026-10-25 以冻结时钟（2026-10-21）为锚；下面甘特起止日断言复用同日字面量
   await selectDate(page, '2026-10-25');
   await page.click('input[aria-label="添加到这一天的日程标题"]');
   await page.insertText('日历验收任务');
@@ -730,7 +735,7 @@ const CONTRAST_HELPERS = `
 
 async function flowI(page) {
   const flow = 'i-dark-1024';
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await clearAndReset(page, 'calendar');
   await sleep(700);
   await page.eval(`document.querySelector('button[aria-label="切换到深色主题"]').click(); return true;`);
@@ -791,14 +796,16 @@ async function flowI(page) {
   `);
   check(flow, '1024 下面板可再次收起且无溢出', closedPanel.collapsed === true && closedPanel.overflowX === 0, closedPanel);
   await page.screenshot(`${OUT}/i-calendar-1024.png`);
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
 }
 
 /* ------------------------------------------------------------------ run -- */
 async function main() {
   mkdirSync(OUT, { recursive: true });
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    // 时钟冻结到 2026-10-21：下面各 flow 里的 2026-10-21/10-25 等字面量以它为锚（必须在首次导航前注入）
+    await page.freezeClock('2026-10-21T12:00:00');
+    await page.setViewport(1920, 1280);
     for (const flow of [flowA, flowB, flowC, flowD, flowE, flowF, flowG, flowH, flowI]) {
       try {
         await flow(page);

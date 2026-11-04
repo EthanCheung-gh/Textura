@@ -48,7 +48,7 @@ async function readWorkspace(page) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
     await page.goto(`${BASE_URL}/?route=dashboard`, { route: 'dashboard' });
     await sleep(700);
 
@@ -161,7 +161,14 @@ async function main() {
 
     /* ---------- 6) 日历快速添加 ---------- */
     await navTo(page, '日历');
-    await page.eval(`document.querySelector('[data-date="2026-10-21"]').click(); return true;`);
+    // 点「今天」：选择器动态命中（`.cal-daynum.is-today` 由 MonthGrid 的 `cell.key === today` 打上），
+    // 不写死日期——固定日期在跨月后不在月网格里，会在 null.click() 处崩掉。
+    const targetDate = await page.eval(`
+      const cell = document.querySelector('.cal-daynum.is-today')?.closest('.cal-cell');
+      if (!cell) throw new Error('月网格缺少 is-today 格子');
+      cell.click();
+      return cell.dataset.date;
+    `);
     await sleep(400);
     await page.click('input[aria-label="添加到这一天的日程标题"]');
     await page.insertText('性能回归日程');
@@ -170,7 +177,8 @@ async function main() {
     await sleep(800);
     const calendarItem = (await readWorkspace(page)).items.find((item) => item.title === '性能回归日程');
     const inPanel = await page.eval(`return [...document.querySelectorAll('.cal-item-title')].some((el) => el.textContent.trim() === '性能回归日程');`);
-    check('calendar', '日历快速添加 1 条并出现在面板', calendarItem?.gantt?.start === '2026-10-21' && calendarItem?.status === 'next' && inPanel, calendarItem ? { start: calendarItem.gantt?.start, status: calendarItem.status, inPanel } : null);
+    // 期望日期取「实际点选的那一天」（原为写死的固定日期），判定含义不变：条目落在点选日期上。
+    check('calendar', '日历快速添加 1 条并出现在面板', calendarItem?.gantt?.start === targetDate && calendarItem?.status === 'next' && inPanel, calendarItem ? { start: calendarItem.gantt?.start, expected: targetDate, status: calendarItem.status, inPanel } : null);
 
     /* ---------- 7) 撤销 / 重做跨视图 ---------- */
     await navTo(page, 'GTD');

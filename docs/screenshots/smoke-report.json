@@ -7,11 +7,11 @@
         "route": "dashboard",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -20,8 +20,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 577,
-        "mainTextHead": "2026年10月21日 星期三\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP",
+        "mainTextLength": 576,
+        "mainTextHead": "2026年11月3日 星期二\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP ",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -33,7 +33,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 25,
+          "buttons": 26,
           "modals": 0
         }
       },
@@ -46,11 +46,11 @@
         "route": "calendar",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -59,8 +59,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 1743,
-        "mainTextHead": "日历\n\n2026年10月 · 丙午马年 · 农历九月\n\n月\n周\n今天\n1900年\n1901年\n1902年\n1903年\n1904年\n1905年\n1906年\n1907年\n1908年\n1909年\n1910年\n1911年\n1912年\n1913年\n1914年\n1915年\n1916年\n1917年\n1918年\n1919年\n1920年\n1921年\n1922年\n1923年\n1",
+        "mainTextLength": 1742,
+        "mainTextHead": "日历\n\n2026年11月 · 丙午马年 · 农历九月\n\n月\n周\n今天\n1900年\n1901年\n1902年\n1903年\n1904年\n1905年\n1906年\n1907年\n1908年\n1909年\n1910年\n1911年\n1912年\n1913年\n1914年\n1915年\n1916年\n1917年\n1918年\n1919年\n1920年\n1921年\n1922年\n1923年\n1",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -72,7 +72,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 23,
+          "buttons": 24,
           "modals": 0
         }
       },
@@ -85,11 +85,11 @@
         "route": "okr",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -98,8 +98,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 694,
-        "mainTextHead": "OKR\n\n用可量化的关键结果推进 2026 Q4 · 时间已过 22%\n\n紧凑\n详细\n卡片\n表格\n对齐\n新建目标\n2026 Q4\n1\n本季\n新建季度\n1\n目标\n3\n关键结果\n29%\n平均进度\n0\n落后 KR\n信心分布\n低 1–3 · 0\n中 4–6 · 2\n高 7–10 · 1\n季度时间进度\n22%\n产品\n进行中\n3 个关键结果\n让新用户在第一周就爱上织理\n",
+        "mainTextLength": 450,
+        "mainTextHead": "OKR\n\n用可量化的关键结果推进 2026 Q4 · 时间已过 36.3%\n\n紧凑\n详细\n卡片\n表格\n对齐\n新建目标\n2026 Q4\n1\n本季\n新建季度\n1\n目标\n3\n关键结果\n29%\n平均进度\n0\n落后 KR\n信心分布\n低 1–3 · 0\n中 4–6 · 2\n高 7–10 · 1\n季度时间进度\n36.3%\n产品\n进行中\n3 个关键结果\n让新用户在第一周就爱",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -111,7 +111,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 77,
+          "buttons": 20,
           "modals": 0
         }
       },
@@ -124,11 +124,11 @@
         "route": "gtd",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -150,7 +150,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 54,
+          "buttons": 55,
           "modals": 0
         }
       },
@@ -163,11 +163,11 @@
         "route": "gantt",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -176,8 +176,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 1,
-        "mainTextLength": 374,
-        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 7 – 11月 7\n7/11 已排期\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/11–11/3 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期 ·",
+        "mainTextLength": 394,
+        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 20 – 12月 7\n7/11 已排期\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/24–11/16 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -189,7 +189,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 24,
+          "buttons": 25,
           "modals": 0
         }
       },
@@ -202,11 +202,11 @@
         "route": "sop",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -228,7 +228,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 25,
+          "buttons": 26,
           "modals": 0
         }
       },
@@ -241,11 +241,11 @@
         "route": "settings",
         "theme": "light",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -254,8 +254,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 1,
-        "mainTextLength": 820,
-        "mainTextHead": "设置\n\n存储、备份与工作区。\n\n浏览器调试模式\n快捷键\n外观\n\n主题立即生效，并记录在 localStorage（textura.theme），下次启动沿用。\n\n浅色\n深色\n\n浅色是暖纸感的工作台，深色适合夜间复盘。主题只影响界面，不改动工作区数据。\n\n数据与备份\n\n浏览器调试模式写入 localStorage，不提供文件级备份。\n\n自动保存\n运行模式\n浏览",
+        "mainTextLength": 1140,
+        "mainTextHead": "设置\n\n存储、备份、大模型与工具。\n\n浏览器调试模式\n快捷键\n外观\n\n主题立即生效，并记录在 localStorage（textura.theme），下次启动沿用。\n\n浅色\n深色\n\n浅色是暖纸感的工作台，深色适合夜间复盘。主题只影响界面，不改动工作区数据。\n\n数据与备份\n\n浏览器调试模式写入 localStorage，不提供文件级备份。\n\n自动保存\n运行模式",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -267,7 +267,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 19,
+          "buttons": 26,
           "modals": 0
         }
       },
@@ -295,8 +295,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 577,
-        "mainTextHead": "2026年10月21日 星期三\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP",
+        "mainTextLength": 576,
+        "mainTextHead": "2026年11月3日 星期二\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP ",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -308,7 +308,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 25,
+          "buttons": 26,
           "modals": 0
         }
       },
@@ -334,8 +334,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 1,
-        "mainTextLength": 351,
-        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 7 – 10月 23\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/11–11/3 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期 · 0%\n写 on",
+        "mainTextLength": 362,
+        "mainTextHead": "甘特\n\n时间轴上的承诺与依赖。\n\n日\n周\n月\n今天\n10月 20 – 11月 5\n新建任务\n适配窗口\n详情\n任务\n10 条\n官网改版\n6\n10/24–11/16 · 17%\n需求梳理与竞品盘点\n100%\n视觉稿评审\n70%\n信息架构重排\n40%\n前端搭建\n0%\n内容迁移\n0%\n上线检查\n0%\n新用户 onboarding SOP\n1\n未排期 · 0%\n写 o",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -347,7 +347,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 24,
+          "buttons": 25,
           "modals": 0
         }
       },
@@ -362,11 +362,11 @@
         "route": "dashboard",
         "theme": "dark",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -375,8 +375,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 577,
-        "mainTextHead": "2026年10月21日 星期三\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP",
+        "mainTextLength": 576,
+        "mainTextHead": "2026年11月3日 星期二\n晚上好，今天推进什么？\n\n1 项今日到期，收件箱 6 条待澄清。\n\n命令面板⌘K\n收件箱待澄清\n6\n条\n先澄清，再决定下一步\n近 7 天完成\n1\n项\n按 completedAt 的近 7 天滚动窗口\n活跃 OKR 平均进度\n29\n%\n1 个目标 · 2026-Q4\n最近 SOP 运行\n失败\n新用户 onboarding SOP ",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -388,7 +388,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 25,
+          "buttons": 26,
           "modals": 0
         }
       },
@@ -411,7 +411,7 @@
         "hotLabels": [],
         "svgVisible": true,
         "selected": [
-          "前端搭建，2026-10-22 至 2026-10-31，进度 0%"
+          "前端搭建，2026-11-04 至 2026-11-13，进度 0%"
         ]
       },
       "issues": []
@@ -423,10 +423,10 @@
         "cols": 7,
         "cards": 21,
         "spans": [
-          "第 9/24 天",
-          "第 4/6 天",
-          "第 1/7 天",
-          "第 10/24 天"
+          "第 10/24 天",
+          "第 5/6 天",
+          "第 2/7 天",
+          "第 11/24 天"
         ],
         "overflowX": 0
       },
@@ -439,11 +439,11 @@
         "route": "calendar",
         "theme": "dark",
         "viewport": {
-          "width": 1440,
-          "height": 900
+          "width": 1920,
+          "height": 1280
         },
-        "docScrollWidth": 1440,
-        "docClientWidth": 1440,
+        "docScrollWidth": 1920,
+        "docClientWidth": 1920,
         "docOverflowX": 0,
         "docOverflowY": 0,
         "bodyOverflowX": 0,
@@ -452,8 +452,8 @@
         "clipped": [],
         "clippedCount": 0,
         "ellipsisCount": 0,
-        "mainTextLength": 1743,
-        "mainTextHead": "日历\n\n2026年10月 · 丙午马年 · 农历九月\n\n月\n周\n今天\n1900年\n1901年\n1902年\n1903年\n1904年\n1905年\n1906年\n1907年\n1908年\n1909年\n1910年\n1911年\n1912年\n1913年\n1914年\n1915年\n1916年\n1917年\n1918年\n1919年\n1920年\n1921年\n1922年\n1923年\n1",
+        "mainTextLength": 1742,
+        "mainTextHead": "日历\n\n2026年11月 · 丙午马年 · 农历九月\n\n月\n周\n今天\n1900年\n1901年\n1902年\n1903年\n1904年\n1905年\n1906年\n1907年\n1908年\n1909年\n1910年\n1911年\n1912年\n1913年\n1914年\n1915年\n1916年\n1917年\n1918年\n1919年\n1920年\n1921年\n1922年\n1923年\n1",
         "header": {
           "display": "flex",
           "padding": "0px 0px 0px 0px",
@@ -465,7 +465,7 @@
         },
         "counts": {
           "h1": 1,
-          "buttons": 23,
+          "buttons": 24,
           "modals": 0
         }
       },
@@ -473,5 +473,5 @@
     }
   ],
   "consoleIssues": [],
-  "chrome": "Chrome/155.0.8059.84"
+  "chrome": "Chrome/156.0.8078.73"
 }

@@ -213,7 +213,7 @@ async function flowA(page) {
 /* ------------------------------------------------------------------ b ---- */
 async function flowB(page) {
   const flow = 'b-gantt-header';
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.reset('gantt');
   await sleep(400);
 
@@ -296,7 +296,7 @@ async function flowB(page) {
   `);
   check(flow, '1024×720 无横向溢出/越界元素', narrow.overflowX === 0 && narrow.offenders.length === 0 && narrow.h1 === '甘特', narrow);
   await page.screenshot(`${OUT_DIR}/b-gantt-1024.png`);
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
 }
 
 /* ------------------------------------------------------------------ c ---- */
@@ -328,11 +328,11 @@ async function flowC(page) {
     };
   `);
 
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.reset('sop');
   await sleep(1600);
   const wide = await measure();
-  check(flow, '1440×900 初始 zoom ≥ 0.7', wide.zoom >= 0.7, { zoom: wide.zoom });
+  check(flow, '1920×1280 初始 zoom ≥ 0.7', wide.zoom >= 0.7, { zoom: wide.zoom });
   check(flow, '节点标题渲染字号 ≥ 9px', (wide.titleRenderedPx ?? 0) >= 9, {
     fontSize: wide.titleFontPx,
     zoom: wide.zoom,
@@ -344,7 +344,7 @@ async function flowC(page) {
     canvasHeight: Math.round(wide.canvas.h),
     hUtilization: wide.hUtilization,
   });
-  await page.screenshot(`${OUT_DIR}/c-sop-1440.png`);
+  await page.screenshot(`${OUT_DIR}/c-sop-1920.png`);
 
   await page.setViewport(1024, 720);
   await page.goto(`${BASE_URL}/?route=sop`, { route: 'sop' });
@@ -354,7 +354,7 @@ async function flowC(page) {
   await page.screenshot(`${OUT_DIR}/c-sop-1024.png`);
 
   // 「适应画布」仍要能一次看全（允许低于可读下限）
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.goto(`${BASE_URL}/?route=sop`, { route: 'sop' });
   await sleep(1500);
   const fitLabel = await page.eval(`
@@ -403,7 +403,7 @@ async function flowD(page) {
     await page.cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOAD_DIR });
   }
 
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.reset('settings');
   await clickText(page, '导出 JSON');
   let files = [];
@@ -561,7 +561,7 @@ const CONTRAST_HELPERS = `
 
 async function flowE(page) {
   const flow = 'e-dark-contrast';
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.reset('okr');
   await page.eval(`
     const button = document.querySelector('button[aria-label="切换到深色主题"]');

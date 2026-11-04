@@ -975,7 +975,7 @@ async function flowE(page) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
     for (const flow of [flowA, flowB, flowC, flowD, flowE]) {
       try {
         await flow(page);

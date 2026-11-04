@@ -1,5 +1,5 @@
 /**
- * Route smoke: screenshots at 1440x900 (+ 1024x720 for dashboard/gantt),
+ * Route smoke: screenshots at 1920x1280 (+ 1024x720 for dashboard/gantt),
  * console error collection, horizontal overflow and layout metrics.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -113,7 +113,7 @@ async function run() {
     summary.chrome = chrome.browserVersion;
 
     for (const route of ROUTES) {
-      await page.setViewport(1440, 900);
+      await page.setViewport(1920, 1280);
       await page.goto(`${BASE_URL}/?route=${route}`, { route });
       await sleep(900); // let charts/fonts/save-debounce settle
       const shot = await page.screenshot(`${SHOT_DIR}/${route}.png`);
@@ -137,7 +137,7 @@ async function run() {
     }
 
     /* ---- extras used by README / 用户手册 ---- */
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
 
     // 深色主题（真实点击切换，且在 dashboard 上取图）
     await page.goto(`${BASE_URL}/?route=dashboard`, { route: 'dashboard' });

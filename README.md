@@ -189,24 +189,29 @@ SOP 画布用 `@xyflow/react` 12 + `@dagrejs/dagre`，甘特为手写实现，�
 通过 `TexturaBridge` 端口复用统一任务内核，服务本身不依赖 React 与具体运行时。
 没有路由库、没有 UI 组件库、没有 CSS 框架。生产构建启用 CSP（`script-src 'self'`，主题预置外置为
 `public/theme-init.js`），视图层有错误边界兜底；路由级 `React.lazy` + `manualChunks`（react / flow / date）
-把首屏 JS 压到 84.4 KiB gzip。
+把首屏 JS 压到 92.5 KiB gzip。
 
 分层、数据流、设计取舍与扩展方式见 [ARCHITECTURE.md](ARCHITECTURE.md)；
 操作步骤见 [USER-GUIDE.md](USER-GUIDE.md)；开发契约见 [docs/contract.md](docs/contract.md)。
 
 ## 性能（10k 实测）
 
-生产构建 + **10,000 条目 / 3.23 MB** 工作区，无头 Chrome 1440×900，脚本 `scripts/qa/perf-bench.mjs`：
+生产构建 + **10,000 条目 / 3.23 MB** 工作区，无头 Chrome，脚本 `scripts/qa/perf-bench.mjs`（视口 **1920×1280**），
+下表为三次连跑（均 exit 0、`consoleIssues = 0`）的实测值：
 
 | 指标 | 实测 |
 | --- | --- |
-| 首屏 JS | 4 个请求，**262.1 KiB raw / 84.4 KiB gzip**（优化前 679 KiB / 219 kB，**−61%**）；构建无 >500 kB 警告 |
-| 首屏 FCP | 256 ms |
-| 路由切换（中位） | 今日 62 / 日历 58 / 甘特 108 / SOP 103 / OKR 295 / GTD 311 ms（首次切换额外 +100–210 ms 加载 chunk） |
-| 编辑 | GTD 完成 45 / OKR 指标 21 / 甘特拖拽 63 ms |
-| 撤销 | 18–38 ms |
-| 内存 | 100 次编辑堆净增 **7.5 MB**（结构共享历史） |
-| DOM | 甘特树 28 行（4,001 行数据、2,001 条已排期）；SOP 28 节点（300 step / 400 边）；GTD 下一步 100 行（1,500 条） |
+| 首屏 JS | 6 个请求，**283.9 KiB raw / 92.5 KiB gzip**（优化前 679 KiB / 219 kB，**−57%**）；构建无 >500 kB 警告 |
+| 首屏 FCP | ≈200 ms（三次 188 / 196 / 220） |
+| 路由切换（中位） | 今日 30 / 日历 28–32 / 甘特 40–47 / SOP 58–64 / OKR 41–45 / GTD 66–77 ms；首次（冷）切换额外 +31–61 ms 用于加载对应 chunk（OKR +31–35 / GTD +40–57 / 甘特 +56–61 / SOP +51–61；日历与今日已在首屏加载，+0–9 ms 以内） |
+| 编辑 | GTD 完成 23–25 / OKR 指标 45–52 / 甘特拖拽 34–39 ms |
+| 撤销 | 18–32 ms（GTD 18–22 / OKR 30–32 / 甘特 19–24） |
+| 内存 | 100 次编辑堆净增 **+4.4 MB**（前 50 次 +3.1–3.4、后 50 次 +1.0–1.2；历史栈上限 80 步，第 80 步之后不再增长） |
+| DOM | 甘特树 42 行 / 表头 9 列 / 31 条 bar（窗口化）；SOP 40 节点 / 50 边；GTD 下一步 100 行（1,500 条）；今日聚焦 100 行 |
+
+其中「内存」一行为历史快照修复后的重测值（读数前 3 轮 GC，三次一致 +4.39 MB）；其余行为修复前同一构建的实测，
+修复前后同场 A/B 差异均在噪声内（<10%）。此前记录的 7.5 MB 是单次 GC 基线被抬高导致的测量假象
+——稳定口径下修复前同版本实为 43.5–44.7 MB。
 
 实现手段：索引化选择器（`WeakMap` + `Object.freeze`）、结构共享历史（不再整份深拷贝）、
 甘特树 / 表头与 SOP 画布的视口级渲染、GTD / 今日 / OKR 列表分页、路由级 `React.lazy` + `manualChunks`。
@@ -298,12 +303,12 @@ sudo dpkg -r textura     # 卸载（不会删除数据目录）
    拖动节点后连线走向可能变化。
 4. **GTD 的归档借用 `done` 状态**：模型没有独立归档字段，「参考资料 / 笔记」澄清后状态置为 done，
    因此会出现在「本周完成」等完成类统计中。
-5. **大工作区**：10,000 条（3.23 MB）已实测可用（FCP 256 ms、编辑 21–63 ms），但超过这个量级仍建议按领域 /
+5. **大工作区**：10,000 条（3.23 MB）已实测可用（FCP ≈200 ms、编辑 23–52 ms），但超过这个量级仍建议按领域 /
    季度分片存储或换 SQLite；每次保存仍是整份序列化 + `.bak` + 轮换副本，写放大会随条目数线性增长。
-6. **保存的主线程成本**：浏览器调试模式整份 3.2 MB 序列化会产生一次约 **135 ms** 长任务；
+6. **保存的主线程成本**：浏览器调试模式整份 3.2 MB 序列化会产生一次 **64–74 ms** 长任务；
    桌面端磁盘 IO 走 `spawn_blocking`，但序列化仍在主线程。构建 `sourcemap: false`，线上排错需另想办法。
-7. **路由懒加载**：首屏只加载入口 / `react` / `date` 三个 chunk，首次进入某个视图会有一次 chunk 加载
-   （实测额外 100–210 ms），期间显示「正在织理「视图名」…」骨架。
+7. **路由懒加载**：首屏只加载入口 / `react` / `date` 等 6 个 JS 请求，首次进入某个视图会有一次 chunk 加载
+   （实测额外 +31–61 ms），期间显示「正在织理「视图名」…」骨架。
 8. **诊断副本与署名**：`workspace.repaired-*.json` 不参与 30 份轮换、不会被自动清理；
    `@xyflow/react` 默认署名水印保留（移除需商业授权）。
 9. **验证边界**：真实 Tauri 窗口、自动保存、CSP 与 IPC 已在 Xvfb 下实机验证（`scripts/tauri-smoke.sh`），
@@ -345,6 +350,7 @@ npx vite --port 1430 --strictPort
 # 终端 B：逐个运行（需要 Node 22+ 与 /usr/bin/google-chrome）
 node scripts/qa/collector-selftest.mjs   # 自检：确认控制台 / 异常收集器真的在工作
 node scripts/qa/smoke.mjs                # 14 张截图（7 主图 + 7 补充）+ 布局溢出 + 控制台错误
+node scripts/qa/shots-16x9.mjs           # 7 张 1920×1080（16:9）对外截图 → docs/screenshots/16x9/
 node scripts/qa/overlays.mjs             # 逐个打开弹层（收集、命令面板、澄清、导入…）
 node scripts/qa/secondary-views.mjs      # OKR 三视图 / GTD 两视图 / 甘特详情 / SOP 切换
 node scripts/qa/flows.mjs                # 8 条跨模块流程（收集→澄清、拖拽持久化、主题、导出…）
@@ -367,7 +373,10 @@ node scripts/qa/perf/generate-workspace.mjs          # 生成 10,000 条工作�
 node scripts/qa/perf-bench.mjs                       # 需要 Node 22+ 与 /usr/bin/google-chrome
 ```
 
-截图共 **17 张**，写入 `docs/screenshots/`：
+截图共 **17 张**，写入 `docs/screenshots/`，统一为 **3:2** 比例：宽屏按 **1920×1280**、
+窄屏按 **1024×720** 视口拍摄，后者由 `Page.screenshot()`（`scripts/qa/lib.mjs`）统一补白到 **1080×720**。
+例外：`settings-ai.png` 是设置页 AI 卡片的裁切图（537×851 竖图），**不参与 3:2 统一**（脚本固定 1440×900 视口以保证可复现）。
+`docs/screenshots/16x9/` 另存 7 张主视图的 **1920×1080 原生 16:9** 版本（供要求 16:9 / 最低 1920×1080 的场景，不做 3:2 补白）。
 
 - **7 张主图**：`dashboard` / `calendar` / `okr` / `gtd` / `gantt` / `sop` / `settings`；
 - **8 张补充**：`dashboard-1024`、`gantt-1024`、`calendar-1024`、`dashboard-dark`、`calendar-dark`、
@@ -464,7 +473,8 @@ Textura/
 
 ## 仓颉重写
 
-同一套产品另有**仓颉原生重写**（CUI 0.9.6 + SDL3 绘制，七条路由全部实现，可与 Web 版 1440×900 截图
-做像素比对，并带一条鸿蒙 HAP 打包链）。该重写已抽离为独立仓库 **`TexturaCJ`**（与本仓库同级目录），
+同一套产品另有**仓颉原生重写**（CUI 0.9.6 + SDL3 绘制，七条路由全部实现，可与 Web 版截图做像素比对
+——比对时需指定同一视口，当前 Web 版宽屏截图为 1920×1280；并带一条鸿蒙 HAP 打包链）。
+该重写已抽离为独立仓库 **`TexturaCJ`**（与本仓库同级目录），
 本仓库 `main` 作为其转写模板：仓颉侧源码、像素验收协议与鸿蒙链路文档均随仓库迁移，
 本仓库不再包含 `cangjie/` 目录，Web 版与仓颉版源码仍互不影响。

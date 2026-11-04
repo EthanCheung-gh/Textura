@@ -144,7 +144,7 @@
   },
   {
     "flow": "c-okr-header",
-    "label": "1440: 顺序为 紧凑/详细 → 卡片/表格/对齐 → 新建目标",
+    "label": "1920: 顺序为 紧凑/详细 → 卡片/表格/对齐 → 新建目标",
     "ok": true,
     "detail": {
       "order": [
@@ -156,7 +156,7 @@
   },
   {
     "flow": "c-okr-header",
-    "label": "1440: 无横向溢出 / 无按钮裁切",
+    "label": "1920: 无横向溢出 / 无按钮裁切",
     "ok": true,
     "detail": {
       "headerScroll": 0,
@@ -166,7 +166,7 @@
   },
   {
     "flow": "c-okr-header",
-    "label": "1440: 季度条内无视图/密度控件",
+    "label": "1920: 季度条内无视图/密度控件",
     "ok": true,
     "detail": {
       "periodBarControls": []
@@ -212,16 +212,16 @@
           "tag": "div",
           "cls": "segmented segmented--sm",
           "text": "卡片表格对齐",
-          "left": 1136,
-          "right": 1266,
+          "left": 1376,
+          "right": 1506,
           "clipped": false
         },
         {
           "tag": "button",
           "cls": "btn btn--primary btn--md",
           "text": "新建目标",
-          "left": 1274,
-          "right": 1380,
+          "left": 1514,
+          "right": 1620,
           "clipped": false
         }
       ]
@@ -237,16 +237,16 @@
           "tag": "div",
           "cls": "segmented segmented--sm",
           "text": "卡片表格对齐",
-          "left": 1136,
-          "right": 1266,
+          "left": 1376,
+          "right": 1506,
           "clipped": false
         },
         {
           "tag": "button",
           "cls": "btn btn--primary btn--md",
           "text": "新建目标",
-          "left": 1274,
-          "right": 1380,
+          "left": 1514,
+          "right": 1620,
           "clipped": false
         }
       ]
@@ -262,24 +262,24 @@
           "tag": "div",
           "cls": "segmented segmented--sm",
           "text": "紧凑详细",
-          "left": 1040,
-          "right": 1128,
+          "left": 1280,
+          "right": 1368,
           "clipped": false
         },
         {
           "tag": "div",
           "cls": "segmented segmented--sm",
           "text": "卡片表格对齐",
-          "left": 1136,
-          "right": 1266,
+          "left": 1376,
+          "right": 1506,
           "clipped": false
         },
         {
           "tag": "button",
           "cls": "btn btn--primary btn--md",
           "text": "新建目标",
-          "left": 1274,
-          "right": 1380,
+          "left": 1514,
+          "right": 1620,
           "clipped": false
         }
       ]

@@ -10,11 +10,11 @@ const json = readFileSync('/tmp/textura-perf/workspace-10k.json', 'utf8');
 const KEY = 'textura.workspace.v1';
 const issues = [];
 
-const chrome = await launchChrome({ port: 9333, width: 1440, height: 900 });
+const chrome = await launchChrome({ port: 9333, width: 1920, height: 1280 });
 const cdp = await Cdp.connect(chrome.wsUrl);
 const page = await Page.create(cdp);
 try {
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await page.goto(`${BASE_URL}/?route=dashboard`, { route: 'dashboard' });
   await page.eval(`localStorage.setItem(${JSON.stringify(KEY)}, ${JSON.stringify(json)}); return true;`, { timeout: 120000 });
   await page.cdp.send('Page.reload', { ignoreCache: false });

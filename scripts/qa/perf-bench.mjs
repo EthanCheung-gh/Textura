@@ -5,6 +5,8 @@
  *      (cd dist && python3 -m http.server 4180 --bind 127.0.0.1)
  *
  * 覆盖：首屏 / 路由切换 / 编辑与撤销延迟 / 内存 / DOM 规模 / 保存 longtask。
+ * 内存口径：读数前做多轮 GC（默认 3 次，`PERF_GC_PASSES` 可覆盖），避免单次 GC
+ * 收不干净导致基线被抬高、delta 失真。
  * 结果写入 /tmp/textura-perf/perf-report.json，并输出两张证据截图到 docs/screenshots/。
  */
 import { execFileSync } from 'node:child_process';
@@ -17,6 +19,12 @@ const WORKSPACE_PATH = process.env.PERF_WORKSPACE || '/tmp/textura-perf/workspac
 const OUT_DIR = '/tmp/textura-perf';
 const SHOT_DIR = 'docs/screenshots';
 const KEY = 'textura.workspace.v1';
+// 内存读数前的 GC 轮数：单次 GC 往往收不干净（增量标记 / 弱引用清理需要多轮），
+// 会让基线偏高、delta 偏低。可用 PERF_GC_PASSES 覆盖，口径记录在 report.memory.gcPasses。
+const GC_PASSES = (() => {
+  const raw = Number.parseInt(process.env.PERF_GC_PASSES ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 3;
+})();
 
 const report = { generatedAt: new Date().toISOString(), baseUrl: PERF_BASE, workspace: { path: WORKSPACE_PATH } };
 
@@ -26,6 +34,22 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 const round = (value, digits = 1) => (value === null || value === undefined ? null : Number(value.toFixed(digits)));
+
+/**
+ * 稳定的内存读数：先循环 `passes` 轮 `window.__gc()`（每轮之间 sleep 150ms 让堆落定），
+ * 最后一次性读 `performance.memory` 的 `{ used, total }`。
+ * 轮数记录在 `report.memory.gcPasses`，便于跨版本对比时追溯口径。
+ */
+async function stableMemory(page, passes = GC_PASSES) {
+  const rounds = Math.max(1, passes);
+  for (let pass = 0; pass < rounds; pass += 1) {
+    await page.eval(`if (window.__gc) { window.__gc(); } return true;`);
+    await sleep(150);
+  }
+  return page.eval(
+    `return performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize } : null;`,
+  );
+}
 
 async function timeRouteSwitch(page, label, root) {
   return page.eval(`
@@ -45,6 +69,47 @@ async function timeRouteSwitch(page, label, root) {
   `);
 }
 
+/**
+ * 走到「KR 指标输入框已挂载」的状态（导航耗时不计入 edit / undo 计时区间）。
+ *
+ * 列表卡片自 c80b107 起只读（`okr-kr--readonly`）、011c518 引入编辑视图的
+ * 「单编辑态」，`MetricEditor` 只在「目标编辑视图 → 某条 KR 的铅笔」之后才挂载，
+ * 因此按真实用户路径走：
+ *   目标卡「编辑」（aria-label 以「编辑目标：」开头，见 ObjectiveCard.tsx:176）
+ *   → 目标编辑视图（role="region" aria-label="目标编辑"，ObjectiveEditor.tsx:91）
+ *   → 第一条 KR 的铅笔（aria-label 以「编辑关键结果：」开头，KrRow.tsx:252）
+ *   → 指标输入框（KrRow.tsx:337 → MetricEditor.tsx:249）。
+ *
+ * 已经在该状态时直接返回：第 2/3 次样本复用同一个单编辑态，不重复导航。
+ */
+async function ensureOkrMetricEditor(page) {
+  const mounted = await page.eval(`return !!document.querySelector('input[aria-label$="指标当前值"]');`);
+  if (mounted) return false;
+
+  const entry = await page.eval(`
+    if (document.querySelector('button[aria-label^="编辑目标："]')) return 'button[aria-label^="编辑目标："]';
+    if (document.querySelector('[data-edit-objective]')) return '[data-edit-objective]';
+    return null;
+  `);
+  if (!entry) throw new Error('okr objective edit entry not found: button[aria-label^="编辑目标："]');
+  await page.click(entry);
+  await page.waitFor(`!!document.querySelector('section[role="region"][aria-label="目标编辑"]')`, {
+    label: 'okr objective editor view',
+    timeout: 30000,
+  });
+  await page.waitFor(`!!document.querySelector('button[aria-label^="编辑关键结果："]')`, {
+    label: 'okr editor kr rows',
+    timeout: 30000,
+  });
+  await page.click('button[aria-label^="编辑关键结果："]');
+  await page.waitFor(`!!document.querySelector('input[aria-label$="指标当前值"]')`, {
+    label: 'okr metric input (kr single-edit state)',
+    timeout: 30000,
+  });
+  await sleep(300);
+  return true;
+}
+
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   const json = readFileSync(WORKSPACE_PATH, 'utf8');
@@ -52,14 +117,14 @@ async function main() {
 
   const chrome = await launchChrome({
     port: 9333,
-    width: 1440,
-    height: 900,
+    width: 1920,
+    height: 1280,
     extraArgs: ['--enable-precise-memory-info', '--js-flags=--expose-gc'],
   });
   const cdp = await Cdp.connect(chrome.wsUrl);
   const page = await Page.create(cdp);
   try {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
 
     console.log('[perf] step: demo load');
     /* ---------------- 首屏（演示数据冷启动） ---------------- */
@@ -222,8 +287,30 @@ async function main() {
     const okrUndo = [];
     await timeRouteSwitch(page, 'OKR', '.okr-page');
     await sleep(500);
+    // 首次进入编辑态（导航不计时），并打印被测 KR / 指标区间，便于失败时定位。
+    await ensureOkrMetricEditor(page);
+    console.log(
+      '[perf] okr metric target:',
+      JSON.stringify(
+        await page.eval(`
+          const input = document.querySelector('input[aria-label$="指标当前值"]');
+          if (!input) return null;
+          const row = input.closest('.okr-kr');
+          const value = (suffix) => document.querySelector('input[aria-label$="' + suffix + '"]')?.value ?? null;
+          return {
+            label: input.getAttribute('aria-label'),
+            start: value('指标起点'),
+            current: value('指标当前值'),
+            target: value('指标目标值'),
+            pct: row?.querySelector('.okr-kr-pct')?.textContent.trim() ?? null,
+          };
+        `),
+      ),
+    );
     for (let index = 0; index < 3; index += 1) {
       const value = String(60 + index);
+      // 编辑态已挂载时是 no-op；若被卸载（返回列表 / Esc），这里重新走一遍真实路径。
+      await ensureOkrMetricEditor(page);
       await page.click('input[aria-label$="指标当前值"]');
       await page.selectAll();
       await page.insertText(value);
@@ -341,6 +428,13 @@ async function main() {
         totalItemsText: document.querySelector('.gantt-tree-head-count')?.textContent.trim() ?? null,
       };
     `);
+    // 等通知浮层（.notices > .notice，见 AppShell.tsx）自己消失再截图：甘特 3 次撤销
+    // 各留一条「已撤销上一步」，TTL 3500ms，否则会被拍进证据图右下角。
+    // 此处不在任何 performance.now() 计时区间内（保存 / 长任务观测在其后各自重新起算）。
+    await page.waitFor(`!document.querySelector('.notices .notice')`, {
+      timeout: 6000,
+      label: 'notices cleared before gantt shot',
+    });
     await page.screenshot(`${SHOT_DIR}/perf-gantt-2k.png`);
 
     await timeRouteSwitch(page, 'SOP', '.sop-page');
@@ -372,6 +466,12 @@ async function main() {
         showMore: [...document.querySelectorAll('button')].filter((el) => el.textContent.includes('显示更多')).length,
       };
     `);
+    // 同上：截图前等通知浮层清空，避免把 toast 拍进证据图。
+    // 保存 / 内存步骤在这之后执行，各自从自己的 t0 重新计时，不受这段等待影响。
+    await page.waitFor(`!document.querySelector('.notices .notice')`, {
+      timeout: 6000,
+      label: 'notices cleared before dashboard shot',
+    });
     await page.screenshot(`${SHOT_DIR}/perf-10k-dashboard.png`);
 
     /* ---------------- 保存 + 长任务 ---------------- */
@@ -414,8 +514,7 @@ async function main() {
 
     console.log('[perf] step: memory');
     /* ---------------- 内存：50 次编辑 ---------------- */
-    await page.eval(`if (window.__gc) { window.__gc(); } return true;`);
-    const memoryBefore = await page.eval(`return performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize } : null;`);
+    const memoryBefore = await stableMemory(page);
     const editsDone = await page.eval(`
       let count = 0;
       for (let index = 0; index < 50; index += 1) {
@@ -428,8 +527,7 @@ async function main() {
       return count;
     `);
     await sleep(600);
-    await page.eval(`if (window.__gc) { window.__gc(); } return true;`);
-    const memoryAfter = await page.eval(`return performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize } : null;`);
+    const memoryAfter = await stableMemory(page);
     // 第二轮：再 50 次编辑，观察增量是否累积（GC 噪声下应保持平稳）
     const secondEdits = await page.eval(`
       let count = 0;
@@ -443,9 +541,9 @@ async function main() {
       return count;
     `);
     await sleep(600);
-    await page.eval(`if (window.__gc) { window.__gc(); } return true;`);
-    const memoryAfter2 = await page.eval(`return performance.memory ? { used: performance.memory.usedJSHeapSize, total: performance.memory.totalJSHeapSize } : null;`);
+    const memoryAfter2 = await stableMemory(page);
     report.memory = {
+      gcPasses: GC_PASSES,
       edits: editsDone,
       secondEdits,
       before: memoryBefore,
@@ -458,12 +556,20 @@ async function main() {
     };
 
     report.consoleIssues = page.issues.filter((issue) => issue.level === 'error' || issue.level === 'warning');
+  } catch (error) {
+    // 失败也留下半份诊断数据：标记 failed / error（成功路径字段结构不变）。
+    report.failed = true;
+    report.error = {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? (error.stack ?? null) : null,
+    };
+    throw error;
   } finally {
     cdp.close();
     await chrome.close();
+    // 落盘放在 finally：中途抛错时 perf-report.json 仍然是可用数据。
+    writeFileSync(`${OUT_DIR}/perf-report.json`, JSON.stringify(report, null, 2));
   }
-
-  writeFileSync(`${OUT_DIR}/perf-report.json`, JSON.stringify(report, null, 2));
 
   /* ---------------- 打印摘要 ---------------- */
   console.log('\n=== FIRST SCREEN ===');

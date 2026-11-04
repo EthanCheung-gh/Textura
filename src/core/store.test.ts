@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Item, ReportSection, Workspace } from './model';
 import { WORKSPACE_VERSION } from './model';
-import { useWorkspace } from './store';
+import { getHistoryStats, useWorkspace } from './store';
 import { emptyWorkspace, parseWorkspaceText } from './repo';
 import { createSeedWorkspace } from './fixtures';
 
@@ -90,6 +90,31 @@ describe('store undo/redo', () => {
 
     store.getState().redo();
     expect(store.getState().workspace.items.map((item) => item.id)).toEqual([created.id]);
+  });
+
+  it('pushes a shallow history shell instead of the indexed workspace object', () => {
+    const store = useWorkspace;
+    store.setState({
+      workspace: makeWorkspace('shell'),
+      status: 'ready',
+      selectedId: null,
+      notices: [],
+    });
+
+    const before = store.getState().workspace;
+    const stepsBefore = getHistoryStats().steps;
+
+    store.getState().toggleDone('item_shell');
+    expect(getHistoryStats().steps).toBe(stepsBefore + 1);
+
+    store.getState().undo();
+    const restored = store.getState().workspace;
+    // 历史里存的是工作区外壳的浅拷贝：撤销恢复出的对象身份是新的，所以不会命中
+    // selectors 的 `WeakMap<Workspace, WorkspaceIndex>`，一整份索引不会被历史栈钉住；
+    // 但 items 数组（以及未变更的 Item）必须与原来共享引用 —— 结构共享不能退化成深拷贝。
+    expect(restored).not.toBe(before);
+    expect(restored.items).toBe(before.items);
+    expect(restored.items.find((item) => item.id === 'item_shell')!.status).toBe('next');
   });
 
   it('fills kind defaults and stamps completedAt when moving to done', () => {

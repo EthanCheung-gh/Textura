@@ -31,7 +31,7 @@ const OVERFLOW_PROBE = `
 const results = [];
 
 await withPage(async (page) => {
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
 
   const check = async (name, action) => {
     page.resetIssues();

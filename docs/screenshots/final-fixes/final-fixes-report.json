@@ -45,14 +45,14 @@
       "count": 3,
       "pointerEvents": "none",
       "noticeRect": {
-        "x": 1196,
-        "y": 831,
+        "x": 1676,
+        "y": 1211,
         "w": 220,
         "h": 46
       },
-      "hitTag": "BUTTON",
+      "hitTag": "MAIN",
       "hitIsNotice": false,
-      "hitCls": "btn btn--secondary btn--sm btn--block"
+      "hitCls": "shell-content"
     }
   },
   {
@@ -63,18 +63,18 @@
       "index": 2,
       "probe": {
         "rect": {
-          "x": 1113,
-          "y": 689,
+          "x": 1417,
+          "y": 751,
           "w": 94,
           "h": 28
         },
         "inBodyViewport": true,
         "bodyScroll": {
-          "top": 62,
-          "max": 62
+          "top": 0,
+          "max": 0
         },
-        "cx": 1160,
-        "cy": 703,
+        "cx": 1464,
+        "cy": 765,
         "hitTag": "SPAN",
         "hitInsideButton": true,
         "hitText": "删除节点",

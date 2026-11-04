@@ -72,7 +72,7 @@ async function addCalendarItem(page, date, title) {
 /* ------------------------------------------------------------------ a --- */
 async function flowA(page) {
   const flow = 'a-notice-pointer-events';
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await goto(page, 'calendar');
 
   // 连续添加 3 条：第 3 次点击输入框不能被通知浮层吞掉（修复前会命中 .notice）
@@ -298,6 +298,8 @@ async function flowB(page) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   await withPage(async (page) => {
+    // 时钟冻结到 2026-10-21：flowB 里的 2026-10-21/22/23 字面量以它为锚（必须在首次导航前注入）
+    await page.freezeClock('2026-10-21T12:00:00');
     for (const flow of [flowA, flowB]) {
       try {
         await flow(page);

@@ -24,7 +24,7 @@ await withPage(async (page) => {
   };
 
   await page.reset('dashboard');
-  await page.setViewport(1440, 900);
+  await page.setViewport(1920, 1280);
   await sleep(600);
 
   await step('quick capture (typing + submit + undo)', async () => {

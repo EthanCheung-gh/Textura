@@ -691,7 +691,7 @@ async function main() {
   mkdirSync(DL, { recursive: true });
 
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
     try {
       await page.cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL, eventsEnabled: true });
     } catch {

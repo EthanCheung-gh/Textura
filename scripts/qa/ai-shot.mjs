@@ -1,6 +1,9 @@
 /**
  * 大模型配置卡片截图（README / 用户手册用）。
  *
+ * 该图是卡片裁切图（`Page.captureScreenshot` + clip，约 537×851 竖图），不参与 3:2 统一；
+ * 视口固定 1440×900 以保证可复现——卡片宽度随容器宽度变化，跟随 `lib.mjs` 的默认视口会让产物漂移。
+ *
  * 用法：TEXTURA_BASE_URL=http://localhost:1430 node scripts/qa/ai-shot.mjs
  * 前置：先运行 `npm run build && npx vite preview --port 1430 --strictPort`。
  */
@@ -10,6 +13,8 @@ import { BASE_URL, sleep, withPage } from './lib.mjs';
 const SHOT = 'docs/screenshots/settings-ai.png';
 
 await withPage(async (page, chrome) => {
+  // 显式 pin 视口：不使用 lib.mjs 的默认视口，保证 settings-ai.png 可复现。
+  await page.setViewport(1440, 900);
   await page.goto(`${BASE_URL}/?route=settings`, { route: 'settings' });
   await page.waitFor(`!!document.getElementById('settings-ai')`, { label: 'AI settings card' });
   await sleep(600);

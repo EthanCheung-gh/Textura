@@ -1,5 +1,5 @@
 /**
- * 独立验收截图：okr-editor.png（1440×900 浅色，默认展示态）、
+ * 独立验收截图：okr-editor.png（1920×1280 浅色，默认展示态）、
  * okr-editor-editing.png（同一视图展开一条 KR 的编辑态）、okr-editor-dark.png（深色），
  * 以及 1024×720 有代表性布局差异时的 okr-editor-1024.png。
  *
@@ -129,9 +129,9 @@ async function assertDisplayState(page, label) {
 async function main() {
   mkdirSync(SHOTS, { recursive: true });
   await withPage(async (page) => {
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
 
-    /* ---------------- 1440×900 浅色 ---------------- */
+    /* ---------------- 1920×1280 浅色 ---------------- */
     await hardReset(page);
     const demoLight = await demoState(page);
     check('截图前工作区为演示数据（清 localStorage 后重新播种）', demoLight.objectives.length === 1 &&
@@ -147,9 +147,9 @@ async function main() {
     await page.eval(`document.querySelector('.okr-page')?.scrollIntoView({ block: 'start' }); window.scrollTo(0, 0); return true;`);
     await sleep(250);
     await page.screenshot(`${SHOTS}/okr-editor.png`);
-    check('已生成 docs/screenshots/okr-editor.png（1440×900 展示态）', true, lightSig);
+    check('已生成 docs/screenshots/okr-editor.png（1920×1280 展示态）', true, lightSig);
 
-    /* ---------------- 1440×900 浅色 · 展开一条 KR 的编辑态 ---------------- */
+    /* ---------------- 1920×1280 浅色 · 展开一条 KR 的编辑态 ---------------- */
     await page.click('[data-edit-target^="kr:"]');
     await page.waitFor(`document.querySelectorAll('.okr-kr--editing').length === 1`, {
       label: 'first KR editing',
@@ -192,7 +192,7 @@ async function main() {
       editingState,
     );
     await page.screenshot(`${SHOTS}/okr-editor-editing.png`);
-    check('已生成 docs/screenshots/okr-editor-editing.png（1440×900 单 KR 编辑态）', true, editingState);
+    check('已生成 docs/screenshots/okr-editor-editing.png（1920×1280 单 KR 编辑态）', true, editingState);
 
     // 收起到展示态，避免影响后续的 1024 布局对比与深色截图。
     await page.pressKey('Escape', { code: 'Escape', vk: 27 });
@@ -222,7 +222,7 @@ async function main() {
       Math.abs(narrowSig.heroHeight - lightSig.heroHeight) > 24 ||
       narrowSig.krActionRows !== lightSig.krActionRows ||
       Math.abs(narrowSig.firstKrHeight - lightSig.firstKrHeight) > 20;
-    check('1024×720 布局与 1440 对比（诊断信息，决定是否值得单独说明）', true, {
+    check('1024×720 布局与 1920×1280 对比（诊断信息，决定是否值得单独说明）', true, {
       representative,
       wide: lightSig,
       narrow: narrowSig,
@@ -236,7 +236,7 @@ async function main() {
     await sleep(250);
     await page.screenshot(`${SHOTS}/okr-editor-1024.png`);
     check('已生成 docs/screenshots/okr-editor-1024.png（1024×720 展示态）', true, { representative });
-    await page.setViewport(1440, 900);
+    await page.setViewport(1920, 1280);
     await sleep(500);
 
     /* ---------------- 深色 ---------------- */

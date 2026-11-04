@@ -257,6 +257,15 @@ function replaceSections(
 
 const history = createHistory<Workspace>(80);
 
+/**
+ * 历史栈只保存工作区「外壳」的浅拷贝：items / edges / areas / runs 等数组与未变更的 Item
+ * 仍然共享引用（结构共享不变），但快照对象本身是新的 —— 因此不会被 selectors 的
+ * `WeakMap<Workspace, WorkspaceIndex>` 命中，也就不会把一整份索引（10k 条目下约 0.4–0.5 MB）
+ * 钉在内存里。历史上限 80，实测可省约 40 MB。
+ * 撤销/重做时 store 本来就会 `{...snapshot, updatedAt}` 换新身份并重建索引，语义不变。
+ */
+const historyShell = (ws: Workspace): Workspace => ({ ...ws });
+
 export const useWorkspace = create<WorkspaceStore>()((set, get) => {
   const scheduleSave = createDebouncer(() => {
     void get().save();
@@ -264,7 +273,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
 
   const commit = (recipe: (ws: Workspace) => Workspace): void => {
     const current = get().workspace;
-    history.record(current);
+    history.record(historyShell(current));
     const next = { ...recipe(current), updatedAt: nowIso() };
     set({ workspace: next, saveState: 'idle', error: null });
     if (get().status === 'ready') scheduleSave.schedule();
@@ -407,7 +416,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
       await saveQueue;
 
       if (recordHistory) {
-        history.record(get().workspace);
+        history.record(historyShell(get().workspace));
       } else {
         // 即使不记录本次替换，也要让旧的重做栈失效。
         history.clearRedo();
@@ -516,7 +525,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
 
       const recordHistory = options?.recordHistory ?? true;
       if (recordHistory) {
-        history.record(current);
+        history.record(historyShell(current));
       } else {
         history.clearRedo();
       }
@@ -784,7 +793,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     },
 
     undo() {
-      const snapshot = history.undo(get().workspace);
+      const snapshot = history.undo(historyShell(get().workspace));
       if (!snapshot) return;
       set({
         workspace: { ...snapshot, updatedAt: nowIso() },
@@ -795,7 +804,7 @@ export const useWorkspace = create<WorkspaceStore>()((set, get) => {
     },
 
     redo() {
-      const snapshot = history.redo(get().workspace);
+      const snapshot = history.redo(historyShell(get().workspace));
       if (!snapshot) return;
       set({
         workspace: { ...snapshot, updatedAt: nowIso() },

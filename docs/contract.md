@@ -178,7 +178,8 @@ getHistoryStats(): { steps: number; limit: number };
 
 行为：
 
-- **历史**：每个写操作把当前 `workspace` **引用**压入历史（结构共享，不再深拷贝；
+- **历史**：每个写操作把当前 `workspace` 的**外壳浅拷贝**压入历史（`{ ...ws }`：`items/edges/areas/runs`
+  等数组与未变更 Item 仍共享引用，不做深拷贝；快照对象身份是新的，因此不会命中索引 WeakMap 而钉住整份索引；
   `replaceWorkspace({ recordHistory: false })` 例外），上限 80 步；`undo/redo` 会同步更新
   `workspace.updatedAt` 并重新触发自动保存。`load()` 清空历史。
   诊断：`getHistoryStats(): { steps, limit }`。
@@ -295,10 +296,12 @@ getWorkspaceIndex(ws: Workspace): WorkspaceIndex;
 对象、新的 items/edges/areas/runs 数组，并且只新建实际变更的 Item；未变更条目保持同一引用。
 否则索引缓存会脏，历史结构共享也会互相污染。
 
-历史快照同样基于该不变量：80 步只保存 workspace 引用，内存量级从
-「条目数 × 步数」降为「步数 × 变更条目」；`updateItem` 只新建目标 Item，
-`moveItem` 只新建被移动条目与 order 变化的同级条目，`deleteItems` 通过 children 索引 BFS，
-`updateItems` 一次 map 完成批量更新。诊断用 `getHistoryStats(): { steps, limit }` 由 store 导出。
+历史快照同样基于该不变量：80 步只保存 workspace 外壳浅拷贝 + 共享数组，内存量级从
+「条目数 × 步数」降为「步数 × 变更条目 + 一份 items 数组（10k 下约 39 KB）」，
+并且不会把按 workspace 身份缓存的索引一并留在内存里（详见 ARCHITECTURE §7.3）。
+`updateItem` 只新建目标 Item，`moveItem` 只新建被移动条目与 order 变化的同级条目，
+`deleteItems` 通过 children 索引 BFS，`updateItems` 一次 map 完成批量更新。
+诊断用 `getHistoryStats(): { steps, limit }` 由 store 导出。
 
 模块内的性能纯函数属于实现细节，不入本契约：`gantt/virtual.ts` 的 `visibleRows` / `visibleColumns`
 （行 / 列窗口，含缓冲与边界夹紧）、`sop/perf.ts` 的 `buildCanvasNodes`（节点对象引用复用）、
