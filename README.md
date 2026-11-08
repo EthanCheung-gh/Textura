@@ -265,13 +265,13 @@ npm run tauri:build  # 构建 deb 安装包
 `npm run tauri:build`（即 `tauri build --bundles deb`）产出：
 
 ```bash
-src-tauri/target/release/bundle/deb/Textura_0.1.0_amd64.deb
+src-tauri/target/release/bundle/deb/Textura_0.2.0_amd64.deb
 ```
 
 安装与卸载：
 
 ```bash
-sudo dpkg -i src-tauri/target/release/bundle/deb/Textura_0.1.0_amd64.deb
+sudo dpkg -i src-tauri/target/release/bundle/deb/Textura_0.2.0_amd64.deb
 sudo dpkg -r textura     # 卸载（不会删除数据目录）
 ```
 

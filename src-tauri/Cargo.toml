@@ -1,6 +1,6 @@
 [package]
 name = "textura"
-version = "0.1.0"
+version = "0.2.0"
 description = "Textura · 织理 — 结构化执行工作台"
 license = "Apache-2.0"
 authors = ["Textura <dev@textura.app>"]

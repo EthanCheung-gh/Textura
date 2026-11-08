@@ -3,7 +3,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循语义化版本。本项目为单机桌面应用，数据格式版本单独由 `WORKSPACE_VERSION` 管理。
 
-## [未发布] - 2026-11-01
+## [0.2.0] - 2026-11-08
 
 ### 新增
 

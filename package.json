@@ -1,7 +1,7 @@
 {
   "name": "textura",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Textura · 织理 — 结构化执行工作台",
   "license": "Apache-2.0",
