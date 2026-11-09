@@ -2,11 +2,11 @@
  * 周报「AI 参考」区的纯逻辑（无 React、无 store、无网络，可直接单测）。
  *
  * 边界：
- * - 本文件只做四件事：上下文怎么拼、错误怎么说、整份结果怎么按模板筛、摘要多大；
+ * - 本文件只做四件事：上下文怎么拼、错误怎么说、整份结果怎么按展示清单筛、摘要多大；
  * - 发请求与加载 / 取消状态机在 `ReportAiPanel.tsx`，写回正文在 `ReportsPage.tsx`；
  * - 不缓存、不重试、不读取 `apiKey`（这里产出的任何文案都不含密钥）。
  */
-import type { ReportPeriodKind } from '../../core/model';
+import type { ReportPeriodKind, ReportSection } from '../../core/model';
 import { AiRequestError } from '../ai/client';
 import type { AiErrorKind } from '../ai/client';
 import { MAX_DIGEST_CHARS } from '../ai/prompts';
@@ -16,10 +16,23 @@ import type { ReportTemplate } from './draft';
 import type { ReportFactsDetailed } from './facts';
 import { periodLabel } from './period';
 import type { PeriodRange } from './period';
+import { displaySections } from './sections';
 
 /* ------------------------------------------------------------------ */
 /* 上下文                                                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * AI 上下文里的一节：只需要「哪个节、写了什么」。
+ *
+ * 标题对模板节由模板给（模板标题是口径来源），对自建节由报告给，因此这里允许缺省，
+ * 调用方（页面层）直接把草稿节数组传进来即可，不必先补一份标题。
+ */
+export interface AiContextSection {
+  key: string;
+  body: string;
+  title?: string;
+}
 
 export interface BuildAiContextInput {
   kind: ReportPeriodKind;
@@ -27,8 +40,13 @@ export interface BuildAiContextInput {
   period: string;
   range: PeriodRange | null;
   author: string;
-  /** 报告现有正文（草稿缓冲），key 不在当前模板里的节会被丢弃。 */
-  sections: readonly { key: string; body: string }[];
+  /**
+   * 报告现有正文（草稿缓冲）。
+   *
+   * **key 不再按模板裁剪**：自建节（`custom-*`）与历史模板遗留的 key 同样在编辑器里可见、
+   * 可写、可被选为 AI 目标，丢掉它们等于让用户加的节永远拿不到参考稿。
+   */
+  sections: readonly AiContextSection[];
   facts: ReportFactsDetailed;
   /** 报告自带模板（历史 templateId）；不传则按粒度回落 `templateFor(kind)`。 */
   template?: ReportTemplate;
@@ -37,18 +55,29 @@ export interface BuildAiContextInput {
 /**
  * 拼出提示词层要的上下文。
  *
- * - 节清单**只取当前模板**：模板顺序与标题决定提示词里的章节清单，
- *   报告里多出来的旧节（模板改版前生成）不进入上下文；
+ * - 节清单取**展示顺序**（`displaySections`，与编辑器同一口径）：模板节的先后以报告存储顺序
+ *   为准（用户上移 / 下移过的位置生效），自建节与历史遗留 key 留在自己的槽位上；
  * - 模板里有、报告里没有的节保留为**空正文**（不从数组里删掉）：
  *   「本节还没有内容」是有效信息，删掉会让模型以为不需要写这一节；
- * - 同一 key 出现多次时取第一处（与 `filterSectionsByTemplate` 的去重口径一致）。
+ * - 同一 key 出现多次时**取第一处**：去重由 `displaySections` 负责（存储层出现过重复追加），
+ *   因此这里不再自己建 Map 判重，去重口径只有一份；
+ * - 标题：模板节一律取**模板标题**（`sections.ts` 契约第 4 条——模板节标题不可改，旧报告里
+ *   残留的旧标题不该漂进提示词），模板外的节取**报告自己存的标题**（自建节的标题是用户起的名字）。
  */
 export function buildAiContext(input: BuildAiContextInput): ReportAiContext {
   const template = input.template ?? templateFor(input.kind);
-  const bodies = new Map<string, string>();
-  for (const section of input.sections) {
-    if (!bodies.has(section.key)) bodies.set(section.key, section.body);
-  }
+  // `displaySections` 的入参签名要求完整 `ReportSection`（它可能原样复用报告里的节对象），
+  // 而这里只关心 key / body / title；这一处收窄是为了在**不复制**调用方数组的前提下复用
+  // 同一份排序口径（顺序口径只能有一处，见 `sections.ts` 文件头）。
+  // `updatedAt: ''` 只影响补出来的空节的字段，AI 上下文不读该字段。
+  const display = displaySections(template, {
+    sections: input.sections as unknown as ReportSection[],
+    updatedAt: '',
+  });
+
+  const templateTitles = new Map<string, string>();
+  for (const section of template.sections) templateTitles.set(section.key, section.title);
+
   const label = periodLabel(input.kind, input.period);
   return {
     kind: input.kind,
@@ -56,10 +85,10 @@ export function buildAiContext(input: BuildAiContextInput): ReportAiContext {
     range: input.range ? { start: input.range.start, end: input.range.end } : null,
     author: input.author,
     facts: input.facts,
-    sections: template.sections.map((section) => ({
+    sections: display.map((section) => ({
       key: section.key,
-      title: section.title,
-      body: bodies.get(section.key) ?? '',
+      title: templateTitles.get(section.key) ?? (section.title || section.key),
+      body: section.body,
     })),
   };
 }
@@ -166,22 +195,31 @@ export function aiErrorText(error: unknown): AiErrorView {
 /* ------------------------------------------------------------------ */
 
 /**
- * 整份生成结果的模板过滤：丢掉模板里没有的 key、同一 key 只留第一条，
- * 输出顺序按模板顺序（与编辑器一致，避免模型返回顺序影响阅读）。
+ * 整份生成结果的筛选：按 `orderedKeys`（编辑器展示顺序的 key 清单，模板节 + 自建节）
+ * 挑出允许的节——清单外的 key 丢掉、同一 key 只留第一条，输出顺序 = 清单顺序
+ * （与编辑器一致，模型返回顺序不影响阅读）。
+ *
+ * 为什么筛选口径是「展示清单」而不是「模板」：用户可以自建章节，`custom-*` 不在模板里，
+ * 但它确实是这份报告的一节，整份结果必须能采用它；清单越界（例如模型编了个 key）一律丢弃。
+ * 只要模板口径时，把模板节的 key 序列当 `orderedKeys` 传进来即可（不再另留模板版封装，
+ * 免得出现「两个筛选函数、其中一个会静默丢掉自建节」的分叉）。
  */
-export function filterSectionsByTemplate<T extends { key: string }>(
-  result: T[],
-  template: ReportTemplate,
+export function filterSectionsByDisplay<T extends { key: string }>(
+  result: readonly T[],
+  orderedKeys: readonly string[],
 ): T[] {
-  const allowed = new Set(template.sections.map((section) => section.key));
+  const allowed = new Set(orderedKeys);
   const picked = new Map<string, T>();
   for (const entry of result) {
     if (!allowed.has(entry.key) || picked.has(entry.key)) continue;
     picked.set(entry.key, entry);
   }
-  return template.sections
-    .map((section) => picked.get(section.key))
-    .filter((entry): entry is T => entry !== undefined);
+  const ordered: T[] = [];
+  for (const key of orderedKeys) {
+    const entry = picked.get(key);
+    if (entry !== undefined) ordered.push(entry);
+  }
+  return ordered;
 }
 
 /* ------------------------------------------------------------------ */

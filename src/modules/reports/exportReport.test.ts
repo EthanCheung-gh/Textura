@@ -6,6 +6,7 @@ import {
   reportFileName,
   reportMarkdown,
 } from './exportReport';
+import { MAX_SECTION_TITLE_CHARS } from './sections';
 
 function makeReport(overrides: Partial<Report> = {}): Report {
   return {
@@ -92,6 +93,47 @@ describe('reportMarkdown', () => {
     // 其余有正文的节照旧输出
     expect(text).toContain('### 需要的支持');
     expect(text).not.toMatch(/\n{3,}/);
+  });
+
+  it('标题里的换行 / 连续空白在导出时压成一行（导入数据不经过编辑器规范化）', () => {
+    const base = makeReport();
+    const report = {
+      ...base,
+      sections: base.sections.map((section) =>
+        section.key === 'support' ? { ...section, title: '复盘\n第二行  附录' } : section,
+      ),
+    };
+    const text = reportMarkdown(report, NOW);
+
+    // 标题落成**一行**：换行不留在导出里，词一个都没少（不裁剪、不加省略号）。
+    expect(text).toContain('### 复盘 第二行 附录\n- （待补充：需要哪些支持、决策或资源）');
+    expect(text.split('\n').filter((line) => line.startsWith('### '))).toEqual([
+      '### 本周概览',
+      '### 复盘 第二行 附录',
+    ]);
+    // 连续空白一并压成一个空格。
+    expect(text).not.toContain('第二行  附录');
+    // 除这一行标题外，整份文档逐字节不变。
+    expect(text).toBe(reportMarkdown(base, NOW).replace('### 需要的支持', '### 复盘 第二行 附录'));
+  });
+
+  it('超长标题不裁剪、不加省略号：导出不许静默吞掉用户写的字', () => {
+    const base = makeReport();
+    const longTitle = `复盘${'长'.repeat(MAX_SECTION_TITLE_CHARS + 20)}`;
+    const text = reportMarkdown(
+      {
+        ...base,
+        sections: base.sections.map((section) =>
+          section.key === 'support' ? { ...section, title: longTitle } : section,
+        ),
+      },
+      NOW,
+    );
+
+    expect(text).toContain(`### ${longTitle}\n- （待补充：需要哪些支持、决策或资源）`);
+    expect(longTitle.length).toBeGreaterThan(MAX_SECTION_TITLE_CHARS);
+    // 长度口径由编辑器写入负责，导出这一层不引入省略号。
+    expect(text).not.toContain('…');
   });
 
   it('末尾带生成时间（本地时区 yyyy-MM-dd HH:mm）', () => {

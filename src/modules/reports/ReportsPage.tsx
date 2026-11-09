@@ -13,10 +13,13 @@
  * - 右栏两个标签：数据源（素材插入）与 AI 参考。AI 请求的取消句柄在本层（`aiHandle`），
  *   切报告 / 切期次 / 卸载都会 `abort()`；**AI 结果只进参考区**，采用时由本层用
  *   `mergeSectionBodies(origin: 'ai')` + `commitNow({ sections })` 写回正文。
+ * - 写回的目标节可能只存在于**展示列表**（旧报告缺的模板节由 `displaySections` 补出来），
+ *   所以每条写回路径都先 `ensureSection` 把它按展示位置落进存储，再 merge：直接 merge
+ *   会追加到末尾，既重排整份列表，也让正在输入的输入框失焦。
  */
 import clsx from 'clsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Report, ReportPatch, ReportPeriodKind } from '../../core/model';
+import type { Report, ReportPatch, ReportPeriodKind, ReportSection } from '../../core/model';
 import { REPORT_STATUS_LABELS } from '../../core/model';
 import { nowIso } from '../../core/utils';
 import { useWorkspace } from '../../core/store';
@@ -45,12 +48,14 @@ import {
   filterReports,
   findReport,
   mergeSectionBodies,
+  orderedSections,
   reportsOfKind,
   sectionBodyChanged,
   sortReportsDesc,
   textFieldChanged,
 } from './reportView';
 import type { ReportDraft } from './reportView';
+import { addSection, canAddSection, ensureSection, moveSection, removeSection, renameSection } from './sections';
 import './reports.css';
 
 const KIND_OPTIONS: SegmentedOption<ReportPeriodKind>[] = [
@@ -78,6 +83,17 @@ const FACT_SECTION_KEY: Record<FactKind, string> = {
 
 /** 正文落盘防抖窗口。 */
 const SAVE_DELAY_MS = 600;
+
+/**
+ * 章节顺序是否真的动了。
+ *
+ * `sections.moveSection` 对空操作（已到两端 / key 不存在）也返回新数组（见该文件头的契约），
+ * 所以不能用「同一引用」判断，只能按 key 序列比较——上移 / 下移只改顺序，不动标题与正文。
+ */
+function sectionOrderChanged(before: readonly ReportSection[], after: readonly ReportSection[]): boolean {
+  if (before.length !== after.length) return true;
+  return before.some((section, index) => section.key !== after[index].key);
+}
 
 type ConfirmAction =
   | { type: 'rebuild'; key: string }
@@ -156,6 +172,17 @@ export function ReportsPage() {
     () => sortReportsDesc(filterReports(kindReports, query)),
     [kindReports, query],
   );
+
+  /**
+   * 交给 AI 面板的章节列表：与编辑器同一口径（`orderedSections`），
+   * 自定义章节因此也会出现在面板的「选择章节 / 整份生成」里。
+   * 注意这只是**展示**列表：写回仍走 `current.sections`（存储数组），
+   * 补出来的模板空节不会被采纳动作带进存储。
+   */
+  const aiSections = useMemo(() => {
+    if (!selectedReport || !draft) return [];
+    return orderedSections(template, { ...selectedReport, sections: draft.sections });
+  }, [draft, selectedReport, template]);
 
   /* ---------------- 防抖落盘 ---------------- */
 
@@ -361,6 +388,19 @@ export function ReportsPage() {
     [template],
   );
 
+  /**
+   * 某一节当前的标题：草稿优先（**自建节的标题只活在报告里**，模板里没有），
+   * 再回落模板标题，最后才用 key 兜底。读 `draftRef` 而不是 state，
+   * 保证事件处理器里拿到的总是最新值（与其余处理器同一口径）。
+   */
+  const sectionTitleOf = useCallback(
+    (key: string) =>
+      draftRef.current?.sections.find((section) => section.key === key)?.title ??
+      templateTitle(key) ??
+      key,
+    [templateTitle],
+  );
+
   const handleCreate = useCallback(() => {
     if (!range) return;
     const existing = findReport(reports, kind, period);
@@ -419,17 +459,21 @@ export function ReportsPage() {
       // 正文逐字相同（原生撤销的 onChange）直接返回：不 patch、不排期、不改 origin、
       // 不刷新 updatedAt。判据见 `reportView.sectionBodyChanged`。
       if (!current || !sectionBodyChanged(current, key, body)) return;
+      const updatedAt = nowIso();
       const next = patchDraft((draft) => ({
         ...draft,
-        sections: mergeSectionBodies(draft.sections, key, body, {
-          origin: 'manual',
-          updatedAt: nowIso(),
-          title: templateTitle(key),
-        }),
+        sections: mergeSectionBodies(
+          // 只存在于展示列表的模板空节先按展示位置落位：否则 merge 会追加到末尾，
+          // 列表重排 + 输入框重挂载丢焦点（见 `sections.ensureSection`）。
+          ensureSection(draft.sections, template, key, updatedAt),
+          key,
+          body,
+          { origin: 'manual', updatedAt, title: templateTitle(key) },
+        ),
       }));
       if (next) scheduleSave(next.id, { sections: next.sections });
     },
-    [patchDraft, scheduleSave, templateTitle],
+    [patchDraft, scheduleSave, template, templateTitle],
   );
 
   const handleInsertFact = useCallback(
@@ -437,35 +481,119 @@ export function ReportsPage() {
       const current = draftRef.current;
       if (!current) return;
       const sectionKey = FACT_SECTION_KEY[fact.kind];
-      const existing = current.sections.find((section) => section.key === sectionKey);
+      const updatedAt = nowIso();
+      const ensured = ensureSection(current.sections, template, sectionKey, updatedAt);
+      const existing = ensured.find((section) => section.key === sectionKey);
       const sections = mergeSectionBodies(
-        current.sections,
+        ensured,
         sectionKey,
         appendLine(existing?.body ?? '', fact.line),
-        { origin: 'manual', updatedAt: nowIso(), title: templateTitle(sectionKey) },
+        { origin: 'manual', updatedAt, title: templateTitle(sectionKey) },
       );
       draftRef.current = { ...current, sections };
       setDraft(draftRef.current);
       commitNow({ sections });
       notify(`已插入到「${templateTitle(sectionKey) ?? sectionKey}」`, 'success');
     },
-    [commitNow, notify, templateTitle],
+    [commitNow, notify, template, templateTitle],
   );
 
   const handleClearSection = useCallback(
     (key: string) => {
       const current = draftRef.current;
       if (!current) return;
-      const sections = mergeSectionBodies(current.sections, key, '', {
-        origin: 'manual',
-        updatedAt: nowIso(),
-        title: templateTitle(key),
-      });
+      const updatedAt = nowIso();
+      const sections = mergeSectionBodies(
+        ensureSection(current.sections, template, key, updatedAt),
+        key,
+        '',
+        { origin: 'manual', updatedAt, title: templateTitle(key) },
+      );
       draftRef.current = { ...current, sections };
       setDraft(draftRef.current);
       commitNow({ sections });
     },
-    [commitNow, templateTitle],
+    [commitNow, template, templateTitle],
+  );
+
+  /* ---------------- 章节集合（新增 / 改名 / 移动 / 删除） ---------------- */
+
+  /*
+   * 四个处理器都只碰**存储数组**（`current.sections`）：展示列表里补出来的模板空节
+   * 不参与写回（见 `sections.ts` 文件头第 2 条）。它们和「清空」一样是离散动作，
+   * 因此不走 600ms 防抖，直接 `commitNow` 落一次盘、留一条撤销快照。
+   */
+
+  /**
+   * 追加一个自建章节，返回它的 key：编辑器据此把焦点落到新节的标题框。
+   * 标题用 `sections.ts` 的默认标题（「自定义章节 n」），用户想改就地改。
+   */
+  const handleAddSection = useCallback((): string | null => {
+    const current = draftRef.current;
+    if (!current || readOnly) return null;
+    // 页面级兜底：置灰的按钮是主闸门，这里再拦一层，保证任何路径（键盘回车、
+    // 外部调用）都写不出第 41 节——它下次加载会被裁掉，等于静默丢数据。
+    // 到顶就直接返回：不写盘，也不弹提示（禁用态已经说明了原因）。
+    if (!canAddSection(current.sections)) return null;
+    const sections = addSection(current.sections, nowIso());
+    // `addSection` 保证追加在末尾，新节就是最后一个——不靠序号反推 key，契约变了也不会错位。
+    const added = sections[sections.length - 1];
+    draftRef.current = { ...current, sections };
+    setDraft(draftRef.current);
+    commitNow({ sections });
+    notify(`已添加「${added.title}」，可直接改标题`, 'success');
+    return added.key;
+  }, [commitNow, notify, readOnly]);
+
+  const handleRenameSection = useCallback(
+    (key: string, title: string) => {
+      const current = draftRef.current;
+      if (!current || readOnly) return;
+      const sections = renameSection(current.sections, key, title, nowIso());
+      // 空标题 / 模板节 / key 不存在 / 规范化后与存储值相同都是「同一引用」的空操作：
+      // 不写盘，也不弹「改好了」。
+      if (sections === current.sections) return;
+      draftRef.current = { ...current, sections };
+      setDraft(draftRef.current);
+      commitNow({ sections });
+      // 提示语里的标题从**刚存回去的数组**里读（`sectionTitleOf` 读 `draftRef.current`），
+      // 而不是用入参：入参可能带多余空白，也可能被裁到上限并补了省略号——只有存下来的
+      // 那个值才是用户下次打开看到的，提示语跟它不一致就是在报告假消息。
+      notify(`已改名为「${sectionTitleOf(key)}」`, 'success');
+    },
+    [commitNow, notify, readOnly, sectionTitleOf],
+  );
+
+  const handleMoveSection = useCallback(
+    (key: string, delta: -1 | 1) => {
+      const current = draftRef.current;
+      if (!current || readOnly) return;
+      const sections = moveSection(current.sections, key, delta);
+      // 已到两端时返回的是新的同序数组：按 key 序列比较后才决定写不写。
+      if (!sectionOrderChanged(current.sections, sections)) return;
+      const title = sectionTitleOf(key);
+      draftRef.current = { ...current, sections };
+      setDraft(draftRef.current);
+      commitNow({ sections });
+      notify(`已${delta < 0 ? '上移' : '下移'}「${title}」`, 'success');
+    },
+    [commitNow, notify, readOnly, sectionTitleOf],
+  );
+
+  const handleRemoveSection = useCallback(
+    (key: string) => {
+      const current = draftRef.current;
+      if (!current || readOnly) return;
+      const title = sectionTitleOf(key);
+      const sections = removeSection(current.sections, key);
+      // 模板节（删了会被重新补齐）与未知 key 都是同一引用的空操作：跳过写盘与提示。
+      if (sections === current.sections) return;
+      draftRef.current = { ...current, sections };
+      setDraft(draftRef.current);
+      commitNow({ sections });
+      notify(`已删除「${title}」，可用 Ctrl/⌘+Z 撤销`, 'info');
+    },
+    [commitNow, notify, readOnly, sectionTitleOf],
   );
 
   /** AI 参考「采用本节」：参考区只回调到这里，写回正文的唯一入口。 */
@@ -473,20 +601,30 @@ export function ReportsPage() {
     (key: string, body: string) => {
       const current = draftRef.current;
       if (!current || readOnly) return;
-      // 纵深防御：`mergeSectionBodies` 对未知 key 是「追加新节」，
-      // 所以只放行当前模板里的节（面板已按模板过滤，这里再兜一层）。
-      if (!template.sections.some((section) => section.key === key)) return;
-      const sections = mergeSectionBodies(current.sections, key, body, {
+      const updatedAt = nowIso();
+      // 先按展示位置把目标节落成真实的一节：AI 面板列的是**展示列表**，里面的模板空节
+      // 在存储里还没有位置。直接 merge 会把它追加到末尾（列表重排）；先落位后写入，
+      // 「采用本节」对这类节也就从「静默无反应」变成真的可用。
+      const ensured = ensureSection(current.sections, template, key, updatedAt);
+      // 纵深防御：`mergeSectionBodies` 对未知 key 是「追加新节」，落位后仍不存在的 key
+      // 说明它既不是模板节也不是已有节（模型可能编了个 key）——丢弃，并明确告诉用户，
+      // 不再像以前那样静默返回（点了没反应最容易被当成按钮坏了）。
+      if (!ensured.some((section) => section.key === key)) {
+        notify('这一节已不在当前报告里，无法采用', 'error');
+        return;
+      }
+      const sections = mergeSectionBodies(ensured, key, body, {
         origin: 'ai',
-        updatedAt: nowIso(),
+        updatedAt,
         title: templateTitle(key),
       });
       draftRef.current = { ...current, sections };
       setDraft(draftRef.current);
       commitNow({ sections });
-      notify(`已采用「${templateTitle(key) ?? key}」的 AI 参考`, 'success');
+      // 自建节的标题不在模板里，提示要用草稿标题（`sectionTitleOf`）而不是 key。
+      notify(`已采用「${sectionTitleOf(key)}」的 AI 参考`, 'success');
     },
-    [commitNow, notify, readOnly, template, templateTitle],
+    [commitNow, notify, readOnly, sectionTitleOf, template, templateTitle],
   );
 
   /** 「全部采用」：一次写入所有节，一次历史快照（一条 Ctrl/⌘+Z 回退）。 */
@@ -494,15 +632,21 @@ export function ReportsPage() {
     (items: { key: string; body: string }[]) => {
       const current = draftRef.current;
       if (!current || readOnly) return;
-      // 同上：未知 key 一律丢弃，不写盘也不「顺手」新建节。
-      const known = new Set(template.sections.map((section) => section.key));
-      const accepted = items.filter((item) => known.has(item.key));
+      const updatedAt = nowIso();
+      // 逐个「先落位、再写入」：和「采用本节」同一条路径，模板空节按展示位置插进存储，
+      // 不会被追加到末尾；未知 key 落位后仍不存在，一律丢弃（不写盘，也不顺手造节）。
+      let sections = current.sections;
+      const accepted: { key: string; body: string }[] = [];
+      for (const item of items) {
+        const ensured = ensureSection(sections, template, item.key, updatedAt);
+        if (!ensured.some((section) => section.key === item.key)) continue;
+        sections = ensured;
+        accepted.push(item);
+      }
       if (accepted.length === 0) {
-        notify('没有可采用的章节：模型返回的 key 都不在当前模板里', 'error');
+        notify('没有可采用的章节：模型返回的 key 都不在当前报告里', 'error');
         return;
       }
-      const updatedAt = nowIso();
-      let sections = current.sections;
       for (const item of accepted) {
         sections = mergeSectionBodies(sections, item.key, item.body, {
           origin: 'ai',
@@ -569,10 +713,14 @@ export function ReportsPage() {
         notify(`未知章节：${action.key}`, 'error');
         return;
       }
-      const sections = mergeSectionBodies(current.sections, action.key, body, {
-        origin: 'auto',
-        updatedAt: nowIso(),
-      });
+      const updatedAt = nowIso();
+      const sections = mergeSectionBodies(
+        // 旧报告缺这一节时，重新汇总同样要先按展示位置落位，否则追加到末尾会重排列表。
+        ensureSection(current.sections, template, action.key, updatedAt),
+        action.key,
+        body,
+        { origin: 'auto', updatedAt },
+      );
       draftRef.current = { ...current, sections };
       setDraft(draftRef.current);
       commitNow({ sections });
@@ -613,6 +761,7 @@ export function ReportsPage() {
     period,
     reports,
     selectedReport,
+    template,
     workspace,
   ]);
 
@@ -737,6 +886,10 @@ export function ReportsPage() {
               onRebuildSection={(key) => setConfirm({ type: 'rebuild', key })}
               onClearSection={handleClearSection}
               onAiSection={handleAiSection}
+              onMoveSection={handleMoveSection}
+              onRenameSection={handleRenameSection}
+              onRemoveSection={handleRemoveSection}
+              onAddSection={handleAddSection}
               onCopyMarkdown={handleCopyMarkdown}
               onDownloadMarkdown={handleDownloadMarkdown}
             />
@@ -788,7 +941,7 @@ export function ReportsPage() {
               label={label}
               range={range}
               author={draft?.author ?? ''}
-              sections={draft?.sections ?? []}
+              sections={aiSections}
               template={template}
               facts={facts}
               readOnly={readOnly}

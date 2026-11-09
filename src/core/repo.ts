@@ -345,8 +345,13 @@ function normalizeRun(input: unknown, index: number): SopRunEntry {
   };
 }
 
-/** 单份报告的硬上限：章节数与单节正文长度。防止导入/生成把文档撑爆。 */
-const MAX_REPORT_SECTIONS = 40;
+/**
+ * 单份报告的章节硬上限：加载时超出部分会被裁掉（见 `normalizeReport`），
+ * UI 必须据此禁用「添加章节」，否则第 41 节看着存下了、下次加载却消失。
+ */
+export const MAX_REPORT_SECTIONS = 40;
+
+/** 单份报告的硬上限：单节正文长度。防止导入/生成把文档撑爆。 */
 const MAX_REPORT_SECTION_BODY = 200_000;
 
 /** '2026-W44' | '2026-11' | '2026-Q4' 三种周期写法之一。 */

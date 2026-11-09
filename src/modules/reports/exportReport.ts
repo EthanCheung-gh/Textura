@@ -21,6 +21,21 @@ export type ReportNotifyTone = 'info' | 'success' | 'error';
 export type ReportNotifier = (message: string, tone?: ReportNotifyTone) => void;
 
 /**
+ * 导出时的标题行内容：连续空白（含换行 `\n`、制表符 `\t`）压成一个空格并去首尾。
+ *
+ * 为什么导出层要再压一次：`sections.MAX_SECTION_TITLE_CHARS` 那套规范化只作用于
+ * **编辑器写入**（`addSection` / `renameSection`）。导入路径与历史数据不改写存储值，
+ * 标题里完全可能留着换行；而这里要把它拼成 `### <title>` 这样**一整行**，内嵌换行会把
+ * 标题劈成两半、后半截被 Markdown 读成正文里的新标题（甚至顶掉下一节的结构）。
+ *
+ * 为什么**不**裁剪长度、不加省略号：导出是用户手里的最终稿，宁可标题长一点，也不许
+ * 静默吞掉他写过的字——长度口径由编辑器入口负责，这里只负责「一行」这件事。
+ */
+function headingTitle(title: string): string {
+  return title.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * 章节正文已自带 `### 小标题`（见 draft.ts），这里只给没有标题的正文补上。
  * 空正文（`body.trim() === ''`）返回 null 表示**整节不输出**：
  * 用户点过「清空」的节不应在导出里留下一个孤立标题。
@@ -29,7 +44,7 @@ function sectionBlock(title: string, body: string): string | null {
   const trimmed = body.trim();
   if (!trimmed) return null;
   if (/^#{1,6}\s/.test(trimmed)) return trimmed;
-  return `### ${title}\n${trimmed}`;
+  return `### ${headingTitle(title)}\n${trimmed}`;
 }
 
 function rangeText(report: Report): string {
@@ -39,8 +54,10 @@ function rangeText(report: Report): string {
 
 /**
  * 整份报告的 Markdown：标题、期次、报告人、状态、各节正文、末尾生成时间。
- * 正文按 `report.sections` 的现有顺序输出（模板顺序由页面层保证），
+ * 正文按 `report.sections` 的**现有顺序**输出——顺序由用户在编辑器里用上移 / 下移决定
+ * （存储顺序即导出顺序），这里既不按模板重排、也不做任何二次排序；
  * 空正文的节被跳过，因此「清空」过的节不会留下孤立标题。
+ * 唯一被改写的是**输出的**节标题：压成一行、去首尾（见 `headingTitle`），存储值不动。
  */
 export function reportMarkdown(report: Report, now: Date = new Date()): string {
   const label = periodLabel(report.kind, report.period) || report.period;

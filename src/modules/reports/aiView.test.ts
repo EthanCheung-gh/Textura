@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { AiRequestError } from '../ai/client';
 import type { AiErrorKind } from '../ai/client';
 import { MAX_DIGEST_CHARS } from '../ai/prompts';
-import { aiErrorText, buildAiContext, digestSizeText, filterSectionsByTemplate } from './aiView';
+import {
+  aiErrorText,
+  buildAiContext,
+  digestSizeText,
+  filterSectionsByDisplay,
+} from './aiView';
 import { templateFor } from './draft';
 import type { ReportFactsDetailed } from './facts';
 
@@ -115,57 +120,83 @@ describe('aiErrorText', () => {
   });
 });
 
-describe('filterSectionsByTemplate', () => {
-  const template = templateFor('week');
+describe('filterSectionsByDisplay', () => {
+  /** 展示清单（模板节 + 自建节），顺序即编辑器里的顺序。 */
+  const orderedKeys = ['overview', 'custom-1', 'risks'];
+  /** 只要模板口径时，把模板节的 key 序列当展示清单传进来（原 `filterSectionsByTemplate`）。 */
+  const templateKeys = templateFor('week').sections.map((section) => section.key);
 
-  it('丢掉模板里没有的 key，按模板顺序输出', () => {
-    const result = filterSectionsByTemplate(
+  it('自建节同样放行，输出顺序 = 展示顺序（与模型返回顺序无关）', () => {
+    const result = filterSectionsByDisplay(
+      [
+        { key: 'risks', body: 'R' },
+        { key: 'custom-1', body: 'C' },
+        { key: 'overview', body: 'O' },
+      ],
+      orderedKeys,
+    );
+    expect(result.map((entry) => entry.key)).toEqual(['overview', 'custom-1', 'risks']);
+  });
+
+  it('清单外的 key（模型编出来的 / 旧模板遗留）丢掉', () => {
+    const result = filterSectionsByDisplay(
+      [
+        { key: 'legacy-section', body: '旧模板的节' },
+        { key: 'overview', body: 'O' },
+      ],
+      orderedKeys,
+    );
+    expect(result.map((entry) => entry.key)).toEqual(['overview']);
+  });
+
+  it('以模板 key 作展示清单：按模板顺序输出，自建节与遗留 key 一律丢掉', () => {
+    const result = filterSectionsByDisplay(
       [
         { key: 'risks', body: 'R1' },
         { key: 'legacy-section', body: '旧模板的节' },
         { key: 'overview', body: 'O1' },
       ],
-      template,
+      templateKeys,
     );
     expect(result.map((entry) => entry.key)).toEqual(['overview', 'risks']);
     expect(result[1]?.body).toBe('R1');
+    // 模板口径不会放行自建节：需要自建节时必须走展示清单。
+    expect(filterSectionsByDisplay([{ key: 'custom-1', body: 'C' }], templateKeys)).toEqual([]);
   });
 
   it('同一 key 重复出现时只留第一条', () => {
-    const result = filterSectionsByTemplate(
+    const result = filterSectionsByDisplay(
       [
-        { key: 'metrics', body: '第一份' },
-        { key: 'metrics', body: '第二份' },
+        { key: 'custom-1', body: '第一份' },
+        { key: 'custom-1', body: '第二份' },
       ],
-      template,
+      orderedKeys,
     );
     expect(result).toHaveLength(1);
     expect(result[0]?.body).toBe('第一份');
   });
 
-  it('全被过滤时返回空数组（由调用方报 response 错误）', () => {
-    expect(filterSectionsByTemplate([{ key: 'not-in-template', body: 'X' }], template)).toEqual([]);
-    expect(filterSectionsByTemplate([], template)).toEqual([]);
+  it('全被过滤 / 清单为空时返回空数组（由调用方报 response 错误）', () => {
+    expect(filterSectionsByDisplay([{ key: 'nope', body: 'X' }], orderedKeys)).toEqual([]);
+    expect(filterSectionsByDisplay([], orderedKeys)).toEqual([]);
+    expect(filterSectionsByDisplay([{ key: 'overview', body: 'O' }], [])).toEqual([]);
   });
 
-  it('保留额外字段，不重建对象', () => {
-    const entry = { key: 'overview', body: 'O', extra: 42 };
-    expect(filterSectionsByTemplate([entry], template)[0]).toBe(entry);
+  it('引用相等：原样返回命中的对象，便于上层做 memo 比较', () => {
+    const entry = { key: 'custom-1', body: 'C', extra: 1 };
+    expect(filterSectionsByDisplay([entry], orderedKeys)[0]).toBe(entry);
   });
 });
 
 describe('buildAiContext', () => {
-  it('节清单只取当前模板，缺节保留空正文', () => {
+  it('节清单取展示顺序，模板缺节保留空正文', () => {
     const template = templateFor('week');
     const ctx = buildAiContext({
       kind: 'week',
       period: '2026-W44',
       range: { start: '2026-10-26', end: '2026-11-01' },
       author: '张三',
-      sections: [
-        { key: 'overview', body: '本周概览正文' },
-        { key: 'legacy-section', body: '模板里没有的旧节' },
-      ],
+      sections: [{ key: 'overview', body: '本周概览正文' }],
       facts: makeFacts(),
     });
 
@@ -178,6 +209,57 @@ describe('buildAiContext', () => {
     expect(ctx.sections[0]?.body).toBe('本周概览正文');
     // 模板里有、报告里没有的节：保留成空正文，而不是从数组里删掉
     expect(ctx.sections.slice(1).every((section) => section.body === '')).toBe(true);
+  });
+
+  it('自建节与历史遗留 key 照样进入上下文，留在原槽位、用报告自存的标题', () => {
+    const ctx = buildAiContext({
+      kind: 'week',
+      period: '2026-W44',
+      range: null,
+      author: '',
+      sections: [
+        { key: 'risks', title: '风险与阻塞', body: '风险正文' },
+        { key: 'custom-1', title: '复盘与改进', body: '- 复盘' },
+        // 旧报告里残留的旧模板标题：模板节一律以模板标题为准，见下一条断言。
+        { key: 'overview', title: '旧的概览标题', body: '概览正文' },
+      ],
+      facts: makeFacts(),
+    });
+
+    // 顺序 = displaySections 的顺序：补齐的模板缺节夹在前后模板节之间，自建节留在原槽位。
+    expect(ctx.sections.map((section) => section.key)).toEqual([
+      'progress',
+      'metrics',
+      'risks',
+      'next',
+      'support',
+      'custom-1',
+      'overview',
+    ]);
+    const byKey = new Map(ctx.sections.map((section) => [section.key, section]));
+    expect(byKey.get('custom-1')).toEqual({
+      key: 'custom-1',
+      title: '复盘与改进',
+      body: '- 复盘',
+    });
+    expect(byKey.get('risks')?.body).toBe('风险正文');
+    // 模板节标题是口径来源：报告里存的旧标题不漂进提示词。
+    expect(byKey.get('overview')?.title).toBe('本周概览');
+  });
+
+  it('报告没有任何正文时，整份模板节都在，且都是空正文', () => {
+    const template = templateFor('week');
+    const ctx = buildAiContext({
+      kind: 'week',
+      period: '2026-W44',
+      range: null,
+      author: '',
+      sections: [],
+      facts: makeFacts(),
+    });
+    expect(ctx.sections).toEqual(
+      template.sections.map((section) => ({ key: section.key, title: section.title, body: '' })),
+    );
   });
 
   it('头部字段：期次文案由期次键反推，作者与范围原样带出', () => {

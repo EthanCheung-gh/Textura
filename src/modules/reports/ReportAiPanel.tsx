@@ -21,17 +21,19 @@ import type { AiMessage } from '../ai/client';
 import { PROVIDER_PRESETS, loadAiConfig, validateAiConfig } from '../ai/config';
 import type { AiConfig } from '../ai/config';
 import {
+  allowedSectionKeys,
   buildFactsDigest,
   parseReportSections,
   reportMessages,
   sectionMessages,
 } from '../ai/prompts';
-import { aiErrorText, buildAiContext, digestSizeText, filterSectionsByTemplate } from './aiView';
+import { aiErrorText, buildAiContext, digestSizeText, filterSectionsByDisplay } from './aiView';
 import type { AiErrorView } from './aiView';
 import type { ReportNotifier } from './exportReport';
 import type { ReportTemplate } from './draft';
 import type { ReportFactsDetailed } from './facts';
 import type { PeriodRange } from './period';
+import { displaySections } from './sections';
 
 /** 当前 AI 目标：整份，或编辑器里点开的那一节（`requestId` 每次点击递增，用来区分「再点一次」）。 */
 export type AiTarget =
@@ -72,7 +74,12 @@ export interface ReportAiPanelProps {
   label: string;
   range: PeriodRange | null;
   author: string;
-  /** 草稿正文（未落盘的编辑也在里面）。 */
+  /**
+   * 草稿正文（未落盘的编辑也在里面），**按存储顺序**传即可。
+   *
+   * 本组件内部用 `displaySections` 补出模板缺节、保留自建节，因此传原始草稿节就够了；
+   * 若是把编辑器已经排好的展示清单传进来，结果等价（补节是幂等的）。
+   */
   sections: ReportSection[];
   template: ReportTemplate;
   facts: ReportFactsDetailed | null;
@@ -195,9 +202,16 @@ export function ReportAiPanel({
     return buildFactsDigest({ kind, periodLabel: label, range, author, facts, sections: [] });
   }, [author, facts, kind, label, range]);
 
+  // 展示清单（与编辑器同一口径）：自建节 `custom-*` 在这里也有标题可查，标题不再只认模板。
+  // 模板缺节同样会被补出来，所以「报告里还没写过这一节」也能显示模板标题而不是 key。
+  const displayList = useMemo(
+    () => displaySections(template, { sections, updatedAt: '' }),
+    [sections, template],
+  );
+
   const sectionTitle = useCallback(
-    (key: string) => template.sections.find((section) => section.key === key)?.title ?? key,
-    [template],
+    (key: string) => displayList.find((section) => section.key === key)?.title ?? key,
+    [displayList],
   );
 
   const buildContext = useCallback(() => {
@@ -275,11 +289,17 @@ export function ReportAiPanel({
     try {
       const text = await completeChat(next, withSystem(next, messages), { signal });
       if (!canWriteState(seq)) return;
-      const filtered = filterSectionsByTemplate(parseReportSections(text), template);
-      // parseReportSections 已过滤未知 key，这里再按当前模板筛一次：
-      // 换过模板的报告只保留本节存在的章节，全被筛掉时明确报「格式异常」而不是给空列表。
+      // 白名单与顺序都取本次请求的章节清单（含自建节），与提示词里列出的完全一致：
+      // 自建章节的参考稿不能被模板并集挡掉，「全部采用」时也按编辑器顺序落到各节。
+      const orderedKeys = allowedSectionKeys(context);
+      const filtered = filterSectionsByDisplay(
+        parseReportSections(text, orderedKeys),
+        orderedKeys,
+      );
+      // parseReportSections 已按清单过滤未知 key，这里再对齐一次展示顺序与去重，
+      // 全被筛掉时明确报「格式异常」而不是给空列表。
       if (filtered.length === 0) {
-        throw new AiRequestError('response', '模型返回的章节都不在当前模板内');
+        throw new AiRequestError('response', '模型返回的章节都不在本次章节清单内');
       }
       setReportResult(filtered);
     } catch (requestError) {
@@ -289,7 +309,7 @@ export function ReportAiPanel({
     } finally {
       if (canWriteState(seq)) setLoading(null);
     }
-  }, [buildContext, canWriteState, disabled, request, template]);
+  }, [buildContext, canWriteState, disabled, request]);
 
   const retry = useCallback(() => {
     const last = lastRequestRef.current;

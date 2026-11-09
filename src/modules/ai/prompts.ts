@@ -17,11 +17,13 @@
  *
  * 输出契约：
  * - 单节生成：只输出该节正文（Markdown 列表，不重复节标题，不编造数据）；
- * - 整份生成：严格 JSON 数组 `[{"key":"overview","body":"..."}]`，key 只允许模板节 key；
+ * - 整份生成：严格 JSON 数组 `[{"key":"overview","body":"..."}]`，key 只允许章节清单
+ *   （模板节 + 用户自建节）里的 key；
  * - 中文文案，与项目风格一致，不使用 emoji。
  */
 import { REPORT_TEMPLATES, templateFor } from '../reports/draft';
 import type { FactKind, ReportFactsDetailed } from '../reports/facts';
+import { isCustomSectionKey, MAX_SECTION_TITLE_CHARS } from '../reports/sections';
 import { AiRequestError } from './client';
 import type { AiMessage } from './client';
 
@@ -32,7 +34,12 @@ export interface ReportAiContext {
   range: { start: string; end: string } | null;
   author: string;
   facts: ReportFactsDetailed;
-  /** 模板节（key / title / 当前正文），由调用方按 `templateFor(kind)` 提供。 */
+  /**
+   * 章节清单（key / title / 当前正文），**顺序即编辑器展示顺序**。
+   *
+   * 不再等同于「当前模板的节」：用户可以自建章节（`custom-*`），模板节也可能被上移下移。
+   * 模板节的标题来自模板，自建节的标题来自报告；调用方不给时回落到 `templateFor(kind)`。
+   */
   sections: { key: string; title: string; body: string }[];
 }
 
@@ -67,7 +74,16 @@ const FACT_KIND_ORDER: FactKind[] = ['completed', 'risk', 'kr', 'run', 'nextUp']
 const DIGEST_NOTE_RESERVE = 32;
 /** 单条事实行的长度上限，避免一条超长标题吃光预算。 */
 const MAX_DIGEST_LINE_CHARS = 200;
-const MAX_HEADER_VALUE_CHARS = 120;
+
+/**
+ * 头部取值（周期、作者、章节标题）进提示词时的长度上限。
+ *
+ * 直接取 `sections.MAX_SECTION_TITLE_CHARS`：章节标题的预算只允许有一份真源，两处各写
+ * 一个 120 早晚会走样。这里仍保留同名导出，因为提示层要**独立**再裁一次——标题的规范化
+ * 只发生在编辑器写入（`addSection` / `renameSection`），导入 / 历史数据里的标题不经过它，
+ * 提示层不能假设自己拿到的标题已经是单行且不超长的。
+ */
+export const MAX_HEADER_VALUE_CHARS = MAX_SECTION_TITLE_CHARS;
 
 const REPORT_TYPE_LABELS: Record<ReportAiContext['kind'], string> = {
   week: '周报',
@@ -86,6 +102,24 @@ const SECTION_SCOPES: Record<string, string> = {
   support: '写出需要的支持、决策或资源；摘要里没有依据的内容不要编造，可标注为待补充。',
 };
 
+/**
+ * 模板之外的章节（用户自建 `custom-*`、历史模板遗留 key）的写作提示。
+ *
+ * 为什么要点名「不在模板的固定章节里」：模型见过 overview / risks 这类模板 key 的既定骨架，
+ * 遇到 `custom-3` 时容易去找「它对应的模板节」，甚至干脆不写；先说清「没有预设骨架、
+ * 按标题自行组织」，既给出方向，又保留「不编造数据 + 中文 `- ` 列表」这两条底线。
+ */
+const CUSTOM_SECTION_SCOPE =
+  '不在模板的固定章节里，没有预设骨架可依；按该节标题自行组织内容，沿用中文与「- 」列表格式，不编造数据。';
+
+/** 模板外的节用标题兜底自称；标题可能被用户清空，此时退回 key。 */
+function sectionScope(section: { key: string; title: string }): string {
+  const scope = SECTION_SCOPES[section.key];
+  if (scope) return scope;
+  const title = sectionTitleText(section.title) || section.key;
+  return `「${title}」${CUSTOM_SECTION_SCOPE}`;
+}
+
 function clipText(value: string, max: number): string {
   const text = value.trim();
   if (text.length <= max) return text;
@@ -96,12 +130,39 @@ function clipText(value: string, max: number): string {
   return `${cut}…`;
 }
 
+/**
+ * 章节标题进提示词的唯一口径：先把换行 / 连续空白压成单个空格，再按
+ * `MAX_HEADER_VALUE_CHARS` 截断；标题为空（或全空白）时退回 key。
+ *
+ * 为什么要在这里单独裁一次：编辑器写入（`sections.renameSection`）确实会压空白并限长，
+ * 但那条路径只约束用户手输 / 粘贴的标题，**导入与历史数据不经过它**——工作区里完全可能
+ * 存着一份多 KB、或者带换行的标题。提示词是多行文本，标题一旦超长或被换行拆开，
+ * 「章节清单」那一行就会被撑成几千字或拆成多行，模型容易读成两个章节。压空白不改变正常
+ * 标题的字节（`a b` / `复盘与改进` 原样保留），只有真的含换行 / 制表符 / 超长的标题才被
+ * 改写。标题自带全角括号 `）` 时清单仍有歧义，但至少被压成一行且有长度上限，不会污染
+ * 紧邻的其它章节。
+ */
+function sectionTitleText(title: string): string {
+  return clipText(title.replace(/\s+/g, ' '), MAX_HEADER_VALUE_CHARS);
+}
+
 function resolveSections(
   ctx: ReportAiContext,
 ): { key: string; title: string; body?: string }[] {
   if (ctx.sections.length > 0) return ctx.sections;
   // 调用方没给节时回落到模板，保证 key 清单始终来自模板而不是凭空的字符串。
   return templateFor(ctx.kind).sections;
+}
+
+/**
+ * 整份生成允许出现的 key 清单，**与提示词里列出的清单同源**。
+ *
+ * 必须由调用方（面板）把它传给 `parseReportSections`：提示词按 `ctx.sections` 列清单
+ * （含用户自建节），解析层若还按模板并集卡 key，模型照清单写出来的 `custom-*` 会被静默丢掉，
+ * 表现为「自建节的参考稿永远生成不出来」。`ctx.sections` 为空时按 `resolveSections` 回落模板。
+ */
+export function allowedSectionKeys(ctx: ReportAiContext): string[] {
+  return resolveSections(ctx).map((entry) => entry.key);
 }
 
 function headerLines(ctx: ReportAiContext): string[] {
@@ -190,12 +251,14 @@ export function sectionMessages(ctx: ReportAiContext, sectionKey: string): AiMes
     });
   }
 
+  // 标题与 `sectionScope` 同口径裁剪：超长 / 带换行的自建节标题不该把这一行撑坏。
+  const title = sectionTitleText(section.title) || section.key;
   const lines = [
-    `请撰写这份${REPORT_TYPE_LABELS[ctx.kind]}的「${section.title}」一节。`,
+    `请撰写这份${REPORT_TYPE_LABELS[ctx.kind]}的「${title}」一节。`,
     '',
     ...outputRules(),
     '',
-    `本节范围：${SECTION_SCOPES[sectionKey] ?? '只写与本节标题相关的内容，全部依据下方事实摘要。'}`,
+    `本节范围：${sectionScope(section)}`,
     '',
     '事实摘要：',
     buildFactsDigest(ctx),
@@ -204,23 +267,36 @@ export function sectionMessages(ctx: ReportAiContext, sectionKey: string): AiMes
   return [{ role: 'user', content: lines.join('\n') }];
 }
 
-/** 整份生成：要求返回严格 JSON 数组，key 只允许模板节 key。 */
+/**
+ * 整份生成：要求返回严格 JSON 数组。
+ *
+ * key 清单直接就是章节清单（`ctx.sections`，含用户自建节；为空时回落模板），
+ * 提示词里列什么、`allowedSectionKeys` 就放行什么，两边不允许各说各话。
+ */
 export function reportMessages(ctx: ReportAiContext): AiMessage[] {
   const sections = resolveSections(ctx);
   const allowed = sections.map((entry) => entry.key);
+  // 只有存在自建节时才多说一句，纯模板场景的提示词逐字不变。
+  const customNote = sections.some((entry) => isCustomSectionKey(entry.key))
+    ? ['- 清单里 key 形如 custom-* 的是用户自建章节：按清单给出的标题写，不要合并进其它章节；']
+    : [];
   const lines = [
     `请基于下面的事实摘要，写出这份${REPORT_TYPE_LABELS[ctx.kind]}的完整正文，周期为 ${ctx.periodLabel}。`,
     '',
     '输出要求：',
     '- 只返回一个 JSON 数组，不要 Markdown 代码围栏，不要在数组前后添加任何说明文字；',
     '- 数组每一项形如 {"key":"overview","body":"..."}，key 与 body 都必须是字符串；',
-    `- key 只允许这些取值：${allowed.join('、')}；不要新增、改名或省略，也不要出现其它 key；`,
+    `- key 只允许这些取值（即下方「章节清单」中的 key）：${allowed.join('、')}；不要新增、改名或省略，也不要出现其它 key；`,
     `- 每个 key 只出现一次，顺序为：${allowed.join('、')}；`,
+    ...customNote,
     '- body 只写该节正文，使用 Markdown 列表，每条以「- 」开头，不要重复节标题；',
     '- 不要编造事实摘要里不存在的人名、数字或日期；该节没有记录时写「本周期无相关记录」；',
     '- 中文表达，不使用 emoji 或表情符号。',
     '',
-    `章节清单：${sections.map((entry) => `${entry.key}（${entry.title}）`).join('、')}`,
+    // 清单是**一行**结构：标题必须先压空白再截断，否则一个带换行的标题会把清单拆成多行。
+    `章节清单：${sections
+      .map((entry) => `${entry.key}（${sectionTitleText(entry.title) || entry.key}）`)
+      .join('、')}`,
     '',
     '事实摘要：',
     buildFactsDigest(ctx),
@@ -233,7 +309,12 @@ export function reportMessages(ctx: ReportAiContext): AiMessage[] {
 /* 解析                                                                */
 /* ------------------------------------------------------------------ */
 
-/** 所有模板节 key 的并集：整份结构里只接受这些 key。 */
+/**
+ * 所有模板节 key 的并集：**调用方没给章节清单时的兜底白名单**。
+ *
+ * 自建节（`custom-*`）不可能出现在这里——它只存在于具体某份报告里。
+ * 面板必须把 `allowedSectionKeys(ctx)` 传进 `parseReportSections`，自定义章节才能落地。
+ */
 const ALLOWED_SECTION_KEYS: Set<string> = new Set(
   REPORT_TEMPLATES.flatMap((template) => template.sections.map((section) => section.key)),
 );
@@ -297,11 +378,20 @@ function stripTrailingCommas(json: string): string {
  * 解析整份生成结果。
  *
  * 容忍：```json 围栏、前后说明文字、尾随逗号。
- * 过滤：未知 key、非字符串 body、空 body、重复 key。
+ * 过滤：白名单外的 key、非字符串 body、空 body、重复 key。
+ *
+ * 白名单 `allowedKeys` 优先用调用方给的**章节清单**（模板节 + 自建节，见
+ * `allowedSectionKeys`）；不传或传空时回落到所有模板 key 的并集，纯模板场景行为与以前一致。
+ *
  * 失败（无数组 / 非法 JSON / 非数组 / 全部被过滤）一律抛
  * `AiRequestError('response', ...)`。
  */
-export function parseReportSections(text: string): { key: string; body: string }[] {
+export function parseReportSections(
+  text: string,
+  allowedKeys?: readonly string[],
+): { key: string; body: string }[] {
+  const allowed =
+    allowedKeys && allowedKeys.length > 0 ? new Set(allowedKeys) : ALLOWED_SECTION_KEYS;
   const raw = extractJsonArray(text);
   const detail = clipText(text, 200) || undefined;
   if (raw === null) {
@@ -328,7 +418,7 @@ export function parseReportSections(text: string): { key: string; body: string }
     }
     const key = typeof entry.key === 'string' ? entry.key.trim() : '';
     const body = typeof entry.body === 'string' ? entry.body.trim() : '';
-    if (!key || !ALLOWED_SECTION_KEYS.has(key) || !body || seen.has(key)) {
+    if (!key || !allowed.has(key) || !body || seen.has(key)) {
       dropped += 1;
       continue;
     }

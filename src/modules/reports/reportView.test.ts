@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Report, ReportSection } from '../../core/model';
 import { templateFor } from './draft';
 import {
+  addSectionAriaLabel,
   appendLine,
   draftFromReport,
   filterReports,
@@ -116,29 +117,44 @@ describe('filterReports', () => {
 });
 
 describe('orderedSections', () => {
-  it('按模板顺序取节，缺失的用模板标题兜底成空节', () => {
+  it('存储顺序即展示顺序，缺失的模板节补在模板相对位置', () => {
     const template = templateFor('week');
-    const report = makeReport({
-      sections: [
-        section({ key: 'risks', title: '风险与阻塞', body: '### 风险与阻塞\n- 无' }),
-        section({ key: 'overview', title: '本周概览（手改标题）', body: '### 概览\n- 1 项' }),
-      ],
-    });
+    const risks = section({ key: 'risks', title: '风险与阻塞', body: '### 风险与阻塞\n- 无' });
+    const overview = section({ key: 'overview', title: '本周概览（手改标题）', body: '### 概览\n- 1 项' });
+    const report = makeReport({ sections: [risks, overview] });
     const ordered = orderedSections(template, report);
 
-    expect(ordered.map((entry) => entry.key)).toEqual(template.sections.map((entry) => entry.key));
-    // 已存在的节保留自身标题与正文
-    expect(ordered[0]).toMatchObject({ key: 'overview', title: '本周概览（手改标题）', body: '### 概览\n- 1 项' });
-    // 缺失的节用模板标题兜底，正文为空、origin 回落 auto
+    // 存储顺序（risks 在前）不被模板重排；缺的节各就各位：
+    // progress / metrics 插到 risks 之前，next / support 插到 risks 之后，overview 留在末尾
+    expect(ordered.map((entry) => entry.key)).toEqual([
+      'progress',
+      'metrics',
+      'risks',
+      'next',
+      'support',
+      'overview',
+    ]);
+    expect(ordered).toHaveLength(template.sections.length);
+    // 已存在的节保留自身标题与正文（同一引用）
+    expect(ordered[2]).toBe(risks);
+    expect(ordered[5]).toBe(overview);
+    // 缺失的节用模板标题兜底，正文为空、origin 回落 auto、时间戳取报告自身
     const metrics = ordered.find((entry) => entry.key === 'metrics');
     expect(metrics).toMatchObject({ title: '量化指标', body: '', origin: 'auto' });
     expect(metrics?.updatedAt).toBe(report.updatedAt);
   });
 
-  it('报告里多出来的节不参与渲染（模板外的 key）', () => {
+  it('模板外的自定义节保留在原槽位，不再被丢弃', () => {
     const template = templateFor('week');
-    const report = makeReport({ sections: [section({ key: 'custom' })] });
-    expect(orderedSections(template, report).some((entry) => entry.key === 'custom')).toBe(false);
+    const custom = section({ key: 'custom-1', title: '自定义章节 1', body: '### 复盘\n- 一条' });
+    const report = makeReport({ sections: [custom] });
+    const ordered = orderedSections(template, report);
+
+    expect(ordered.map((entry) => entry.key)).toEqual([
+      'custom-1',
+      ...template.sections.map((entry) => entry.key),
+    ]);
+    expect(ordered[0]).toBe(custom);
   });
 });
 
@@ -268,7 +284,7 @@ describe('写盘判据（FIN-06 回归）', () => {
 /* ------------------------------------------------------------------ */
 
 describe('节内按钮的可访问名（A11Y-01 回归）', () => {
-  it('三类动作都带节名，且包含可见文案（label-in-name 的包含关系）', () => {
+  it('正文动作都带节名，且包含可见文案（label-in-name 的包含关系）', () => {
     expect(sectionActionAriaLabel('rebuild', '风险与阻塞')).toBe('重新汇总本节：风险与阻塞');
     expect(sectionActionAriaLabel('clear', '风险与阻塞')).toBe('清空本节：风险与阻塞');
     expect(sectionActionAriaLabel('ai', '风险与阻塞')).toBe('本节 AI 参考：风险与阻塞');
@@ -283,6 +299,29 @@ describe('节内按钮的可访问名（A11Y-01 回归）', () => {
     }
   });
 
+  it('章节集合动作（上移 / 下移 / 删除）同样带节名，且包含可见文案', () => {
+    expect(sectionActionAriaLabel('moveUp', '自定义章节 1')).toBe('上移本节：自定义章节 1');
+    expect(sectionActionAriaLabel('moveDown', '自定义章节 1')).toBe('下移本节：自定义章节 1');
+    expect(sectionActionAriaLabel('remove', '自定义章节 1')).toBe('删除本节：自定义章节 1');
+    const visible: [Parameters<typeof sectionActionAriaLabel>[0], string][] = [
+      ['moveUp', '上移'],
+      ['moveDown', '下移'],
+      ['remove', '删除'],
+    ];
+    for (const [action, text] of visible) {
+      const label = sectionActionAriaLabel(action, '自定义章节 1');
+      expect(label).toContain(text);
+      expect(label).toContain('自定义章节 1');
+    }
+  });
+
+  it('「添加章节」没有节名可带：包含可见文案，且不拼空的 `：` 后缀', () => {
+    // 可见文案是「＋ 添加章节」（加号是图标，aria-hidden）
+    expect(addSectionAriaLabel()).toContain('添加章节');
+    expect(addSectionAriaLabel()).not.toContain('：');
+    expect(addSectionAriaLabel()).not.toContain('undefined');
+  });
+
   it('「AI 参考」的语义化别名与 ai 动作一致', () => {
     const titles = ['本周概览', '量化指标', '风险与阻塞'];
     for (const title of titles) expect(sectionAiAriaLabel(title)).toBe(sectionActionAriaLabel('ai', title));
@@ -292,5 +331,7 @@ describe('节内按钮的可访问名（A11Y-01 回归）', () => {
     const titles = templateFor('week').sections.map((entry) => entry.title);
     expect(new Set(titles.map((title) => sectionAiAriaLabel(title))).size).toBe(titles.length);
     expect(new Set(titles.map((title) => sectionActionAriaLabel('clear', title))).size).toBe(titles.length);
+    expect(new Set(titles.map((title) => sectionActionAriaLabel('moveUp', title))).size).toBe(titles.length);
+    expect(new Set(titles.map((title) => sectionActionAriaLabel('remove', title))).size).toBe(titles.length);
   });
 });

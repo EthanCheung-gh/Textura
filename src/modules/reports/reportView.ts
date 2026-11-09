@@ -12,6 +12,7 @@ import type {
   ReportSectionOrigin,
 } from '../../core/model';
 import type { ReportTemplate } from './draft';
+import { displaySections } from './sections';
 
 /** 粒度中文名（周报 / 月报 / 季报），直接复用模型层常量，避免两处各写一份。 */
 export const REPORT_KIND_LABELS = REPORT_PERIOD_LABELS;
@@ -85,23 +86,17 @@ export function filterReports(reports: Report[], query: string): Report[] {
 }
 
 /**
- * 按模板顺序取节：模板里有、报告里没有的 key 用模板标题兜底成空节，
- * 这样旧报告（模板改版前生成）也不会在编辑器里少一节。
- * 报告里多出来的节（不在当前模板里）不参与渲染，但 `mergeSectionBodies`
- * 是整份写回的，因此它们不会被静默丢弃。
+ * 编辑器要展示的章节列表。排序口径**只有一份**，实现全部委托给
+ * `sections.ts` 的 `displaySections`，本函数只保留历史签名给页面层使用。
+ *
+ * - 存储顺序即展示顺序：用户在编辑器里上移 / 下移过的顺序直接生效，不再被模板重排；
+ * - 模板里有、报告里没有的 key 用模板标题补一个空节，位置按**模板相对位置**，
+ *   这样旧报告（模板改版前生成）既不会少一节，补出来的空节也不会跑到正文后面；
+ * - 模板外的自定义节（`custom-*`）**保留**在原槽位参与渲染——此前「不参与渲染」
+ *   的口径已经不成立：用户自己加的章节必须能看见，否则加了等于没加。
  */
 export function orderedSections(template: ReportTemplate, report: Report): ReportSection[] {
-  return template.sections.map((templateSection) => {
-    const existing = report.sections.find((section) => section.key === templateSection.key);
-    if (existing) return existing;
-    return {
-      key: templateSection.key,
-      title: templateSection.title,
-      body: '',
-      origin: 'auto',
-      updatedAt: report.updatedAt,
-    };
-  });
+  return displaySections(template, report);
 }
 
 /** 字数：所有章节正文去掉空白后的字符数（中英混排下的近似「字数」）。 */
@@ -151,25 +146,38 @@ export function sectionBodyChanged(
 /* 节内工具条的可访问名（A11Y-01）                                      */
 /* ------------------------------------------------------------------ */
 
-/** 节内工具条的动作：可见文案在各节之间逐字重复，可访问名必须带上节名。 */
-export type SectionAction = 'rebuild' | 'clear' | 'ai';
+/**
+ * 节内工具条的动作：可见文案在各节之间逐字重复，可访问名必须带上节名。
+ *
+ * 前三个（汇总 / 清空 / AI 参考）是节内正文动作，后三个（上移 / 下移 / 删除）是
+ * 章节集合动作；`add` 不是某一节的动作（「添加章节」按钮在列表末尾），放进来只是为了
+ * 可访问名口径统一（同样要包含可见文案）。
+ */
+export type SectionAction = 'rebuild' | 'clear' | 'ai' | 'moveUp' | 'moveDown' | 'remove' | 'add';
 
 /**
- * 可访问名前缀。三者都**包含**可见文案（「重新汇总」/「清空」/「AI 参考」），
- * 满足 WCAG 2.5.3 label-in-name 的包含关系——注意 `本节 AI 参考` 是**包含**
- * 而非以「AI 参考」开头，判据看的是包含，不是前缀。
+ * 可访问名前缀。它们都**包含**可见文案（「重新汇总」/「清空」/「AI 参考」/「上移」/
+ * 「下移」/「删除」/「添加章节」），满足 WCAG 2.5.3 label-in-name 的包含关系——
+ * 注意 `本节 AI 参考` 是**包含**而非以「AI 参考」开头，判据看的是包含，不是前缀。
  */
 const SECTION_ACTION_ARIA_PREFIX: Record<SectionAction, string> = {
   rebuild: '重新汇总本节',
   clear: '清空本节',
   ai: '本节 AI 参考',
+  moveUp: '上移本节',
+  moveDown: '下移本节',
+  remove: '删除本节',
+  add: '在报告末尾添加章节',
 };
 
 /**
  * 节内按钮的可访问名：`本节 AI 参考：量化指标`、`重新汇总本节：风险与阻塞`……
  *
- * 可见文案保持「重新汇总 / 清空 / AI 参考」不变（视觉不变），可访问名**包含**该文案；
- * 但同一个页面上同名按钮会出现 6~7 次，屏幕阅读器与语音控制无法区分是哪一节。
+ * 可见文案保持「重新汇总 / 清空 / AI 参考 / 上移 / 下移 / 删除」不变（视觉不变），
+ * 可访问名**包含**该文案；但同一个页面上同名按钮会出现 6~7 次，屏幕阅读器与语音控制
+ * 无法区分是哪一节。
+ *
+ * `add` 动作没有「哪一节」可说，不要用它——用 `addSectionAriaLabel()`。
  */
 export function sectionActionAriaLabel(action: SectionAction, title: string): string {
   return `${SECTION_ACTION_ARIA_PREFIX[action]}：${title}`;
@@ -178,6 +186,16 @@ export function sectionActionAriaLabel(action: SectionAction, title: string): st
 /** 「AI 参考」按钮的可访问名（`sectionActionAriaLabel('ai', title)` 的语义化别名）。 */
 export function sectionAiAriaLabel(title: string): string {
   return sectionActionAriaLabel('ai', title);
+}
+
+/**
+ * 「添加章节」按钮的可访问名。
+ *
+ * 列表末尾只有一个「添加章节」，不存在重名，因此不带节名、也不拼 `：` 分隔符；
+ * 但前缀文案仍然**包含**可见文案「添加章节」（label-in-name）。
+ */
+export function addSectionAriaLabel(): string {
+  return SECTION_ACTION_ARIA_PREFIX.add;
 }
 
 export interface SectionMergeMeta {

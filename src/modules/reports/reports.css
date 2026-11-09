@@ -261,11 +261,46 @@
   color: var(--text);
 }
 
+/* 自建节的标题就地可改：h3 仍是标题（文档大纲不断），里面的文字换成输入框。
+   沿用标题字号与字重，看上去仍是「这一节的名字」；宽度上限避免长标题把右侧操作挤走。 */
+.reports-section-title--editing {
+  flex: 1 1 180px;
+  max-width: 320px;
+}
+
+.reports-section-title-input {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+/* 每节 5~6 个按钮（上移 / 下移 / 删除或重新汇总 / 清空 / AI 参考）：
+   1024px 下会折行，靠 flex-wrap 兜住；折行后整簇仍贴右对齐，不会散在标题下面。 */
 .reports-section-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
+  margin-left: auto;
+}
+
+/* 删除自建节：ghost 底 + 危险色，静止时不抢眼，悬停才显出「不可逆」。 */
+.reports-section-actions .reports-section-remove {
+  color: var(--danger-ink);
+}
+
+.reports-section-actions .reports-section-remove:hover:not(:disabled) {
+  color: var(--danger-ink);
+  background: var(--surface);
+}
+
+/* 列表末尾的「添加章节」：与最后一节正文留一点距离，避免误点。 */
+.reports-section-add {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: var(--space-1);
 }
 
 /* 正文是中文 Markdown 纯文本：用 UI 字体保证中文行宽，行高留足便于逐行校对。 */

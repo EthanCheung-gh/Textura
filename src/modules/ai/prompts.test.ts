@@ -3,6 +3,8 @@ import { AiRequestError } from './client';
 import {
   DIGEST_KIND_LIMITS,
   MAX_DIGEST_CHARS,
+  MAX_HEADER_VALUE_CHARS,
+  allowedSectionKeys,
   buildFactsDigest,
   parseReportSections,
   reportMessages,
@@ -72,8 +74,28 @@ function makeContext(overrides: Partial<ReportAiContext> = {}): ReportAiContext 
   };
 }
 
+/** 同 `makeContext`，但末尾多一节用户自建的 `custom-1`（章节清单里混入自建节）。 */
+function makeContextWithCustom(): ReportAiContext {
+  const base = makeContext();
+  return {
+    ...base,
+    sections: [...base.sections, { key: 'custom-1', title: '复盘与改进', body: '' }],
+  };
+}
+
 function onlyContent(messages: { content: string }[]): string {
   return messages.map((message) => message.content).join('\n');
+}
+
+/** 章节清单那一行（整份提示词里唯一列出 key（标题）的行）。 */
+function listLineOf(content: string): string {
+  return content.split('\n').find((line) => line.startsWith('章节清单：')) ?? '';
+}
+
+/** 在基础上下文末尾加一节标题可控的自建节，用来验证标题裁剪口径。 */
+function withCustomTitle(title: string, key = 'custom-1'): ReportAiContext {
+  const base = makeContext();
+  return { ...base, sections: [...base.sections, { key, title, body: '' }] };
 }
 
 describe('buildFactsDigest', () => {
@@ -181,6 +203,63 @@ describe('sectionMessages', () => {
     expect(error?.kind).toBe('config');
     expect(error?.detail).toContain('overview');
   });
+
+  it('模板节沿用固定的写作提示（口径不变）', () => {
+    const content = onlyContent(sectionMessages(makeContext(), 'overview'));
+    expect(content).toContain('本节范围：用三到五条概述本周期整体产出与节奏');
+    expect(content).not.toContain('不在模板的固定章节里');
+  });
+
+  it('自建节：标题进句子，并用兜底写作提示说明它不是模板章节', () => {
+    const content = onlyContent(sectionMessages(makeContextWithCustom(), 'custom-1'));
+
+    expect(content).toContain('「复盘与改进」一节');
+    // 兜底提示要点名「不在模板的固定章节里」，避免模型去找一个并不存在的模板节。
+    expect(content).toContain('本节范围：「复盘与改进」不在模板的固定章节里');
+    expect(content).toContain('「- 」列表格式');
+    expect(content).toContain('不编造数据');
+    // 不串用模板节的写作提示。
+    expect(content).not.toContain('用三到五条概述本周期整体产出与节奏');
+  });
+
+  it('自建节标题被清空时退回 key，仍能给出可读的范围说明', () => {
+    const base = makeContext();
+    const ctx: ReportAiContext = {
+      ...base,
+      sections: [...base.sections, { key: 'custom-2', title: '   ', body: '' }],
+    };
+    const content = onlyContent(sectionMessages(ctx, 'custom-2'));
+    expect(content).toContain('本节范围：「custom-2」不在模板的固定章节里');
+    // 句子里的标题同样退回 key，不留一对空括号。
+    expect(content).toContain('请撰写这份周报的「custom-2」一节。');
+  });
+
+  it('超长自建节标题按 MAX_HEADER_VALUE_CHARS 裁剪（不把整段粘贴文本塞进提示词）', () => {
+    const clipped = `${'长'.repeat(MAX_HEADER_VALUE_CHARS - 1)}…`;
+    const content = onlyContent(sectionMessages(withCustomTitle('长'.repeat(300)), 'custom-1'));
+
+    expect(content).toContain(`请撰写这份周报的「${clipped}」一节。`);
+    expect(content).toContain(`本节范围：「${clipped}」不在模板的固定章节里`);
+    // 未裁剪的原文不应出现在提示词的任何位置。
+    expect(content).not.toContain('长'.repeat(MAX_HEADER_VALUE_CHARS + 1));
+  });
+
+  it('标题里的换行 / 连续空白压成单个空格：句子与范围说明都保持单行', () => {
+    const content = onlyContent(
+      sectionMessages(withCustomTitle('复盘与改进\n第二行\t附录'), 'custom-1'),
+    );
+
+    expect(content).toContain('请撰写这份周报的「复盘与改进 第二行 附录」一节。');
+    expect(content).toContain('本节范围：「复盘与改进 第二行 附录」不在模板的固定章节里');
+  });
+
+  it('正常标题逐字进入句子（裁剪不改变正常标题的字节）', () => {
+    const content = onlyContent(sectionMessages(makeContextWithCustom(), 'custom-1'));
+
+    expect(content).toContain('请撰写这份周报的「复盘与改进」一节。');
+    expect(content).toContain('本节范围：「复盘与改进」不在模板的固定章节里');
+    expect(content).not.toContain('…');
+  });
 });
 
 describe('reportMessages', () => {
@@ -203,10 +282,71 @@ describe('reportMessages', () => {
     expect(content).toContain('support');
   });
 
+  it('自建节进入 key 白名单与章节清单，并说明它是用户自建章节', () => {
+    const content = onlyContent(reportMessages(makeContextWithCustom()));
+    expect(content).toContain('custom-1（复盘与改进）');
+    expect(content).toContain('只允许这些取值');
+    expect(content).toContain('章节清单：');
+    expect(content).toContain('用户自建章节');
+  });
+
+  it('纯模板场景的提示词不带自建节痕迹（行为与以前一致）', () => {
+    const content = onlyContent(reportMessages(makeContext()));
+    expect(content).not.toContain('用户自建章节');
+    expect(content).not.toContain('custom-');
+  });
+
   it('提示词不夹带人格设定（systemPrompt 由调用方注入）', () => {
     const content = onlyContent(reportMessages(makeContext()));
     expect(content).not.toContain('你是 Textura');
     expect(content).not.toContain('执行助理');
+  });
+
+  it('正常标题逐字进入章节清单（与裁剪前的拼装完全一致）', () => {
+    const ctx = makeContextWithCustom();
+    const listLine = listLineOf(onlyContent(reportMessages(ctx)));
+
+    // 逐字比对：等于「直接拿原始标题拼」的结果，说明裁剪对正常标题零影响。
+    expect(listLine).toBe(
+      `章节清单：${ctx.sections.map((entry) => `${entry.key}（${entry.title}）`).join('、')}`,
+    );
+    expect(listLine).not.toContain('…');
+  });
+
+  it('超长自建节标题在章节清单里被裁剪到 MAX_HEADER_VALUE_CHARS', () => {
+    const clipped = `${'长'.repeat(MAX_HEADER_VALUE_CHARS - 1)}…`;
+    const listLine = listLineOf(onlyContent(reportMessages(withCustomTitle('长'.repeat(300)))));
+
+    expect(listLine).toContain(`custom-1（${clipped}）`);
+    // 清单仍是「一行」：长度只随章节数与上限增长，不会被用户的粘贴文本撑爆。
+    expect(listLine.length).toBeLessThan(MAX_HEADER_VALUE_CHARS + 200);
+  });
+
+  it('标题里的换行 / 全角右括号：清单保持单行，且不牵连相邻章节', () => {
+    const clean = onlyContent(reportMessages(makeContextWithCustom()));
+    const messy = onlyContent(reportMessages(withCustomTitle('复盘与改进\n第二行）附录')));
+    const listLine = listLineOf(messy);
+
+    // 换行被压平：整份提示词的行数不因标题而增加（摘要与标题无关，行数应完全一致）。
+    expect(messy.split('\n')).toHaveLength(clean.split('\n').length);
+    // 相邻章节仍在同一行里、按「、」分隔，没有被标题里的括号拆出去。
+    expect(listLine.startsWith('章节清单：overview（本周概览）、progress（本周进展）')).toBe(true);
+    expect(listLine.endsWith('custom-1（复盘与改进 第二行）附录）')).toBe(true);
+  });
+});
+
+describe('allowedSectionKeys', () => {
+  it('与提示词清单同源：含自建节，且保持章节顺序', () => {
+    expect(allowedSectionKeys(makeContextWithCustom())).toEqual([
+      ...templateFor('week').sections.map((section) => section.key),
+      'custom-1',
+    ]);
+  });
+
+  it('ctx.sections 为空时回落模板 key（解析白名单不会变成空集）', () => {
+    expect(allowedSectionKeys(makeContext({ sections: [] }))).toEqual(
+      templateFor('week').sections.map((section) => section.key),
+    );
   });
 });
 
@@ -298,5 +438,25 @@ describe('parseReportSections', () => {
     }
     expect(error).toBeInstanceOf(AiRequestError);
     expect(error?.kind).toBe('response');
+  });
+
+  it('自建节 key 只有传了章节清单才放行，没传时按模板并集兜底', () => {
+    const text = '[{"key":"overview","body":"- 概览"},{"key":"custom-1","body":"- 复盘"}]';
+
+    expect(parseReportSections(text, ['overview', 'custom-1'])).toEqual([
+      { key: 'overview', body: '- 概览' },
+      { key: 'custom-1', body: '- 复盘' },
+    ]);
+    // 不传清单：回落模板并集，自建节被丢弃（老调用方的行为不变）。
+    expect(parseReportSections(text)).toEqual([{ key: 'overview', body: '- 概览' }]);
+    // 空清单同样回落模板并集，而不是「什么都不允许」。
+    expect(parseReportSections(text, [])).toEqual([{ key: 'overview', body: '- 概览' }]);
+  });
+
+  it('白名单以传入的章节清单为准：清单外的模板 key 也会被丢掉', () => {
+    const text = '[{"key":"overview","body":"- 概览"},{"key":"risks","body":"- 风险"}]';
+    expect(parseReportSections(text, ['overview', 'custom-1'])).toEqual([
+      { key: 'overview', body: '- 概览' },
+    ]);
   });
 });
