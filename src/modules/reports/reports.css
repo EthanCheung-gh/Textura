@@ -367,17 +367,24 @@
   color: var(--text-muted);
 }
 
+/* 必须用 display:block：Chromium 下 flex 容器的子项不再生成列表标记，
+   <li> 会变成没有项目符号的缩进行；块级列表才有 marker。 */
 .reports-md-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  display: block;
   margin: 0;
-  padding-left: 1.1em;
+  padding-left: 1.4em;
+  /* base.css 的全局 reset 把 ul/ol 清成 list-style: none，这里显式还回来。 */
+  list-style: disc;
 }
 
 /* 列表项同样保留硬换行（AI 偶尔会在一个条目里折行）。 */
 .reports-md-list li {
   white-space: pre-wrap;
+}
+
+/* 原来的 2px 行距由 flex 的 gap 提供，改成块级列表后用相邻兄弟间距补回来。 */
+.reports-md-list li + li {
+  margin-top: 2px;
 }
 
 /* 行内代码：预览底板是 --surface，代码底色用 --surface-2 才拉得开层次。 */
