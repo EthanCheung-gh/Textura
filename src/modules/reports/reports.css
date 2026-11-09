@@ -315,6 +315,103 @@
   color: var(--text-muted);
 }
 
+/* 每节的「编辑 / 预览」切换：贴在徽标与操作按钮左侧，不额外占一行。
+   与右侧操作之间多留 4px，避免切换控件和「上移」看起来是一组按钮。 */
+.reports-section-actions .reports-section-mode {
+  margin-right: var(--space-1);
+}
+
+/* ---------- 正文 Markdown 预览（markdown.ts + MarkdownView.tsx） ---------- */
+/* 预览必须和正文框是**同一个盒子**：切换编辑 / 预览时，下面的章节不能跟着上下跳。
+   内边距 / 圆角 / 最小高度 / 边框全部对齐 .reports-section-body（即 .input + .textarea），
+   字号行高也保持一致（13px / 1.66），同一段文字在两种形态下换行位置基本不变。 */
+.reports-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 76px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.66;
+  color: var(--text);
+  /* 正文里可能出现长 URL：宁可断词，也不让预览把三栏布局撑出横向滚动条。 */
+  overflow-wrap: anywhere;
+}
+
+/* 段落保留原始换行：正文是纯文本，用户和 AI 都用硬换行断句，
+   折叠成一行会把「一行一件事」的清单挤成一坨。 */
+.reports-md-p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* 正文里的 ### / #### 是「节内小标题」：样式贴着节标题但小一号、且不加分隔线——
+   节与节之间已经有一条框线，再加一条会显得碎。 */
+.reports-md-h3,
+.reports-md-h4 {
+  margin: 0;
+  font-weight: 620;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.reports-md-h3 {
+  font-size: 13.5px;
+}
+
+.reports-md-h4 {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.reports-md-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+/* 列表项同样保留硬换行（AI 偶尔会在一个条目里折行）。 */
+.reports-md-list li {
+  white-space: pre-wrap;
+}
+
+/* 行内代码：预览底板是 --surface，代码底色用 --surface-2 才拉得开层次。 */
+.reports-md-code {
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.reports-md-strong {
+  font-weight: 650;
+  color: var(--text);
+}
+
+/* 链接不可点：没有 shell openExternal 能力，<a href> 只会把 webview 导航走。
+   地址以「（url）」后缀原样显示，用户需要时自己复制。 */
+.reports-md-link {
+  color: var(--accent-ink);
+}
+
+.reports-md-link-url {
+  font-size: 12px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+/* 空正文占位：和正文框同样的最小高度，切到预览不会看到「塌下去的一块」。 */
+.reports-md-empty {
+  margin: 0;
+  color: var(--text-faint);
+}
+
 /* ---------- 右栏：数据源 ---------- */
 .reports-source {
   display: flex;

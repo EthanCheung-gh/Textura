@@ -34,6 +34,12 @@
  * 兜底分三层，谁都不依赖别人先做过：编辑器写入做规范化；导出层把标题**压成一行**再拼进
  * `### `（不裁剪、不加省略号，不吞用户文字）；AI 提示层（`prompts.sectionTitleText`）
  * 另按自己的预算裁短。所以这里显示超长 / 带空白的标题是预期内的，不是漏了规范化。
+ *
+ * 每节的「编辑 / 预览」：预览只替换正文的 `<TextArea>`，节头、徽标、操作按钮、字数、
+ * 防抖与写回路径全都不变——预览是**纯展示**，不参与存储，也不影响导出（导出永远是原始
+ * Markdown 文本）。默认全部「编辑」：用户点进报告是要改字的，预览是按需查看。
+ * 定稿（`report.status === 'final'`）时强制预览、不给切换：内容已冻结，这时「读」比
+ * 「改」更重要，也就没有编辑态可言。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Report, ReportSectionOrigin } from '../../core/model';
@@ -46,8 +52,11 @@ import { Badge } from '../../ui/Badge';
 import type { BadgeTone } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { Field, TextArea, TextInput } from '../../ui/Field';
+import { Segmented } from '../../ui/Segmented';
+import type { SegmentedOption } from '../../ui/Segmented';
 import { Icon } from '../../ui/icons';
 import type { ReportTemplate } from './draft';
+import { MarkdownView } from './MarkdownView';
 import { periodLabel } from './period';
 import {
   addSectionAriaLabel,
@@ -70,6 +79,17 @@ function rowsFor(body: string): number {
   const lines = body ? body.split('\n').length : 1;
   return Math.min(22, Math.max(6, lines + 1));
 }
+
+type SectionMode = 'edit' | 'preview';
+
+/** 每节的编辑 / 预览切换：沿用页面里已有的 `Segmented`（sm），不另造一套控件。 */
+const SECTION_MODE_OPTIONS: SegmentedOption<SectionMode>[] = [
+  { value: 'edit', label: '编辑', title: '直接改这一节的 Markdown 正文' },
+  { value: 'preview', label: '预览', title: '按排版看这一节（只读，不改内容）' },
+];
+
+/** 空集合常量：默认「没有一节在预览」，不必每次渲染都新建 Set。 */
+const NO_PREVIEW_KEYS: ReadonlySet<string> = new Set<string>();
 
 /**
  * 章节数到达存储上限后，「添加章节」的 `title` 提示语。
@@ -253,12 +273,48 @@ export function ReportEditor({
     [template],
   );
 
+  /**
+   * 预览态只记「哪些节在预览」：集合为空即全部在编辑，于是新增章节天然默认编辑，
+   * 不需要在 `onAddSection` 里补一次「设为编辑」。
+   *
+   * key 会跨报告重复（`overview` / `custom-1`），所以连 `report.id` 一起存：换一份报告时
+   * id 不匹配就直接按「全部编辑」展示。这样不用 `useEffect` 重置 state（那会多一帧
+   * 「上一份报告的预览态」闪烁），也不会把 A 报告的预览选择带到 B 报告上。
+   */
+  const [previewState, setPreviewState] = useState<{ reportId: string; keys: ReadonlySet<string> }>(
+    () => ({ reportId: report.id, keys: NO_PREVIEW_KEYS }),
+  );
+  const previewKeys = previewState.reportId === report.id ? previewState.keys : NO_PREVIEW_KEYS;
+
+  const handleModeChange = (key: string, mode: SectionMode) => {
+    setPreviewState((previous) => {
+      const keys = new Set(previous.reportId === report.id ? previous.keys : NO_PREVIEW_KEYS);
+      if (mode === 'preview') keys.add(key);
+      else keys.delete(key);
+      return { reportId: report.id, keys };
+    });
+  };
+
   const handleAdd = () => {
     const key = onAddSection();
     if (key) setPendingFocus(key);
   };
 
+  /**
+   * 删除一节：先把它从预览集合里摘掉，再通知页面层。
+   *
+   * 自建 key 会被**复用**（`nextCustomKey` 取最小空位：删掉 `custom-1` 再加一节还是
+   * `custom-1`）。预览态只按 key 记账，不清理的话新节一挂载就继承上一节的「预览」——
+   * 一个刚建好的空节顶着预览模式，用户连输入框都看不见。只在同一份报告内清理
+   * （`reportId` 不同说明预览态本就不生效，无需写 state 触发多余渲染）。
+   */
   const handleRemove = (key: string) => {
+    setPreviewState((previous) => {
+      if (previous.reportId !== report.id || !previous.keys.has(key)) return previous;
+      const keys = new Set(previous.keys);
+      keys.delete(key);
+      return { reportId: previous.reportId, keys };
+    });
     onRemoveSection(key);
   };
 
@@ -326,6 +382,8 @@ export function ReportEditor({
           const index = storedIndex.get(section.key) ?? -1;
           const canMoveUp = index > 0;
           const canMoveDown = index >= 0 && index < draft.sections.length - 1;
+          // 定稿报告强制预览（内容冻结，没有编辑态）；草稿按本节自己的开关。
+          const previewing = readOnly || previewKeys.has(section.key);
           return (
             <article className="reports-section" key={section.key}>
               <div className="reports-section-head">
@@ -344,6 +402,17 @@ export function ReportEditor({
                   <h3 className="reports-section-title">{section.title}</h3>
                 )}
                 <div className="reports-section-actions">
+                  {/* 定稿后不给切换：内容已冻结，预览是唯一有意义的形态。 */}
+                  {readOnly ? null : (
+                    <Segmented<SectionMode>
+                      className="reports-section-mode"
+                      size="sm"
+                      ariaLabel={`${section.title}：编辑或预览`}
+                      value={previewing ? 'preview' : 'edit'}
+                      onChange={(mode) => handleModeChange(section.key, mode)}
+                      options={SECTION_MODE_OPTIONS}
+                    />
+                  )}
                   <Badge tone={origin.tone}>{origin.label}</Badge>
                   {readOnly ? null : (
                     <>
@@ -416,15 +485,21 @@ export function ReportEditor({
                   )}
                 </div>
               </div>
-              <TextArea
-                className="reports-section-body"
-                aria-label={section.title}
-                value={section.body}
-                rows={rowsFor(section.body)}
-                readOnly={readOnly}
-                spellCheck={false}
-                onChange={(event) => onSectionChange(section.key, event.target.value)}
-              />
+              {previewing ? (
+                // 预览只替换正文框：节头、徽标、操作、字数、防抖与写回路径都不动。
+                // 容器带 role="region" + 可访问名，屏幕阅读器能分辨这是哪一节的预览。
+                <MarkdownView body={section.body} ariaLabel={`预览：${section.title}`} />
+              ) : (
+                <TextArea
+                  className="reports-section-body"
+                  aria-label={section.title}
+                  value={section.body}
+                  rows={rowsFor(section.body)}
+                  readOnly={readOnly}
+                  spellCheck={false}
+                  onChange={(event) => onSectionChange(section.key, event.target.value)}
+                />
+              )}
             </article>
           );
         })}
