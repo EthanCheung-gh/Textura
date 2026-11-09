@@ -324,7 +324,8 @@
 /* ---------- 正文 Markdown 预览（markdown.ts + MarkdownView.tsx） ---------- */
 /* 预览必须和正文框是**同一个盒子**：切换编辑 / 预览时，下面的章节不能跟着上下跳。
    内边距 / 圆角 / 最小高度 / 边框全部对齐 .reports-section-body（即 .input + .textarea），
-   字号行高也保持一致（13px / 1.66），同一段文字在两种形态下换行位置基本不变。 */
+   字号行高也保持一致（13px / 1.66），同一段文字在两种形态下换行位置基本不变。
+   颜色一律走 tokens（见 styles/tokens.css），因此深色模式不需要任何额外规则。 */
 .reports-md {
   display: flex;
   flex-direction: column;
@@ -341,52 +342,174 @@
   overflow-wrap: anywhere;
 }
 
-/* 段落保留原始换行：正文是纯文本，用户和 AI 都用硬换行断句，
-   折叠成一行会把「一行一件事」的清单挤成一坨。 */
-.reports-md-p {
+/* 空正文占位：和正文框同样的最小高度，切到预览不会看到「塌下去的一块」。 */
+.reports-md-empty {
   margin: 0;
-  white-space: pre-wrap;
+  color: var(--text-faint);
 }
 
-/* 正文里的 ### / #### 是「节内小标题」：样式贴着节标题但小一号、且不加分隔线——
-   节与节之间已经有一条框线，再加一条会显得碎。 */
-.reports-md-h3,
-.reports-md-h4 {
+/* 段落不再用 pre-wrap：软换行已由解析器变成 break span（→ <br>），空白按正常规则折叠，
+   与 Obsidian 阅读视图一致；否则源码里的缩进会被逐字保留下来。 */
+.reports-md-p {
   margin: 0;
-  font-weight: 620;
-  line-height: 1.5;
-  color: var(--text);
+}
+
+/* 节内标题 6 级：**全部 ≤ 节标题**（`.reports-section-title` 是 13.5px / 620），一档一档往下收，
+   这样预览里的 `#` 永远读作「节内小标题」，不会把章节层级读反。
+   两条规则分工：
+   1. **语义标签**由渲染层整体降三级（`h{min(level+3,6)}`：`#` → `<h4>`，`###` 及更深 → `<h6>`），
+      页面标题 `<h1>` 与节标题 `<h3>` 之上不会出现正文标题；
+   2. **视觉尺寸**只在这里按**作者写的层级**（`.reports-md-h{level}`）取，与标签级别解耦——
+      标签 4/5/6 级共用 `<h6>` 时，样式 class 仍能区分 `#` 与 `###`。 */
+.reports-md-h1 {
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.reports-md-h2 {
+  font-size: 13.2px;
+  font-weight: 640;
+  line-height: 1.4;
 }
 
 .reports-md-h3 {
-  font-size: 13.5px;
+  font-size: 13px;
+  font-weight: 640;
+  line-height: 1.45;
 }
 
 .reports-md-h4 {
-  font-size: 13px;
+  font-size: 12.6px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.reports-md-h5 {
+  font-size: 12.3px;
+  font-weight: 600;
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
+.reports-md-h6 {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+/* ---------- 列表 ---------- */
 /* 必须用 display:block：Chromium 下 flex 容器的子项不再生成列表标记，
    <li> 会变成没有项目符号的缩进行；块级列表才有 marker。 */
 .reports-md-list {
   display: block;
   margin: 0;
-  padding-left: 1.4em;
+  padding-left: 1.6em;
   /* base.css 的全局 reset 把 ul/ol 清成 list-style: none，这里显式还回来。 */
   list-style: disc;
 }
 
-/* 列表项同样保留硬换行（AI 偶尔会在一个条目里折行）。 */
-.reports-md-list li {
-  white-space: pre-wrap;
+.reports-md-ordered {
+  list-style: decimal;
 }
 
-/* 原来的 2px 行距由 flex 的 gap 提供，改成块级列表后用相邻兄弟间距补回来。 */
-.reports-md-list li + li {
+/* 嵌套列表：缩进略小一点，深层嵌套不会一直往右推。 */
+.reports-md-list .reports-md-list {
+  margin-top: var(--space-1);
+  padding-left: 1.3em;
+}
+
+.reports-md-bullet .reports-md-bullet {
+  list-style: circle;
+}
+
+.reports-md-item::marker {
+  color: var(--text-muted);
+}
+
+.reports-md-item + .reports-md-item {
   margin-top: 2px;
 }
 
+/* 列表项里除首段之外的内容（嵌套列表、松散列表的第二段、代码块…）：和首行文字分开一点。 */
+.reports-md-item-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+/* 任务列表：勾选框取代项目符号，所以这一项不生成 marker。 */
+.reports-md-task {
+  display: flex;
+  gap: var(--space-1);
+  align-items: flex-start;
+  list-style: none;
+}
+
+.reports-md-check {
+  flex: none;
+  margin: 4px 0 0;
+  accent-color: var(--accent);
+}
+
+.reports-md-task-body {
+  min-width: 0;
+}
+
+/* ---------- 引用 / 分隔线 ---------- */
+.reports-md-quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.reports-md-hr {
+  margin: var(--space-1) 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- 表格 ---------- */
+/* 窄栏里宽表格必须能自己横向滚，不能把整节撑宽。 */
+.reports-md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.reports-md-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.reports-md-table th,
+.reports-md-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  vertical-align: top;
+  /* 每列的对齐由渲染层写成内联 text-align（GFM 的 :-- / :-: / --: ），这里是默认值。 */
+  text-align: left;
+}
+
+.reports-md-table th {
+  background: var(--surface-2);
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.reports-md-table tr:nth-child(even) td {
+  background: var(--bg-subtle);
+}
+
+/* ---------- 代码 ---------- */
 /* 行内代码：预览底板是 --surface，代码底色用 --surface-2 才拉得开层次。 */
 .reports-md-code {
   padding: 1px 4px;
@@ -396,9 +519,127 @@
   font-size: 12px;
 }
 
-.reports-md-strong {
-  font-weight: 650;
+/* 围栏代码块：tabIndex=0，所以焦点环必须跟着走（键盘用户要能聚焦后横向滚动）。 */
+.reports-md-pre {
+  margin: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.reports-md-pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.reports-md-codeblock {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: inherit;
   color: var(--text);
+  white-space: pre;
+}
+
+/* Prism 的 token 调色板：只用 tokens 派生，深色模式自动生效。
+   色相分配按「读代码时的信息层级」——关键字最显眼，注释最轻。 */
+.reports-md .token.comment,
+.reports-md .token.prolog,
+.reports-md .token.doctype,
+.reports-md .token.cdata {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.reports-md .token.punctuation {
+  color: var(--text-muted);
+}
+
+.reports-md .token.property,
+.reports-md .token.tag,
+.reports-md .token.deleted {
+  color: var(--danger-ink);
+}
+
+.reports-md .token.boolean,
+.reports-md .token.number,
+.reports-md .token.constant,
+.reports-md .token.symbol {
+  color: var(--warn-ink);
+}
+
+.reports-md .token.selector,
+.reports-md .token.attr-name,
+.reports-md .token.variable,
+.reports-md .token.builtin {
+  color: var(--accent);
+}
+
+.reports-md .token.string,
+.reports-md .token.char,
+.reports-md .token.attr-value,
+.reports-md .token.inserted,
+.reports-md .token.string-interpolation {
+  color: var(--ok-ink);
+}
+
+.reports-md .token.operator,
+.reports-md .token.entity,
+.reports-md .token.url {
+  color: var(--text-muted);
+}
+
+.reports-md .token.atrule,
+.reports-md .token.keyword,
+.reports-md .token.important {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.reports-md .token.function,
+.reports-md .token.class-name {
+  color: var(--info-ink);
+}
+
+/* `.token.important` 不在这里重复：它已经在上面的 atrule/keyword 组里拿到了颜色与字重。 */
+.reports-md .token.regex,
+.reports-md .token.bold {
+  font-weight: 650;
+}
+
+.reports-md .token.italic {
+  font-style: italic;
+}
+
+.reports-md .token.namespace,
+.reports-md .token.annotation {
+  color: var(--info);
+}
+
+/* ---------- 行内装饰 ---------- */
+/* `==高亮==`：底纹用 --accent-soft，文字色不跟着变（不然深色模式下会糊成一片）。 */
+.reports-md-mark {
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.reports-md strong {
+  font-weight: 650;
+}
+
+.reports-md em {
+  font-style: italic;
+}
+
+.reports-md del {
+  color: var(--text-muted);
 }
 
 /* 链接不可点：没有 shell openExternal 能力，<a href> 只会把 webview 导航走。
@@ -413,10 +654,295 @@
   overflow-wrap: anywhere;
 }
 
-/* 空正文占位：和正文框同样的最小高度，切到预览不会看到「塌下去的一块」。 */
-.reports-md-empty {
+/* 被拦下的链接（javascript:/data:/相对路径…）：只留文字，虚线示意「这里原本有地址」。 */
+.reports-md-link-rejected {
+  border-bottom: 1px dashed var(--border-strong);
+  cursor: help;
+}
+
+.reports-md-image {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* wikilink / embed / tag 都是「只读 chip」：报告里没有 vault，点了也不会跳。 */
+.reports-md-wikilink,
+.reports-md-embed,
+.reports-md-tag {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.reports-md-wikilink {
+  border-style: dashed;
+  color: var(--info-ink);
+}
+
+.reports-md-embed {
+  border-style: dashed;
+  color: var(--accent-ink);
+}
+
+.reports-md-tag {
+  color: var(--accent-ink);
+}
+
+/* ---------- 公式 ---------- */
+.reports-md-math-inline .reports-md-math-node {
+  display: inline-block;
+}
+
+/* 块级公式可能比栏宽还长：容器负责横向滚，不裁切也不撑破三栏。 */
+.reports-md-math-display {
+  max-width: 100%;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.reports-md-math-display .reports-md-math-node {
+  display: block;
+}
+
+.reports-md-math-display .katex-display {
   margin: 0;
+}
+
+.reports-md .katex {
+  font-size: 1.05em;
+}
+
+/* KaTeX 还没到 / 加载失败时的原文：等宽 + 浅底，和行内代码同一套观感。 */
+.reports-md-math-src {
+  margin-left: 2px;
+}
+
+/* ---------- Mermaid ---------- */
+.reports-md-mermaid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+
+.reports-md-mermaid-canvas {
+  max-width: 100%;
+}
+
+/* 还没有渲染结果时不要把空容器占成一行。 */
+.reports-md-mermaid-canvas:empty {
+  display: none;
+}
+
+.reports-md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.reports-md-mermaid-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- frontmatter（属性） ---------- */
+.reports-md-frontmatter {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+
+.reports-md-frontmatter-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reports-md-frontmatter-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.reports-md-frontmatter-count {
   color: var(--text-faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.reports-md-frontmatter-list {
+  margin: 0;
+  padding: 0 8px 6px;
+}
+
+.reports-md-frontmatter-row {
+  display: flex;
+  gap: var(--space-2);
+  padding: 2px 0;
+}
+
+.reports-md-frontmatter-row dt {
+  flex: none;
+  min-width: 5.5em;
+  color: var(--text-muted);
+}
+
+.reports-md-frontmatter-row dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- callout ---------- */
+/* 每个 callout 只声明一个 --callout-tone，配色全部由它派生：
+   左边框取 tone，头部底色是 tone 混进 --surface 的浅染（color-mix 不可用时退回 --surface-2）。
+   13 个规范类型按 Obsidian 的家族分组（信息 / 成功 / 警告 / 危险 / 中性），
+   tone 都取自 tokens，因此深色模式自动跟着变。 */
+.reports-md-callout {
+  --callout-tone: var(--accent);
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--callout-tone);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+/* 13 个规范类型 → tone。别名（summary / hint / caution…）在解析器里已归一到这些名字。 */
+.reports-md-callout[data-kind='note'] {
+  --callout-tone: var(--info);
+}
+
+.reports-md-callout[data-kind='abstract'] {
+  --callout-tone: var(--info-ink);
+}
+
+.reports-md-callout[data-kind='info'] {
+  --callout-tone: var(--info);
+}
+
+.reports-md-callout[data-kind='todo'] {
+  --callout-tone: var(--info-ink);
+}
+
+.reports-md-callout[data-kind='tip'] {
+  --callout-tone: var(--ok);
+}
+
+.reports-md-callout[data-kind='success'] {
+  --callout-tone: var(--ok-ink);
+}
+
+.reports-md-callout[data-kind='question'] {
+  --callout-tone: var(--warn);
+}
+
+.reports-md-callout[data-kind='warning'] {
+  --callout-tone: var(--warn-ink);
+}
+
+.reports-md-callout[data-kind='failure'] {
+  --callout-tone: var(--danger);
+}
+
+.reports-md-callout[data-kind='danger'] {
+  --callout-tone: var(--danger-ink);
+}
+
+.reports-md-callout[data-kind='bug'] {
+  --callout-tone: var(--danger);
+}
+
+.reports-md-callout[data-kind='example'] {
+  --callout-tone: var(--accent-ink);
+}
+
+.reports-md-callout[data-kind='quote'] {
+  --callout-tone: var(--text-muted);
+}
+
+.reports-md-callout-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 4px 8px;
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--callout-tone) 14%, var(--surface));
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* <summary> 是折叠 callout 的头部：列表标记由下面自绘的箭头取代。 */
+.reports-md-callout-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.reports-md-callout-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reports-md-callout-fold > summary::marker {
+  content: '';
+}
+
+.reports-md-callout-fold > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 折叠态指示箭头：靠 margin-left:auto 贴右，展开后翻转。纯装饰（生成内容，读屏不读）。 */
+.reports-md-callout-fold > summary::after {
+  content: '▸';
+  margin-left: auto;
+  color: var(--text-faint);
+}
+
+.reports-md-callout-fold[open] > summary::after {
+  content: '▾';
+}
+
+.reports-md-callout-glyph {
+  flex: none;
+  color: var(--callout-tone);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.reports-md-callout-title {
+  min-width: 0;
+}
+
+/* 自定义标题才出现的类型徽标（`[!tip] 我的标题`）：说明这条 callout 的类型是什么。 */
+.reports-md-callout-kind {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--callout-tone);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.reports-md-callout-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  background: var(--surface);
+}
+
+/* 嵌套 callout 的内层缩进一级，用细一点的左边框区分层次。 */
+.reports-md-callout-body .reports-md-callout {
+  border-left-width: 2px;
 }
 
 /* ---------- 右栏：数据源 ---------- */
