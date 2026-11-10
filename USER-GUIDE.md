@@ -1068,3 +1068,39 @@ OKR 的跨季度移动（目标 + 全部 KR）都只产生一条历史，一次�
 日历只显示带日期的条目（开始或结束日期至少有一个）。还在收件箱、没有日期的条目不会出现；
 已放弃的条目不显示；分组折叠之类的甘特状态也不影响日历。给条目补上日期后它会立刻出现在对应日期。
 另外农历标签只覆盖 1900-01-31 ～ 2100-12-31，超出范围时只有公历。
+
+**14. 应用自己退出了，日志在哪、怎么看出是谁干的？**
+
+桌面端从启动到退出，每个关键节点各写一行到 `~/.textura/logs/app.log`（目录自动创建）；
+`HOME` 缺失、为空或不可写时退回 `<临时目录>/.textura/logs/app.log`。追加写入，单个文件到
+512 KiB（含边界）时轮转成 `app.log.1`，旧的 `.1` 直接替换，只保留一份旧档。每行同时镜像到
+stderr，从终端启动就能直接看到，不必去翻文件。
+
+一次正常启动会依次出现四行：`start`（版本、pid、argv、cwd，以及 `WAYLAND_DISPLAY` /
+`DISPLAY` / `XDG_SESSION_TYPE` / `GDK_BACKEND` / `WEBKIT_DISABLE_DMABUF_RENDERER` /
+`WEBKIT_DISABLE_COMPOSITING_MODE` / `HOME` 这几个渲染相关变量，没设置的显式写成 `<unset>`）、
+`setup`（此刻已存在的 webview 数量与 label）、`ready`（事件循环开始跑）、`page_load`
+（页面加载完成）。pid 在每行行首的 `[pid N]` 里，其后是事件名与 `key=value` 明细。
+
+判断「为什么退出」只看最后几行：
+
+- `window_event … event=close_requested` + `event=destroyed` + `exit_requested`：窗口被关闭
+  （关闭按钮、窗口管理器或合成器），后面走正常退出路径，不是崩溃。
+- `run_returned Ok code=0` + `process_exit code=0 path=main-exit`：事件循环自己返回、进程
+  正常收尾，退出码就是这两行里的数字。
+- `panic payload=… location=文件:行:列`：Rust 层 panic，location 指向出事的那一行代码。
+  回溯只在 `RUST_BACKTRACE` 非空且不为 `0`（例如 `=1`）时才附在同一行末尾。
+- 日志停在 `page_load` 之后、再无任何与退出相关的行：进程被信号或外部强制结束。
+  `SIGTERM` / `SIGKILL` 不经过应用，写不出日志。这时从终端启动，用 `echo $?` 读退出码：
+  143 是 `SIGTERM`，137 是 `SIGKILL`。
+
+反馈问题时给这几样最省事：日志最后 20 行、能复现的大致时间、当时是否开了多个窗口、
+是否切换过主题或路线。
+
+日志只写白名单字段（版本、pid、argv、cwd、`HOME` 与上面那几个渲染变量），不含工作区内容，
+不含 API Key 或令牌。写日志失败（目录只读、磁盘满）只会少几行记录：不影响应用运行，也不
+改变退出码。已知盲区有两个：`SIGTERM` 不留记录；WebKit 子进程单独崩溃目前没有独立日志。
+这两类只能靠「日志断在哪一行」来推断。
+
+顺带一提：同时开两个实例会互相覆盖工作区（见第 2 条）。日志里能看到两个 `start` 行的 pid
+不同，但那只是事后取证，不能替代单实例保护。
