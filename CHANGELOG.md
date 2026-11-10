@@ -45,7 +45,9 @@
   `ready` / `page_load` / `window_event`（`close_requested` | `destroyed`）/ `exit_requested` / `exit` /
   `run_returned` / `process_exit` / `panic` 十个节点，只写白名单字段（版本、pid、argv、cwd、渲染相关环境变量），
   不含工作区内容与密钥。写盘全走 `let _ =`：日志失败不影响运行、也不改退出码，`run_return` 只读取 `run()` 的
-  返回值以保证退出码不变。
+  返回值以保证退出码不变。探测式启动（`--version` / `-V` / `--help` / `-h`，只认这四个整串，不认
+  `-v` / `--verbose`）不写日志：不装 panic hook、不解析日志路径、零字节零 stderr，真实 `app.log` 里不会
+  多出探针的 `start` / `setup` / `ready` / `page_load` 块；启动行为与退出码不变。
 
 ### 修复
 

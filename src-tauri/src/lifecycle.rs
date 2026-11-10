@@ -21,6 +21,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 /// 单个日志文件的上限：512 KiB。超过即单次轮转到 `app.log.1`。
@@ -46,9 +47,41 @@ const ENV_KEYS: &[&str] = &[
 /// 解析后的日志文件路径：首次使用时确定，之后复用。
 static LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
+/// 日志总开关。默认 `true`：即使 `init()` 没被调用（库被别处复用、单测）也保持
+/// 「照旧写日志」，行为不变。
+///
+/// 唯一会关掉它的是 `init()` 里的探测性启动判断（见 `is_probe_launch`）。
+static LOG_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// 日志当前是否启用。探测性启动下为 `false`，此时 `log()` 连 `format_line` 都不做。
+fn log_enabled() -> bool {
+    LOG_ENABLED.load(Ordering::Relaxed)
+}
+
 // ---------------------------------------------------------------------------
 // 纯函数部分（可离线、确定性单测）
 // ---------------------------------------------------------------------------
+
+/// 是否为「探测性启动」，即命令行带了 `--version` / `-V` / `--help` / `-h`。
+///
+/// 背景：本应用没有 argv 处理，`textura --version` 照样会把 GUI 拉起来。有人（脚本、
+/// 打包检查、手工排查）戳一下版本号，就会在**用户真实的** `app.log` 里留下一整个
+/// `start/setup/ready/page_load` 块，把真正的启动记录稀释掉。这类启动不承载诊断信息，
+/// 因此不写日志。
+///
+/// 匹配口径（只看 argv[0] 之后的参数，且必须**整串精确相等**）：
+/// * 命中：`--version`、`-V`、`--help`、`-h`——即 clap 默认的 version/help 短长写法；
+/// * 不命中 `-v` / `--verbose`：这两个是「啰嗦输出」而不是「打印版本就退出」，扩展名
+///   或者日志级别开关一旦被误判成探针，用户正常启动就会莫名其妙没有日志——宁可漏判，
+///   不可错判。同理 `--version=…`、`--helpx` 这类前缀不做模糊匹配。
+/// * argv[0] 本身不参与判断（它是程序路径，哪怕恰好叫 `--version` 也不算）。
+///
+/// 判断本身**不改变**行为：调用方仍然照常启动 GUI、退出码不变。
+fn is_probe_launch(args: &[String]) -> bool {
+    args.iter()
+        .skip(1)
+        .any(|arg| matches!(arg.as_str(), "--version" | "-V" | "--help" | "-h"))
+}
 
 /// 把任意 detail 压成单行：换行/回车/制表符转义，其余字符**原样保留**（不做脱敏，
 /// 脱敏由调用方保证不传入敏感内容）。多行 detail 会把「一行一个事件」的日志拆坏，
@@ -159,11 +192,17 @@ fn rotate_if_needed(path: &Path) {
     let _ = fs::rename(path, &backup);
 }
 
-/// 追加一行。`event` 为事件名（`start` / `setup` / `ready` / ...），`detail` 为
-/// `key=value` 形式的人类可读补充信息。
+/// 追加一行到指定 sink。`enabled == false` 时**立即返回** `false`：不格式化、不写
+/// stderr、不碰文件系统（连日志目录都不会被创建），因此对 `~/.textura/logs/app.log`
+/// 是严格的零字节、零副作用。
 ///
-/// 即使 `init()` 没被调用也会工作（懒解析路径），这样任何早于 init 的日志都不会丢。
-pub fn log(event: &str, detail: &str) {
+/// `path` 作为参数而不是直接取全局路径，是为了让单测能指定一个临时 sink，从而确定性地
+/// 断言「禁用时一个字都没写、启用时确实写了」。
+fn log_to_path(path: &Path, enabled: bool, event: &str, detail: &str) -> bool {
+    if !enabled {
+        return false;
+    }
+
     let line = format_line(&chrono::Local::now(), std::process::id(), event, detail);
 
     // 镜像到 stderr：终端启动时直接可见，不必去翻日志文件。
@@ -171,7 +210,6 @@ pub fn log(event: &str, detail: &str) {
     // 而「日志绝不能 panic」是硬约束。
     let _ = writeln!(std::io::stderr(), "{line}");
 
-    let path = ensure_log_path();
     rotate_if_needed(path);
     if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
         // 每行单独 flush：进程被 SIGKILL / abort 时，缓冲区里的最后几行必须已经在盘上。
@@ -179,6 +217,21 @@ pub fn log(event: &str, detail: &str) {
         let _ = file.write_all(b"\n");
         let _ = file.flush();
     }
+    true
+}
+
+/// 追加一行。`event` 为事件名（`start` / `setup` / `ready` / ...），`detail` 为
+/// `key=value` 形式的人类可读补充信息。
+///
+/// 即使 `init()` 没被调用也会工作（懒解析路径），这样任何早于 init 的日志都不会丢。
+/// 但探测性启动（`--version` / `--help` 等）下整个函数是 no-op：一次 stderr 写、
+/// 一次 `ensure_log_path()` 都不会发生。
+pub fn log(event: &str, detail: &str) {
+    // 开关判断必须在 `ensure_log_path()` 之前：那个函数会 create_dir_all。
+    if !log_enabled() {
+        return;
+    }
+    let _ = log_to_path(ensure_log_path(), true, event, detail);
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +265,17 @@ fn start_detail() -> String {
 ///
 /// **必须**在 `tauri::Builder` 之前调用：builder 构造、`generate_context!` 资源校验、
 /// `.setup()` 里都可能失败，这些阶段的失败同样会表现为「静默退出」。
+///
+/// 探测性启动（`--version` / `-V` / `--help` / `-h`）是唯一的例外：**什么都不装**
+/// （不装 panic hook、不解析日志路径、不写启动头），并关掉日志开关，让后续 `log()`
+/// 全部变成 no-op。目的是不往用户真实的 `app.log` 里写探针足迹。行为本身不变——
+/// 进程照旧起 GUI、照旧走原来的退出码。
 pub fn init() {
+    if is_probe_launch(&std::env::args().collect::<Vec<_>>()) {
+        LOG_ENABLED.store(false, Ordering::Relaxed);
+        return;
+    }
+
     // 先确保路径解析完成，失败也只体现在「日志写到 tmp」上，不影响启动。
     let _ = ensure_log_path();
 
@@ -401,5 +464,97 @@ mod tests {
         }
         // 单行保证：detail 里不能出现真实换行。
         assert!(!detail.contains('\n'), "{detail}");
+    }
+
+    /// 表驱动的 argv 构造：避免每条用例都写一遍 `to_string()`。
+    fn argv(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn is_probe_launch_matches_version_and_help_only() {
+        // (argv, 期望是否探针)。argv[0] 一律是程序路径。
+        let cases: Vec<(Vec<&str>, bool)> = vec![
+            // 空 argv：连 argv[0] 都没有，自然不是探针。
+            (vec![], false),
+            // 只有程序路径：正常启动。
+            (vec!["/usr/bin/textura"], false),
+            (vec!["textura"], false),
+            // 四种命中写法。
+            (vec!["/usr/bin/textura", "--version"], true),
+            (vec!["/usr/bin/textura", "-V"], true),
+            (vec!["/usr/bin/textura", "--help"], true),
+            (vec!["/usr/bin/textura", "-h"], true),
+            // 混在路径/其它参数里也命中（只看是否某个参数整串相等）。
+            (vec!["/usr/bin/textura", "--version", "/tmp/ws"], true),
+            (vec!["/usr/bin/textura", "/home/u/notes.md", "--help"], true),
+            (vec!["/home/u/--version", "x"], false),
+            // `-v` / `--verbose` 是「啰嗦输出」，不是「打印版本就退出」：必须为 false。
+            (vec!["/usr/bin/textura", "--verbose"], false),
+            (vec!["/usr/bin/textura", "-v"], false),
+            (vec!["/usr/bin/textura", "--verbose", "-v"], false),
+            // 不做前缀 / 模糊匹配。
+            (vec!["/usr/bin/textura", "--versionx"], false),
+            (vec!["/usr/bin/textura", "--version=0.2.0"], false),
+            (vec!["/usr/bin/textura", "--help-all"], false),
+            // argv[0] 本身不参与判断，哪怕它恰好长得像探针参数。
+            (vec!["--version"], false),
+            (vec!["-h", "--version"], true),
+        ];
+
+        for (args, expected) in &cases {
+            assert_eq!(
+                is_probe_launch(&argv(args)),
+                *expected,
+                "argv={args:?} 期望 is_probe_launch={expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_logger_writes_zero_bytes_to_sink() {
+        use std::sync::atomic::AtomicUsize;
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+
+        let dir = std::env::temp_dir().join(format!(
+            "textura-lifecycle-test-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join(LOG_FILE_NAME);
+
+        // 禁用：不留文件、不留轮转档，返回值也明确告知「没写」。
+        assert!(!log_to_path(&path, false, "start", "version=0.2.0"));
+        assert!(!path.exists(), "禁用时不应创建 {}", path.display());
+        assert!(!rotated_path(&path).exists());
+
+        // 同一 sink、同一行入参，启用后必须写进去——证明上面「没写」确实来自开关。
+        assert!(log_to_path(&path, true, "start", "version=0.2.0"));
+        let content = fs::read_to_string(&path).expect("log file");
+        assert_eq!(content.lines().count(), 1, "{content}");
+        assert!(content.contains("] start version=0.2.0"), "{content}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_launch_disables_log_without_resolving_path() {
+        // 全局开关的端到端效果：关掉之后 `log()` 连路径都不解析，
+        // 因此 `LOG_PATH` 保持未初始化（没有 create_dir_all，也就没有零字节文件）。
+        let path_was_set = LOG_PATH.get().is_some();
+        let previous = LOG_ENABLED.swap(false, Ordering::Relaxed);
+
+        log("start", "probe-should-not-write");
+        log("page_load", "label=main");
+
+        LOG_ENABLED.store(previous, Ordering::Relaxed);
+        assert_eq!(
+            LOG_PATH.get().is_some(),
+            path_was_set,
+            "禁用期间不应解析日志路径"
+        );
+        assert_eq!(log_enabled(), previous, "开关必须被还原");
     }
 }
